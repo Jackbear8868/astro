@@ -12,3 +12,11 @@ wheels/
 # Large raw data and generated outputs
 data/
 figs/
+
+# ZAP / cube outputs (large, regenerable)
+results/zap/
+*.fits
+*.npz
+
+# Downloaded paper PDFs (re-downloadable via docs/paper/README.md arXiv IDs)
+*.pdf
