@@ -14,6 +14,3 @@ dependencies = [
     "specutils>=2.4.0",
     "zap",
 ]
-
-[tool.uv.sources]
-zap = { path = "libs/zap", editable = true }

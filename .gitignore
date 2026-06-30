@@ -20,3 +20,9 @@ results/zap/
 
 # Downloaded paper PDFs (re-downloadable via docs/paper/README.md arXiv IDs)
 *.pdf
+
+# Claude Code session config
+.claude/
+
+# Professor's paper text (not for repo)
+paper_from_professor.txt
