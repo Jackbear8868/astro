@@ -1,6 +1,6 @@
 # predict-sky 重點論文摘要（聚焦 ML / 資料驅動）
 
-> 深讀：`ml/Zhang2025_SMI`（深度學習）、`data-driven/Kolganov2023_NMF`（非負矩陣分解）。
+> 深讀：`ml/Zhang2025_SMI`（深度學習）、`ml/Rhea2024_IFU-background-ML`（★ IFU + PCA/神經場，最貼近本專案）、`data-driven/Kolganov2023_NMF`（非負矩陣分解）。
 > 其餘 empirical / physical-model 為脈絡式摘要。分類見 [`sky-subtraction-papers.md`](sky-subtraction-papers.md)。
 
 ---
@@ -61,6 +61,33 @@
 **對本專案的意義**
 - ✅ 屬**策略一**：資料驅動低秩**建 sky**（非殘餘），且**不需專拍天空**。
 - 介於 PCA 家族(Kurtz/ZAP) 與物理模型之間。其「**2D 分離平坦天空 vs 有峰的源**」恰對應我們先前驗證的「天空全場均勻、源是局部」。
+
+---
+
+### A3. Rhea et al. 2024 — IFU 背景重建（PCA + neural field）（`ml/`）★ 最貼近本專案
+**出處**：`arXiv:2404.01175`。資料：**SITELLE**（CFHT 成像 FTS，IFU）；測試 NGC 4449（充滿 DIG，主線 Hα）、NGC 1275（Perseus BCG）。**唯一在 IFU 上用 ML 做背景重建的論文。**
+
+**要解決的問題**
+- IFU 每個 spaxel 都疊著背景；要量源的真實流量必先把背景建模扣掉。傳統 global（整場一條平均）/ local（源周圍環形）背景，在「源佔視場大比例、乾淨背景零碎」時失準。
+- ⚠️ 這裡「背景」= **天光線 + 天體背景/前景 + 雜訊**（非純 sky），但方法骨架與純天空 reconstruction 完全共用。
+
+**核心點子**：**分割 → PCA（降噪）→ 神經場內插係數 → 重建扣除**。用空間維度，把「被源遮住的 spaxel 的背景」由周圍乾淨背景內插出來。
+
+**流程**
+1. **Segmentation**（photutils）：對 deep image 分箱（box 50×50）→ 3×3 高斯 + sigma-clipped median 估背景 → 扣背景 → 再卷積 → `detect_sources`（門檻 0.01×背景 RMS）→ 分出背景/源 spaxel。此步精度決定整體可靠度。
+2. **正規化**：先用 670–675 nm（無強發射線、雜訊主導、含連續譜水準）最大值正規化，再用整條譜最大值；同規則可套到源 spaxel 以便還原流量。
+3. **PCA on 背景 spaxel**（sklearn incremental PCA）：`s_r = μ + Σ α_i p_i`；依 scree 轉折留 k（NGC4449 留 3、NGC1275 留 2），成分有物理意義（Hα、[NII]、[SII]、DIG 負流量）；丟高階成分 = 降噪。
+4. **Neural field**（TensorFlow）：**輸入 (x,y) → 輸出 k 個 PCA 係數**；2 層 200/300 節點 tanh、Huber loss、Adam lr=1e-2（val 5ep 無進步 lr×0.75、10ep 無進步 early stop、上限 100）；**99%/1% 訓練/驗證**（為最大化空間覆蓋，目標只是學會「這筆 cube 的係數圖」而非泛化）；Optuna 調超參。→ 得「座標→係數」的平滑映射，對源 spaxel 給出無不連續的係數（優於線性/最近鄰）。
+5. **重建扣除**：源 spaxel 預測係數 → `μ+Σα·p` 還原背景 → rescale → 扣掉 → 於 LUCI 用 sinc（FTS 線型）擬合 5 條速度綁定的發射線。背景模型只動振幅/流量，不影響速度/彌散。
+
+**結果**：以振幅差異圖為主（**無量化數字**）。NGC4449 傳統法中央高估、外圍 DIG 區新法找回更多流量；NGC1275 外緣傳統法低估；重建背景雜訊明顯較低（尤其透射區外 6300–6450 Å）。
+
+**侷限**：① 分割誤差傳遞（背景混入 DIG）；② 線性假設（被解釋變異偏低 → 多為雜訊，線性未必恰當）；③ 神經場平滑 → 難捕高頻。**未來**：輸入加 Fourier features 抓高頻；改建恆星連續譜。
+
+**對本專案的意義**
+- ✅ **最直接的起跳板**：IFU 上已跑通 segment → PCA 降噪 → 神經場內插 → 重建扣除，作者明言可推廣到 **MUSE**、且**不需天空模板庫、與波長無關**。
+- 差異化空間：把「背景」收斂成**純天空**、評估改用 **held-out blank**；把線性 PCA 換**非線性/非負/互資訊**；用 Rhea 列的未來工作（Fourier features 捕 OH 高頻）。
+- 與 SMI/NMF 互補：Kolganov/Rhea = 用**空間維度**解耦；SMI = 用**互資訊**分共有/獨有；Zhang2016 = 用**非負+稀疏+同質**把物理寫成約束。
 
 ---
 

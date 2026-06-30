@@ -27,8 +27,9 @@
 - **Zhang, Zhang & Ye 2016** — NMF with Sparsity sky model (LAMOST). PASA 33,e058。NMF+稀疏建天空，與 B-spline/PCA 對比。
 - **Kolganov, Chilingarian & Grishin 2023** — NMF approach to sky subtraction. `2312.06761`。用 NMF 取代 PCA 得非負天空基底(~10× 有效成分)，無需 offset sky。
 
-### 1c. 機器學習（ML）★ 唯一的 DL 預測 sky
-- **Zhang et al. 2025 — Sky Background Building via Mutual Information Network (SMI)**. `2508.19875` · RAA。雙網路（波長校正 + 互資訊最大化）用**全部** fiber 預測每個物件位置的天空再減。LAMOST，藍端改善明顯。
+### 1c. 機器學習（ML）
+- **Zhang et al. 2025 — Sky Background Building via Mutual Information Network (SMI)**. `2508.19875` · RAA。雙網路（波長校正 + 互資訊最大化）用**全部** fiber 預測每個物件位置的天空再減。LAMOST，藍端改善明顯。**唯一純 DL「預測 sky」（光纖）。**
+- **Rhea et al. 2024 — Reconstructing Robust Background IFU spectra using Machine Learning**. `2404.01175`。★ **唯一在 IFU 上做 ML 背景重建**，最貼近本專案。SITELLE FTS（NGC4449 DIG、NGC1275）。流程：photutils 分割背景/源 spaxel → 對背景 spaxel 做 incremental PCA（依 scree 留 2–3 成分、順便降噪）→ **neural field（輸入 (x,y) → 輸出 PCA 係數；2 層 200/300 tanh、Huber、Adam）把係數平滑內插到被源遮住的 spaxel** → 重建背景並扣除，再以 sinc 擬合發射線。註：「背景」= 天光線 + 天體背景/前景 + 雜訊（非純 sky）；方法與波長無關、不需天空模板庫，作者明言可推廣到 **MUSE**。
 
 ### 1d. 物理 / 合成天空模型（傳統；直接「產生」天空光譜 → 屬預測 sky）
 > 註：這些是「天空模型/資料庫」，本身非扣除演算法，但生成可直接相減的 sky。
@@ -111,7 +112,7 @@
 ---
 
 ## 給本專案的重點結論
-1. **預測 sky** 陣營成熟且多元：經驗(sky fiber/nod-shuffle/Kelson)、資料驅動(NMF)、物理模型(Cerro Paranal/skycorr)、近年 1 篇 ML(SMI 2025)。
+1. **預測 sky** 陣營成熟且多元：經驗(sky fiber/nod-shuffle/Kelson)、資料驅動(NMF)、物理模型(Cerro Paranal/skycorr)、近年 ML 2 篇(SMI 2025 光纖；**Rhea 2024 IFU**，最貼近本專案)。
 2. **預測 residual** 幾乎等同 **PCA 家族**：源頭 Kurtz&Mink 2000 → Wild&Hewett 2005 → **ZAP 2016(IFU 標準)**；變體 CubePCA、Hart、VIPERS；DESI/LAMOST/SAMI 把它當 pipeline 內的第二刀。
 3. **明確空缺**：沒有「深度學習專門預測 residual」的論文（最近者為貝氏 Uzsoy 2025）。
 4. 老師要走「預測 sky」→ 主力參考 = **skycorr(Noll 2014) + MUSE DRP(Weilbacher 2020) + MaNGA(Law 2016) + Kelson 2003**，物理模型可用 **Noll 2012 / SkyCalc** 當天空先驗。

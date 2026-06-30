@@ -35,7 +35,8 @@ other/
 - Kolganov2023_NMF-sky-subtraction — `2312.06761`
 
 ### predict-sky/ml
-- Zhang2025_SMI-mutual-info-ML — `2508.19875`（唯一 DL 預測 sky）
+- Zhang2025_SMI-mutual-info-ML — `2508.19875`（純 DL 預測 sky，光纖）
+- Rhea2024_IFU-background-ML — `2404.01175`（★ IFU 上 ML 背景重建，最貼近本專案）
 
 ### predict-sky/physical-model
 - Noll2012_Cerro-Paranal-sky-model — `1205.2003`
