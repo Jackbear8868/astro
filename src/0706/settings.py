@@ -8,10 +8,15 @@ process(step*) 與 evaluate(eval_*) 全部 import 這裡；改參數只改這一
 from pathlib import Path
 import numpy as np
 
+# per-cube 偵測設定（CubeConfig / DetectParams + lazy registry）集中在 cube_config.py。
+# 這裡 re-export，讓 step*/eval_* 只要 import settings 就拿得到（不製造第二處真相來源）。
+from cube_config import CubeConfig, DetectParams, get_cube_config  # noqa: F401
+
 # ======================= 輸出路徑（2×2 結構）=======================
 OUTPUT_ROOT = Path("results/zap")          # 所有產物的根目錄
 MASKS_DIR   = OUTPUT_ROOT / "masks"        # step1 產物：source mask + blank 座標（小）
 CUBES_DIR   = OUTPUT_ROOT / "cubes"        # step2 產物：每個實驗一個子資料夾（大）
+DIAGNOSTICS_DIR = OUTPUT_ROOT / "diagnostics"   # 尚未拔擢 / 比較用的產物（不覆蓋正式 masks/）
 FIGURE_DIR  = OUTPUT_ROOT                  # .png 圖存這裡
 
 MASK_METHOD = "sep"                        # 預設方法（SEP + matched filter + 2σ；另一個是 "claude"）
@@ -54,6 +59,16 @@ def ensure_mask_dir(from_cube, method=MASK_METHOD):
     d = mask_dir(from_cube, method); d.mkdir(parents=True, exist_ok=True); return d
 def ensure_run_dir(target, mask_from, mask_method="sep"):
     d = run_dir(target, mask_from, mask_method); d.mkdir(parents=True, exist_ok=True); return d
+
+# --- diagnostics：per-cube 的比較 / 尚未拔擢的產物落點（不覆蓋正式 masks/）---
+def diagnostics_dir(cube):
+    return DIAGNOSTICS_DIR / cube
+def ensure_diagnostics_dir(cube):
+    d = diagnostics_dir(cube); d.mkdir(parents=True, exist_ok=True); return d
+def mask_output_dir(from_cube, method, promoted):
+    """遮罩產物落點：已拔擢→正式 masks/<method>_from-<cube>/；未拔擢→diagnostics/<cube>/。
+       用途：NE 新驗證參數的 mask 先落 diagnostics，不覆蓋已上傳 Drive 的正式 mask。"""
+    return mask_dir(from_cube, method) if promoted else diagnostics_dir(from_cube)
 
 # ============ 物理參數 ============
 # ⚠️ Haro11 一律用整張 499×559 全視場，不做空間裁切：CGM 暈延伸到 ~75″(≈375px)，
