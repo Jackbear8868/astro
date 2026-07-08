@@ -13,7 +13,7 @@
 - **源遮罩是否涵蓋整個延展星系,決定 ZAP 會不會把源吃掉**(這是最關鍵的實作細節)。
 
 ---
-
+![alt text](image.png)
 ## 1. 資料與設定
 - **cube**:`Haro11_wsky.fits`(含天空)、`Haro11_nosky.fits`(MUSE 已扣天空),WFM,499×559×3679,λ 4750–9348 Å,含 STAT(逐 voxel 變異)。
 - **galaxy**:Haro11(blue compact galaxy),z≈0.0206,Hα 觀測 ~6699 Å,有大範圍延展電離氣(CGM)。

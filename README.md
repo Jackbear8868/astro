@@ -34,24 +34,33 @@ cd data && gdown <file_id>   # 4 個 Haro11 cube, 每個約 7-8 GB
 ```
 
 
-### ZAP 扣天空對照 (`src/run_zap_compare.py`)
+### ZAP 扣天空對照（已封存 → 現行請用 `src/0706/`）
 
-ZAP 是「扣天空 + 去殘差」工具，**正確輸入是還含天空的 cube (`wsky`)**。流程：
+> **現行 pipeline：`src/0706/`**（處理 / 評估分離版，見 `src/0706/README.md`）。
+> 以下是 **pre-0706 的舊版**，腳本已移到 `src/legacy/`（見 `src/legacy/README.md`），僅供歷史參考，不建議再跑。
+
+ZAP 是「扣天空 + 去殘差」工具，**正確輸入是還含天空的 cube (`wsky`)**。舊流程：
 
 ```bash
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py crop full   # 整張 499x559 (或省略 full 用 300x300 裁切)
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py mask         # Hα窄帶+白光建源遮罩 (遮掉整個星系+延展氣)
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py zap wsky     # 對含天空 cube 跑 ZAP (整張約 65 分鐘, 峰值 ~44GB)
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py collect nosky  # nosky 當參考真值 (不必跑 ZAP)
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py collect wsky
-PYTHONPATH=libs/zap python3 src/run_zap_compare.py figs         # -> fig5 主驗證圖
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py crop full   # 整張 499x559 (或省略 full 用 300x300 裁切)
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py mask         # Hα窄帶+白光建源遮罩 (遮掉整個星系+延展氣)
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py zap wsky     # 對含天空 cube 跑 ZAP (整張約 65 分鐘, 峰值 ~44GB)
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py collect nosky  # nosky 當參考真值 (不必跑 ZAP)
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py collect wsky
+PYTHONPATH=libs/zap python3 src/legacy/run_zap_compare.py report       # 印量化驗證數字 (天空線殘餘 / Hα 保留率)
+
+# 圖表由獨立腳本產生 (都只讀上面 collect 的 npz):
+python3 src/legacy/fig1_wsky_effect.py     # 天空線扣除 (wsky raw / wsky+ZAP / nosky 真值)
+python3 src/legacy/fig2_nosky_effect.py    # nosky null test (雜訊放大)
+python3 src/legacy/fig3_source_halpha.py   # 源 Hα 保真
+python3 src/legacy/fig4_source_mask.py     # 源遮罩 (舊讀 source_mask.fits，已移除；見 src/legacy/README.md)
 ```
 
 **關鍵結論：**
 - **源遮罩是成敗關鍵**。Haro11 的電離氣 (CGM) 延展到視場 30-44%，遮罩太小會讓 ZAP 把
   Hα 當天空學起來、把源吃掉 (~70%)。`cmd_mask` 已改用 Hα 窄帶偵測+膨脹邊界解決。
 - **`wsky` + ZAP 有效**：天空線從 ~250-460 扣到 ~0-1, 與 MUSE 的 `nosky` 真值相符, 且保留源
-  (見 `results/zap/fig5_zap_validation.png`)。
+  (見 `results/zap/fig1_wsky_effect.png` 與 `fig3_source_halpha.png`)。
 - **`nosky` + ZAP 是 null test**：`nosky` 已被 MUSE 扣過天空 (空白譜已平), ZAP 沒天空可學、只會
   灌雜訊──這不是 ZAP 壞掉, 是餵錯 cube。
 

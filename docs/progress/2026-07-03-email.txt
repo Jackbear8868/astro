@@ -1,0 +1,22 @@
+Subject: Verifying the nosky+ZAP noise offset
+
+Dear Prof. Chen,
+
+Here is my daily report.
+
+I spent some time checking the question you raised about the plot.
+
+I recomputed the noise from scratch and got the same numbers, so it is not an error in my analysis. The offset comes from a small fraction of the spaxels: of the 8,000 blank-sky spaxels I sampled, about 581 (the red points in Figure 1) lie along the edge of the source mask and are heavily over-subtracted by ZAP.
+
+This probably happens because the galaxy's PSF wings reach beyond the mask and leak into that ring of "blank" spaxels. Since nosky has already had its sky removed by MUSE, ZAP has no real sky to model, so it over-fits these spaxels (which still contain some source light) and subtracts too much. Because the standard deviation is easily skewed by outliers, these few spaxels pull the whole curve up. Once I remove them, the noise of the real sky spaxels goes back to almost the same level as before ZAP.
+
+Figure 1 shows where the sampled sky spaxels are; the red points are the over-subtracted outliers, which cluster along the edge of the source mask. Figure 2 shows the sky noise, and once the outliers are removed the green curve drops back onto the original blue curve.
+
+What I learned this time:
+- I understand PSF wings better now. When I build the segmentation mask next time, I should watch out for the PSF wings of bright sources, not just the seeing / FWHM.
+- I also understand Haro11's Hα halo (CGM) better, and I see more clearly that when I check the sky subtraction I need to make sure the source is preserved too.
+
+Also, this weekend is the July 4th holiday, so I'll be exploring Chicago with friends. I'll report this weekend's progress at Monday's group meeting.
+
+Best regards,
+Yu-Jung Lin

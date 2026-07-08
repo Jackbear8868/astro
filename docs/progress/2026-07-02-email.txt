@@ -1,0 +1,38 @@
+Subject: Daily progress report
+
+Dear Prof. Chen,
+
+Following your reminder, I checked the ZAP run time and looked into the
+segmentation parameters.
+
+1. ZAP run time
+A full-field run previously took about 2.5 hours. By parallelizing it across multiple
+cores, I shortened it to about 45 minutes.
+
+2. Segmentation parameters and reasoning
+I revised how I use Source Extractor to build the source mask, choosing parameters
+that match the physical scales of the data:
+- Detection threshold set to 2σ.
+- For the extended, low-surface-brightness Hα halo, I use a matched filter
+  (smoothing kernel matched to the seeing / PSF FWHM ≈ 1.2″ ≈ 6 px, at 0.2″/px)
+  to boost its S/N, then detect with the normal threshold.
+- The background box is set larger than the halo (box ≈ 256 px vs halo diameter
+  ≈ 226 px), so the extended halo is not absorbed as background.
+- After detection, isolated noise detections are removed (minimum area ≈ 1 PSF
+  ≈ 30 px), and the mask is grown by ~6 px (≈ the seeing) to include the faint
+  outer wings.
+
+3. ZAP result appears unchanged
+I re-ran the full wsky/nosky comparison with these more physically motivated
+parameters, and the ZAP result is essentially the same as with my earlier mask. If
+you have any other suggestions for the Source Extractor parameters, please let me
+know.
+
+4. Next steps
+- Use the current segmentation to separate source from background, and start
+  collecting the data.
+- Spend some more time confirming which metrics to use for evaluating whether the
+  predicted sky is correct.
+
+Best regards,
+Yu-Jung Lin

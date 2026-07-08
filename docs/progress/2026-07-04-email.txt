@@ -1,0 +1,14 @@
+Subject: Re: remade figures
+
+Dear Prof. Chen,
+
+I regenerated the previous figures with the updated mask, and they come out essentially the same as before.
+
+They don't change because the blank-sky spectrum uses the median and the source figure uses the brightest spaxel, so neither depends on the mask edge. The mask edge only shows up in the per-wavelength noise. This is consistent with what I found earlier: the ZAP result is basically unchanged with the updated mask.
+
+As one attempt at looking at the extended emission, I also made two Hα halo figures: a surface-brightness map and a radial profile. In the radial profile, the solid lines are the azimuthally-averaged Hα brightness (median per ring) and the dotted lines are the 3σ detection limit, so a signal is reliable only where the solid line stays above the dotted one. I compared the MUSE reference (nosky), our result (wsky+ZAP), and a control (nosky+ZAP, ZAP run on the already sky-subtracted cube).
+
+Since these figures do not really test the mask, and I am not sure the halo figures are the right approach, I would like to ask how you would suggest checking whether our sky subtraction is actually doing well. Any evaluation method you would recommend would be very helpful.
+
+Best regards,
+Yu-Jung

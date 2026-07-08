@@ -1,0 +1,48 @@
+Subject: ZAP sky subtraction — daily report
+
+Dear Prof. Chen,
+
+Here is today's daily report:
+
+1. I ran ZAP on both wsky and nosky, producing the three figures below:
+
+   - Fig 1 (ZAP on wsky): median spectrum of the blank sky. After running ZAP
+     on the sky-included cube (wsky), the sky lines drop from ~300 to ~1,
+     matching nosky (MUSE's sky-subtracted result).
+
+   - Fig 2 (ZAP on nosky): per-wavelength noise in the blank region. Running
+     ZAP again on the already sky-subtracted nosky — where there is no sky left
+     to remove — instead increases the noise by roughly 35x.
+
+   - Fig 3 (Source Hα fidelity): the Hα emission line of a bright source.
+     wsky+ZAP matches nosky (source preserved), while nosky+ZAP blows up and
+     becomes distorted.
+
+   Summary: ZAP only works when the input cube still contains sky (wsky).
+   Applying it to the already sky-subtracted nosky merely injects noise and
+   damages the source — this is independent of parameter tuning.
+
+2. Data sources and next approach:
+
+   We also discussed how to obtain training data, roughly three types of data
+   source:
+
+   - Type A | Real blank region: directly use "sky-only" regions as sky samples.
+
+   - Type B | Injection / semi-synthetic: add a known real sky onto a clean
+     source region to create samples with a known answer.
+
+   - Type C | Full mock simulation: synthesize a cube from scratch (known
+     source + sky + noise), so every position has a known ground truth.
+
+   Plan: start with Type A — split the background of the original wsky into
+   training / test data, and begin from there.
+
+   I'm not entirely sure my understanding is correct, so please let me know.
+
+3. Next steps
+   Continue exploring the data sources, and confirm which metrics I can use to
+   check whether the predicted sky is correct.
+
+Best regards,
+Yu-Jung Lin
