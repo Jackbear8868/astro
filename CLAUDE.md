@@ -44,12 +44,18 @@ Derive parameters from the data itself (header / measurements), not from guesses
 | Parameter | Should match | This Haro11 data |
 |---|---|---|
 | pixel scale | header `CD1_1` | 0.20″/px |
-| seeing / PSF FWHM | header `ESO QC EXPCOMB FWHM MEDIAN` | ≈1.24″ ≈ 6 px |
-| matched-filter kernel FWHM | **≈ seeing FWHM** | gauss FWHM ≈ 6 px |
+| seeing / PSF FWHM | measure PSF from a star in the cube (the QC keyword is empty) | ≈0.81″ ≈ 4 px (measured; `ESO QC EXPCOMB FWHM MEDIAN` = 0.0, do not use) |
+| matched-filter kernel FWHM | **≈ seeing FWHM** | gauss FWHM ≈ 4 px |
 | detection threshold | **≥ 2σ** (2.3% false positives, standard) | 2σ (on matched-filtered image) |
-| minarea | **≈ 1 PSF area** | ≈ 30 px |
-| dilation (safety margin) | **≈ 1 × seeing FWHM** | ≈ 6 px |
+| minarea | **≈ 1 PSF area** | ≈ 13 px |
+| dilation (safety margin) | **≈ 1 × seeing FWHM** | ≈ 4 px |
 | background box `bw` | **> largest object**; use global if the object is huge | halo Ø≈226 px → global / bw ≥ 256 |
+
+> **Seeing note:** `ESO QC EXPCOMB FWHM MEDIAN` is **unpopulated (0.0)** in this dataset (both
+> `Haro11_nosky.fits` and `Haro11_NEpointing_esonosky.fits`), so the seeing must be **measured from a
+> star in the cube** (PSF FWHM = 2.3548·√(a·b) of compact, round sources), not read from that keyword.
+> The measured PSF is **≈4.06 px ≈ 0.81″**; header proxies (`ESO OCS SGS AG FWHM{X,Y} MED` ≈0.89″,
+> `ESO TEL AMBI FWHM` ≈0.94–0.96″) agree at ≈4–4.7 px. The earlier 6 px / 1.24″ was an unverified assumption.
 
 **Two common traps to avoid:**
 1. **Estimate the noise σ from source-free regions** (sigma-clip out the sources).

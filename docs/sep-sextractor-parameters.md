@@ -150,6 +150,11 @@ _, seg = sep.extract(ha - bkg, 2.0, err=bkg.rms(), mask=invalid,
 src = ndi.binary_dilation((seg > 0) & valid, iterations=6) & valid   # 事後膨脹 ≈ 1×seeing
 ```
 
+> ⚠️ **數值待對齊**:上段忠實對照現行 `step1_mask.py`,其中 `fwhm=6` / `minarea=30` / `iterations=6`
+> 源自 header `ESO QC EXPCOMB FWHM MEDIAN`,但**該關鍵字在本批資料為 0.0(未填)**,故這組是**未驗證的舊假設**。
+> 依實測星點 PSF(≈4.06 px = 0.81″,見 §6),正確值應為 **核 FWHM≈4 px、minarea≈13 px、dilation≈4 px**;
+> 程式碼的對齊由負責 `.py` 的人處理,本文的推導配方(§6)已採用實測值。
+
 各參數為何是這些值(物理理由)見
 [`docs/segmentation-parameters-explained.md`](./segmentation-parameters-explained.md);
 本文以下給**通用**意義、SExtractor 對照、與**任一 cube 的推導公式**。
@@ -313,13 +318,25 @@ extract(data, thresh, err=None, var=None, gain=None, mask=None, maskthresh=0.0,
 | 參數 | 由什麼推 | 公式 | Haro11 值 |
 |---|---|---|---|
 | **pixel scale** `pixscale` | header `CD1_1`(退而求其次 `CDELT1`) | `√(CD1_1² + CD2_1²) × 3600` (deg→arcsec);或 `|CD1_1|×3600` | 0.20 ″/px |
-| **seeing FWHM(px)** | header `ESO QC EXPCOMB FWHM MEDIAN`(arcsec) | `FWHM_arcsec / pixscale` | 1.24/0.20 ≈ **6 px** |
-| **matched-filter 核 FWHM** | = seeing FWHM | `kernel_FWHM_px = seeing_FWHM_px` | 6 px |
-| **核尺寸(box)** | 由 σ=FWHM/2.355 取 ±3σ | `size = 2·⌈3σ⌉+1`(奇數) | 15 px(專案用值) |
+| **seeing FWHM(px)** | **實測 cube 內星點 PSF**(見下方說明);header `ESO QC EXPCOMB FWHM MEDIAN` 在本批資料 **= 0.0(未填),不可用** | `FWHM_px = median(2.3548·√(a·b))`;退路 `ESO OCS SGS AG FWHM{X,Y} MED` 或 `ESO TEL AMBI FWHM` ÷ pixscale | **≈4.06 px ≈ 0.81″**(實測) |
+| **matched-filter 核 FWHM** | = seeing FWHM | `kernel_FWHM_px = seeing_FWHM_px` | ≈ **4 px** |
+| **核尺寸(box)** | 由 σ=FWHM/2.355 取 ±3σ | `size = 2·⌈3σ⌉+1`(奇數) | 13 px |
 | **偵測門檻** | 固定統計標準 | `thresh = 2.0`(≥2σ) | 2σ |
-| **minarea** | 1 個 PSF 面積 | `π·(FWHM/2)²` | π·3² ≈ 28 → **30 px** |
-| **dilation** | 1×seeing | `round(seeing_FWHM_px)` | 6 px |
+| **minarea** | 1 個 PSF 面積 | `π·(FWHM/2)²` | π·2² ≈ 13 → **13 px** |
+| **dilation** | 1×seeing | `round(seeing_FWHM_px)` | ≈ **4 px** |
 | **背景框 `bw`** | 必須 > 最大要保留的物件 | 見 §6.2 | 256 px(或全域) |
+
+> **seeing 怎麼來(優先序;CLAUDE.md Principle 2 的物理可辯護做法)**:
+> 1. **首選——直接從 cube 內的星點量 PSF FWHM**(物理上最站得住腳):先做**去發射線的連續譜白光影像**,
+>    `sep.extract` 抽源,對每個源以二階矩算 `FWHM = 2.3548·√(a·b)`,只留**緊緻**(FWHM<8 px)、**圓**(b/a>0.6)、
+>    **夠亮**的星,取中位數。本批 Haro11 實測 **≈4.06 px = 0.81″**(10 顆星,16–84% 範圍 3.58–4.77 px)。
+> 2. **無星可用時的退路——header 代理值**:`ESO OCS SGS AG FWHMX/Y MED`(自動導星)≈0.886″≈4.4 px、
+>    或 `ESO TEL AMBI FWHM`(DIMM)≈0.94–0.96″≈4.7 px;三者一致指向 ≈4 px。
+> 3. ⚠️ **不可盲用**:`ESO QC EXPCOMB FWHM MEDIAN` 在 `Haro11_nosky.fits` 與 `Haro11_NEpointing_esonosky.fits`
+>    **都是 0.0(未填)**,直接讀會得到 **0-px 核**;`ESO OCS SGS FWHM *` 同樣為 0.0。
+>
+> **舊值 6 px / 1.24″ 是未經 header 佐證的假設,已由上述實測(≈4 px / 0.81″)取代。** §6.4 的程式碼含
+> `assert fwhm_px > 0` 的 code guard,確保空關鍵字不會再無聲地產生 0-px 核。
 
 ### 6.2 門檻為何 **≥ 2σ**(不可壓更低)
 
@@ -362,9 +379,20 @@ def cube_detection_params(fits_path, hdu="DATA", object_diameter_px=None):
     else:
         pixscale = abs(hdr["CDELT1"]) * 3600.0
 
-    # 2) seeing FWHM(arcsec -> px);MUSE 用 HIERARCH ESO QC EXPCOMB FWHM MEDIAN
-    fwhm_arcsec = hdr["ESO QC EXPCOMB FWHM MEDIAN"]           # astropy 直接解 HIERARCH 全鍵
-    fwhm_px = fwhm_arcsec / pixscale
+    # 2) seeing FWHM(px):優先「量」不「讀」——見 measure_psf_fwhm_px()。
+    #    ⚠️ ESO QC EXPCOMB FWHM MEDIAN 在本批資料 = 0.0(未填),直接讀會得到 0-px 核,絕不可盲用。
+    fwhm_px = measure_psf_fwhm_px(fits_path)                  # 首選:實測 cube 內星點 PSF
+    if not (fwhm_px and fwhm_px > 0):                         # 無星可用 → 退到 header seeing 代理
+        for key in ("ESO OCS SGS AG FWHMX MED", "ESO OCS SGS AG FWHMY MED",
+                    "ESO TEL AMBI FWHM"):                     # 皆為 arcsec;非 QC EXPCOMB
+            v = hdr.get(key, 0.0)
+            if v and v > 0:
+                fwhm_px = v / pixscale
+                break
+    # code guard:空關鍵字/量測失敗都不得無聲地產生 0-px 核
+    assert fwhm_px and fwhm_px > 0, (
+        "seeing FWHM 量測與 header 代理皆失敗(QC EXPCOMB 關鍵字本批 = 0.0);"
+        "拒絕產生 0-px 核——請提供可用星點或有效 seeing 代理。")
 
     # 3) 由尺度推偵測參數
     sigma = fwhm_px / 2.355
@@ -393,6 +421,27 @@ def gauss_kernel(size, fwhm):
     g = np.exp(-(x ** 2) / (2 * (fwhm / 2.355) ** 2))
     k = np.outer(g, g)
     return (k / k.sum()).astype(np.float32)
+
+
+def measure_psf_fwhm_px(fits_path):
+    """首選 seeing 來源:直接從 cube 內的星點量 PSF FWHM(px)。
+       物理上最站得住腳(CLAUDE.md Principle 2);當 header QC 關鍵字為 0.0 時尤其必要。
+       步驟:去發射線的連續譜白光影像 → sep.extract → 每源以二階矩算
+       FWHM = 2.3548·√(a·b),只留緊緻(<8 px)、圓(b/a>0.6)、夠亮的星 → 取中位數。
+       無可用星回傳 None(交由呼叫端退到 header 代理)。"""
+    import sep
+    from astropy.io import fits
+    cube  = fits.getdata(fits_path)                          # (nλ, ny, nx)
+    white = np.nanmedian(cube, axis=0)                       # 連續譜白光(中值壓掉發射線)
+    white = np.ascontiguousarray(white, np.float32)
+    bkg   = sep.Background(white)
+    obj   = sep.extract(white - bkg, 5.0, err=bkg.globalrms) # 星點夠亮,用一般 5σ
+    if obj is None or len(obj) == 0:
+        return None
+    fwhm  = 2.3548 * np.sqrt(obj["a"] * obj["b"])            # 每源 FWHM(px)
+    ba    = obj["b"] / obj["a"]                              # 圓度 b/a
+    star  = (fwhm < 8) & (ba > 0.6) & (obj["flux"] > np.nanmedian(obj["flux"]))
+    return float(np.median(fwhm[star])) if star.any() else None
 ```
 
 用法示意(接 `sep`):
@@ -418,13 +467,13 @@ _, seg = sep.extract(image - bkg, p["thresh_sigma"], err=bkg.rms(),
 | 背景型別 | (只有 AUTO) | `BACK_TYPE` | AUTO | sep 恆估背景 |
 | 每像素雜訊 σ | `err=bkg.rms()` | `MAP_RMS`/`WEIGHT` | `bkg.rms()` | 排源後估(乾淨天空) |
 | 偵測門檻 | `extract(thresh=)` | `DETECT_THRESH` | 2σ | ≥2σ(假陽性 2.3%) |
-| 最小面積 | `extract(minarea=)` | `DETECT_MINAREA` | 30 px | π(FWHM/2)² |
-| 平滑核 | `filter_kernel=` | `FILTER`+`FILTER_NAME` | 高斯 FWHM=6 | = seeing |
+| 最小面積 | `extract(minarea=)` | `DETECT_MINAREA` | 13 px | π(FWHM/2)² |
+| 平滑核 | `filter_kernel=` | `FILTER`+`FILTER_NAME` | 高斯 FWHM≈4 | = seeing(實測 PSF) |
 | 濾波型別 | `filter_type='matched'` | (sep 新增) | matched | 變動雜訊最佳,需 `err` |
 | deblend 層數 | `deblend_nthresh=` | `DEBLEND_NTHRESH` | 32 | 預設 |
 | deblend 對比 | `deblend_cont=` | `DEBLEND_MINCONT` | 0.005 | 預設 |
 | CLEAN | `clean=`,`clean_param=` | `CLEAN`,`CLEAN_PARAM` | True,1.0 | 預設 |
-| 膨脹(事後) | `scipy.ndimage.binary_dilation` | (SExtractor 無;事後處理) | 6 px | 1×seeing |
+| 膨脹(事後) | `scipy.ndimage.binary_dilation` | (SExtractor 無;事後處理) | 4 px | 1×seeing |
 | 大物件上限 | `set_sub_object_limit` | `DEBLEND` 相關 | 視需要(4096) | 延展亮源才調 |
 | pixel buffer | `set_extract_pixstack` | `MEMORY_PIXSTACK` | 視需要 | 大圖才調 |
 
