@@ -8,8 +8,8 @@
 > 版本 **2.1**(`zap.__version__ == '2.1'`;`git describe` = `2.1-6-g974231e`,commit `974231e`,CHANGELOG 最新條目為 `2.2.dev`)。
 > 凡本檔陳述的「預設值 / 行為」皆逐一核對 `libs/zap/zap/zap.py`;與 readthedocs 或 Soto+2016 論文有出入者,**以 vendored 2.1 為準**並註記分歧。
 >
-> 相關文件:實務結論見 `docs/zap-experiment-log.md`;源遮罩(mask)參數的物理推導見 `docs/segmentation-parameters-explained.md`;核心原則見 `CLAUDE.md`。
-> 實際呼叫點:`src/0706/step2_zap.py`;nevals 掃描診斷:`src/legacy/tune_nevals.py`。
+> 相關文件:既定結論見 `docs/zap-conclusions.md`;源遮罩(mask)參數的物理推導見 `docs/segmentation-parameters-explained.md`;核心原則見 `CLAUDE.md`。
+> 實際呼叫點:`src/zap/zap.py`;nevals 掃描流程見 §4.3(歷史腳本 `tune_nevals.py` 已移除,存於 git 歷史)。
 
 ---
 
@@ -41,7 +41,7 @@ ZAP 對每根光譜(spaxel)依序做以下步驟(`Zap._run` → `_prepare` → `
 
 **為什麼成分數是成敗關鍵**:天空 eigenspectra 只在天空線波長被約束,在別處(源的發射線/連續譜)並不受約束。成分數一多,高階 eigenspectra 就開始擬合並扣掉**真正的源通量與線形** → 過扣、吃源。太少則天空殘餘扣不乾淨。這正是 `CLAUDE.md` Principle 1「不能只看殘餘」的根源:過扣會同時壓低殘餘**又**吃掉源。
 
-**mask 的角色(sky reconstruction 的核心)**:`mask` 標 ≥1 的源 spaxel 會在建 SVD 前被設成 NaN、排除在天空基底之外(`_applymask`)。遮罩不足 → 源(尤其 Haro11 的延展 Hα 暈)混進天空基底 → 被當天空扣掉。本專案實測:白光 2σ 只遮 8% 造成 **70% 源流量損失**;改用 Hα 窄帶偵測 + 膨脹遮到 44% 後源保留 124%(見 `docs/zap-experiment-log.md` §2–3)。遮罩本身的參數推導見 `docs/segmentation-parameters-explained.md`。
+**mask 的角色(sky reconstruction 的核心)**:`mask` 標 ≥1 的源 spaxel 會在建 SVD 前被設成 NaN、排除在天空基底之外(`_applymask`)。遮罩不足 → 源(尤其 Haro11 的延展 Hα 暈)混進天空基底 → 被當天空扣掉。本專案實測:白光 2σ 只遮 8% 造成 **70% 源流量損失**;偵測 + 膨脹遮到 44% 後源保留 124%(見 `docs/zap-conclusions.md` §1)。遮罩本身的參數推導見 `docs/segmentation-parameters-explained.md`。
 
 ---
 
@@ -70,8 +70,8 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 | `extSVD` | Zap 物件 | `None` | 改用 `zap.SVDoutput(...)` 在**別的 cube**(offset sky / 別次曝光)算好的 SVD 基底。 | 多曝光 / filled field 用。**與 `mask` 互斥**(同時給會 raise `ValueError`:要用 mask 就得重算 SVD)。見 §4.4。 |
 | `skycubefits` | str | `None` | 額外輸出「被扣掉的天空」= 輸入 − 輸出 cube(`writeskycube`)。 | 診斷用。本專案設為 `.../sky.fits`。 |
 | `mask` | str | `None` | 2D FITS 遮罩:源標 **≥1**、天空標 **0**。源 spaxel 設 NaN、排除於天空基底外。 | sky reconstruction 的核心。遮罩品質直接決定成敗(§1、`segmentation-parameters-explained.md`)。 |
-| `interactive` | bool | `False` | `True` 時回傳 `Zap` 物件、**不寫檔**,可用 `reprocess(nevals=...)` 快掃成分數。 | nevals 掃描用(見 `src/legacy/tune_nevals.py`)。 |
-| `ncpu` | int | `None` | 平行處理程序數。`None`→`cpu_count()`(全部核心)。 | 依可用核心設定。本專案設 16;整張視場實測峰值記憶體 ~43.7 GB(`zap-experiment-log.md` 階段 H)。 |
+| `interactive` | bool | `False` | `True` 時回傳 `Zap` 物件、**不寫檔**,可用 `reprocess(nevals=...)` 快掃成分數。 | nevals 掃描用(流程見 §4.3)。 |
+| `ncpu` | int | `None` | 平行處理程序數。`None`→`cpu_count()`(全部核心)。 | 依可用核心設定。本專案設 16;整張視場實測峰值記憶體 ~43.7 GB(`zap-conclusions.md` §4)。 |
 | `pca_class` | class | `None` | 替換 PCA 實作類別。`None`→sklearn `PCA`。 | 進階;一般不動。 |
 | `n_components` | float | `None` | 計算多少個 PCA 成分(非重建用的 nevals)。給值時 `ncomp = max(nwave_seg × n_components, 60)`。 | 進階;`None`→計算完整 PCA。改它只影響「算多少成分」的上限與速度,不等於重建成分數。 |
 | `overwrite` | bool | `False` | 是否覆寫既有輸出檔。 | 本專案設 `True`。 |
@@ -103,7 +103,7 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 
 ## 4. 本專案目前生效的預設,以及是否站得住腳
 
-`src/0706/step2_zap.py` 只傳 `mask`、`ncpu=16`、`overwrite=True`(以及三個輸出路徑),其餘全走 ZAP 2.1 預設:
+`src/zap/zap.py` 傳 `mask`、`ncpu=16`、`cfwidthSP`(預設 300 = ZAP 預設)、`overwrite=True`(以及三個輸出路徑),其餘全走 ZAP 2.1 預設:
 
 | 旋鈕 | 目前生效值 | 是否物理站得住腳(Principle 2) |
 |---|---|---|
@@ -142,10 +142,10 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 
 ### 4.3 nevals / 成分數 —— 用雙指標驗證,不給魔術數字
 
-- `nevals=[]` 走自動 `optimize()`;整張視場自動選 **53**,源保留 124%、天空線壓到 ~0–1.3(`zap-experiment-log.md` §3),自動法在本資料**運作正常**。
+- `nevals=[]` 走自動 `optimize()`;整張視場自動選 **53**,源保留 124%、天空線壓到 ~0–1.3(`zap-conclusions.md` §2),自動法在本資料**運作正常**。
 - **但成分數是源保真 vs 天空乾淨的直接權衡**:太多→過扣吃源;太少→天空殘餘。**`CLAUDE.md` Principle 1:絕不能只看殘餘**——過扣會同時壓低殘餘又吃源。
-- **既有結論(勿重蹈)**:對已扣天空的 `nosky` 跑 ZAP 時,成分數從 3 掃到 55 **都救不了**過扣——因為問題在**輸入 cube 選錯**(nosky 沒天空可學),不是調 nevals(`zap-experiment-log.md` §2 階段 E、§4)。**先確認餵的是含天空的 `wsky`**,再談成分數。
-- **驗證流程(可重現)**——用 `interactive` 一次算 SVD、`reprocess()` 快掃(範本:`src/legacy/tune_nevals.py`):
+- **既有結論(勿重蹈)**:對已扣天空的 `nosky` 跑 ZAP 時,成分數從 3 掃到 55 **都救不了**過扣——因為問題在**輸入 cube 選錯**(nosky 沒天空可學),不是調 nevals(`zap-conclusions.md` §1)。**先確認餵的是含天空的 `wsky`**,再談成分數。
+- **驗證流程(可重現)**——用 `interactive` 一次算 SVD、`reprocess()` 快掃(歷史範本 `tune_nevals.py`,存於 git 歷史):
 
   ```python
   import zap
@@ -162,7 +162,7 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
   2. **line-free 純雜訊**(如 7000–7120 Å 的逐-spaxel RMS):**不得明顯上升**(門檻經驗值 ≤ 1.5× raw)。
   3. **源 Hα 積分通量**:**保留 ≥ ~98%**(相對 raw),線形不變。
 
-  選能同時滿足三者、且成分數盡量高(天空扣最乾淨)的 N。三者的定義與門檻見 `src/legacy/tune_nevals.py` 與 `docs/metric_spec.md`。
+  選能同時滿足三者、且成分數盡量高(天空扣最乾淨)的 N。三者的定義與門檻見 `docs/metric_spec.md`。
 
 ### 4.4 ncpu 與 extSVD(多曝光)
 
@@ -181,7 +181,7 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 ## 5. 輸出與 STAT 的處理(重要)
 
 - `outcubefits` 由 `mergefits` 寫成:**開原始輸入檔、只替換 DATA(第 1 extension)為 `cleancube`,其餘 extension(含 STAT)原封保留**。
-- 因此 **STAT(逐 voxel 變異)是原始照抄、未經 ZAP 傳遞**。ZAP 的扣天空並未更新變異;若後續分析需要正確的誤差傳遞,須自行處理(此為已知限制,見 `zap-experiment-log.md` §7 與 step2 docstring)。
+- 因此 **STAT(逐 voxel 變異)是原始照抄、未經 ZAP 傳遞**。ZAP 的扣天空並未更新變異;若後續分析需要正確的誤差傳遞,須自行處理(此為已知限制,見 `zap-conclusions.md` §5)。
 - `skycubefits` = 輸入 − 輸出(被扣掉的天空);`varcurvefits` = 各段 explained variance 曲線(診斷用)。
 
 ---
@@ -189,11 +189,10 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 ## 6. 交叉參考
 
 - `CLAUDE.md` — Principle 1(sky reconstruction、雙指標)、Principle 2(參數須物理可辯護)、「Other」節點名 `SKYSEG`/`cfwidthSP` 為科學關鍵。
-- `docs/zap-experiment-log.md` — 實測結論:餵對 cube(wsky)是關鍵、遮罩不足會吃源、成分數掃描救不了輸入錯誤、整張視場數字。
+- `docs/zap-conclusions.md` — 既定結論:餵對 cube(wsky)是關鍵、遮罩不足會吃源、成分數掃描救不了輸入錯誤、整張視場數字。
 - `docs/segmentation-parameters-explained.md` — `mask` 的偵測參數(threshold 2σ、matched filter 核=seeing、bw>暈、minarea、dilation)的完整物理推導。
 - `docs/metric_spec.md` — 評估指標定義。
-- `src/0706/step2_zap.py` — 實際呼叫點。
-- `src/legacy/tune_nevals.py` — nevals 掃描 + 雙指標驗證範本。
+- `src/zap/zap.py` — 實際呼叫點。
 - ZAP 論文:Soto, Lilly, Bacon, Richard & Conseil (2016), MNRAS 458, 3210。vendored 原始碼:`libs/zap/`(2.1)。
 
 ---

@@ -11,10 +11,9 @@ wheels/
 
 # Large raw data and generated outputs
 data/
-figs/
 
-# ZAP / cube outputs (large, regenerable)
-results/zap/
+# Pipeline outputs (regenerable)
+results/
 *.fits
 *.npz
 

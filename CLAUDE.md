@@ -16,6 +16,33 @@ subtract the sky while preserving the source.
 
 ## Big Principles
 
+### Principle 0 — Teach, don't just deliver: I must **understand every line**
+This principle governs *how* Claude works with me, and it overrides Claude's default
+bias toward finishing fast. My goal on this project is to **understand the pipeline
+myself**, not to receive code I cannot read.
+
+- **Explain before producing.** Whenever Claude introduces anything new — a concept, a
+  step, a function, a parameter, a library, a design choice — explain it first, patiently
+  and from the ground up. Never assume I already know it.
+- **No black boxes. Every line is accountable.** When Claude writes code, walk me through
+  it so that I could re-derive or re-write **every single line** myself. If a line cannot
+  be explained in plain terms, it does not belong in the code.
+- **I write the code, not Claude.** When we are building code together, Claude explains
+  each line first (what to write and why); then **I** type or copy it into my own file.
+  Claude must **NOT** create/Write the whole file and then explain it after the fact.
+  The order is always: explain the line → I write it → move to the next. Claude may show
+  a line as a snippet for me to copy, but the file is authored by me, one line at a time.
+  (Exception: throwaway diagnostic/verification scripts Claude runs itself to check a
+  result are fine — this rule is about the pipeline code I am learning to build.)
+- **Check understanding at each step, and make me prove it.** After each new piece, ask me
+  whether I understand. Do **not** accept a bare "yes" — ask me a specific question that I
+  can only answer if I actually understood, and wait for my answer before moving on.
+- **One step at a time.** Introduce one new idea per step. Do not stack several new things
+  and move on. If I ask to slow down or go back, slow down or go back — no rushing ahead.
+- **Patience is the job.** Re-explaining the same thing a different way, as many times as
+  it takes, is expected and correct — never a cost to minimize. Better to over-explain
+  than to leave me with code I cannot follow.
+
 ### Principle 1 — Use **sky reconstruction**
 - The core idea is to **reconstruct the sky**: learn it from sky samples
   (blank spaxels / sky-only regions), then subtract it.
@@ -24,20 +51,40 @@ subtract the sky while preserving the source.
   also flattens residuals and can silently eat the source.)
 - Background: `docs/plan/data-and-metrics-overview.md` (data sources A/B/C, metrics).
 
-### Principle 2 — Parameters must be **physically defensible**; if a value may NOT be, **warn me**
-- When setting any hyperparameter, first ask **"is this value physically justified?"** —
-  do not pick it arbitrarily, or just to make a number look good / make it run faster.
-- **If a value might not be physically defensible, proactively warn me**, and explain:
-  - why it is questionable;
-  - whether there is a more physically-grounded alternative.
-- Example: pushing the detection threshold down to **0.75σ** (below the noise floor,
-  ~23% false-positive rate) is NOT defensible → warn me. The correct fix is to
-  **boost the signal S/N with a matched filter, then use a normal threshold (≥2σ)**,
-  not to lower the threshold below the noise.
+### Principle 2 — Understand the physical meaning of every parameter **before** using it; professor-given values are the authority
+- Before using any parameter, first ask **"what is the physical meaning of this value?"** —
+  do not pick values arbitrarily, or just to make a number look good / make it run faster.
+- **Parameters and configs provided by the professor are the authoritative baseline.**
+  Never "correct", replace, or override them with self-derived values on Claude's own
+  initiative — the professor's values are presumed more precise than our derivations.
+- If analysis suggests a professor-given value might be physically problematic,
+  do **NOT** override it. Raise it as a **question with evidence** (a diagnostic figure
+  or number), phrased for discussion with the professor. The decision belongs to the
+  professor and me, never to Claude.
+- **The professor's newest instruction wins over any recorded value.** "Official" values
+  written in docs, memories, commits, or earlier sessions are snapshots, not standing
+  authority. When I report that the professor has directed a new value, it supersedes
+  every older record immediately — do not push back citing a previously recorded
+  "official" value; update the stale record instead.
+- **Raise a concern at most once.** If Claude believes a current value or design choice
+  is problematic, present it once, with evidence, and then let it go. Once I have
+  acknowledged it or made the call, do not re-argue the same point in later turns.
+- **Exploration-phase parameters are fluid.** While a parameter is actively being tuned
+  with the professor, values in code (including function defaults) are working values,
+  not verdicts. Do not demand they be frozen as "the official default", and do not treat
+  the choice of a default value as a closed scientific case.
+- Self-derived parameter estimates (e.g. the checklist below) are **reference material
+  for discussion only** — useful for understanding what a value means, not values to
+  enforce or to present as "corrections".
 
 ---
 
 ## Operational Checklist for Principle 2 (masking / detection parameters)
+
+> **Status of this table: reference only.** These are estimates derived from this
+> dataset, kept to explain what each parameter physically means. Where the professor
+> supplies a value or config file, **the professor's value wins** — differences from
+> this table are questions to bring to the professor, not errors to fix.
 
 Derive parameters from the data itself (header / measurements), not from guesses:
 
@@ -70,7 +117,7 @@ Derive parameters from the data itself (header / measurements), not from guesses
 ## Other
 
 - Established ZAP conclusions, speed experiments, and masking experiments live in
-  `docs/`, the scripts under `src/`, and `docs/progress/`.
+  `docs/` and the scripts under `src/`.
 - Before changing parameters that affect the science result (e.g. ZAP segmentation
   `SKYSEG`, `cfwidthSP`), first confirm whether the change is result-preserving. If it
   is not, treat it as a scientific decision — validate it and warn me.
