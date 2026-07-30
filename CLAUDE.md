@@ -106,7 +106,7 @@ Derive parameters from the data itself (header / measurements), not from guesses
 
 **Two common traps to avoid:**
 1. **Estimate the noise σ from source-free regions** (sigma-clip out the sources).
-   Estimating MAD over the whole image (sources included) inflates σ and distorts the
+   Estimating σ over the whole image (sources included) inflates it and distorts the
    threshold. `sep`'s `Background.rms()` rejects sources automatically.
 2. **A too-small background box (`bw`) absorbs the extended halo as "background"** →
    the halo is never detected, no matter how low the threshold. The box must be larger
@@ -121,3 +121,35 @@ Derive parameters from the data itself (header / measurements), not from guesses
 - Before changing parameters that affect the science result (e.g. ZAP segmentation
   `SKYSEG`, `cfwidthSP`), first confirm whether the change is result-preserving. If it
   is not, treat it as a scientific decision — validate it and warn me.
+
+---
+
+## Math notation in chat replies
+
+The Claude Code terminal renders Markdown only — it does **not** render LaTeX. Raw
+`$...$` reaches me as unreadable markup, so equations must be written as plain text.
+
+- **Default: inline Unicode.** Write formulas on one line using Unicode symbols. Never
+  use `$...$`, `$$...$$`, `\(...\)`, `\frac{}{}`, or `\begin{equation}` in chat.
+- **Symbols:** σ μ λ ν Δ δ θ φ α β γ χ² √ Σ Π ∫ ∂ ∇ ≈ ≠ ≤ ≥ ± × · ÷ → ⇒ ∞ ∈ ∝ ⟨⟩
+- **Sub/superscripts:** use Unicode characters — x², xᵢ, xₙ, σ², 10⁻³. Fall back to
+  `x^(n+1)` / `x_max` only when no Unicode character exists.
+- **Fractions:** always inline as `a / b`, with parentheses where needed:
+  `(a + b) / (c + d)`.
+- Expected style:
+  σ² = Σ(xᵢ − μ)² / (N − 1)
+  SNR(λ) = [obs(λ) − sky(λ)] / σ(λ)
+  FWHM = 2.3548 · √(a·b)
+- **Exception 1 — multi-line derivations.** Use a fenced code block only when the
+  expression genuinely spans several aligned lines or is a step-by-step derivation;
+  inside the block, still use Unicode and aligned plain text. Never open a code block
+  for a single simple formula.
+
+      resid(λ) = obs(λ) − sky(λ)
+               = obs(λ) − Σₖ cₖ · eₖ(λ)
+      χ²       = Σ_λ resid(λ)² / σ(λ)²
+
+- **Exception 2 — file content.** When the text is being written into a file (`.tex`,
+  `.md`, docstring, paper draft, notebook) that will later be compiled by LaTeX or a
+  math-aware renderer, follow that file's own convention and use LaTeX normally. This
+  section governs terminal chat output only.

@@ -174,7 +174,7 @@
 
 **PSF**（circular Moffat）：
 - **β**：視場有孤立未飽和前景星 → 擬合（β 自由）；否則**固定 β=2.8**（WFM-NOAO 標準，B17/Leclercq）。
-- **FWHM(λ) = a + b·λ**（線性、往紅端變小）：有星則擬合；否則以 header QC seeing 錨定（`wsky` 的 `EXPCOMB FWHM MEDIAN`=1.24″；⚠️ `nosky` 該值未填 =0，且 wsky 值 MAD 0.51″、跨曝光 0.70–1.92″，故僅當錨點、不整段套單值）。
+- **FWHM(λ) = a + b·λ**（線性、往紅端變小）：有星則擬合；否則以 header QC seeing 錨定（`wsky` 的 `EXPCOMB FWHM MEDIAN`=1.24″；⚠️ `nosky` 該值未填 =0，且 wsky 值跨曝光 0.70–1.92″，故僅當錨點、不整段套單值）。
 - **敏感度**：延展暈 vs PSF 的結論須跑 **β ∈ [2.5, 3.0]** 敏感度並回報（β 控制 PSF 翼，直接影響「延展 vs 點源翼」判定）。
 
 > **PSF 參數（文獻紀錄，供參）**：seeing-limited MUSE WFM 的 Moffat β 群集 **2.5–2.8**（B17=2.8 固定、HDFS Bacon+2015=2.6 擬合、一般 seeing-limited ~2.5；AO 的 Fusco+2020 擬合 2.3–2.7）。β 隨波長視為固定；FWHM 隨波長線性下降（UDF 0.71″→0.57″）。B17 的 2.8 本身即來自 **seeing-limited WFM-NOAO**（MUSE UDF 2014–2016，AO 未上線），與 Haro11 同 regime，故可用。取 PSF 的標準做法：有星就擬合 Moffat（PampelMuse/mpdaf），無星則固定 β=2.8 只擬合 FWHM(λ)（B17）。

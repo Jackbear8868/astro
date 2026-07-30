@@ -9,13 +9,22 @@ wheels/
 # Virtual environments
 .venv
 
-# Large raw data and generated outputs
-data/
-
 # Pipeline outputs (regenerable)
 results/
 *.fits
+*.fit
 *.npz
+*.tar.gz
+
+# Raw MUSE cubes and exposures (139 GB) — never belongs in git
+data/
+
+# Stray figures at the repo root. Keepers go under results/skymodel/figures/,
+# which is already covered by results/ above.
+/*.png
+
+# Agent tooling config
+.codex/
 
 # Downloaded paper PDFs (re-downloadable via docs/paper/README.md arXiv IDs)
 *.pdf

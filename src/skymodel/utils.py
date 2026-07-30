@@ -1,7 +1,14 @@
 """Shared sky-spectrum utilities: running median + iterative line detection."""
 
 import numpy as np
+import pandas as pd
 from scipy.interpolate import UnivariateSpline
+import matplotlib
+matplotlib.use("Agg")              # 必須在 import pyplot 之前
+import matplotlib.pyplot as plt
+from scipy.stats import skew, kurtosis
+from sklearn.cluster import KMeans
+
 
 def running_median(spectrum, window=300):
     half = window // 2
@@ -54,3 +61,185 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_
         "Check the input spectrum and parameters.")
 
     return history[-1][0], history[-1][1], history[-1][2], history
+
+
+def semi_NMF(X, K, n_iter=300, eps=1e-9):
+    """Ding-Li-Jordan (2010) 原版 semi-NMF:k-means 初始化 + 乘法更新。
+        X: (n_samples, nz);回傳 W (n_samples,K), B (K,nz)。"""
+    X = np.nan_to_num(X)
+
+    # --- 初始化(論文 §2):對波長通道做 k-means ---
+    km = KMeans(n_clusters=K, n_init=4, random_state=0).fit(X.T)
+    G = np.zeros((X.shape[1], K), dtype=X.dtype)
+    G[np.arange(X.shape[1]), km.labels_] = 1     # 指示矩陣:通道 i 屬於群 k → G[i,k]=1
+    G += 0.2                                     # 論文原文:全體加 0.2,嚴格正出發
+
+    for it in range(n_iter):
+        # --- F-step:閉式解(跟你的 W-step 同一條公式) ---
+        W = X @ G @ np.linalg.pinv(G.T @ G)
+
+        # --- G-step:乘法更新(論文式 (8)) ---
+        XtF = X.T @ W                            # (nz, K)
+        FtF = W.T @ W                            # (K, K)
+        XtF_p = (np.abs(XtF) + XtF) / 2          # A⁺:正的部分
+        XtF_n = (np.abs(XtF) - XtF) / 2          # A⁻:負的部分(取成正值)
+        FtF_p = (np.abs(FtF) + FtF) / 2
+        FtF_n = (np.abs(FtF) - FtF) / 2
+        G *= np.sqrt((XtF_p + G @ FtF_n) / (XtF_n + G @ FtF_p + eps))
+
+        if (it + 1) % 100 == 0:
+            print(f"  MU iter {it+1}/{n_iter}", flush=True)
+
+    return W, G.T
+
+
+def fit_chi2_coefficients(residual, variance, basis):
+    """固定 sky basis，以 inverse-variance weighted least squares 求一條光譜的係數。
+
+    Parameters
+    ----------
+    residual : ndarray, shape (nz,)
+        一個 spaxel 中準備拿來擬合 sky lines 的殘差光譜。
+    variance : ndarray, shape (nz,)
+        同一個 spaxel 的 MUSE STAT；其數值是每個波長的 variance。
+    basis : ndarray, shape (K, nz)
+        只從 blank spaxels 學到的 K 條固定 sky-line basis。
+
+    Returns
+    -------
+    coefficients : ndarray, shape (K,)
+        讓 chi-square 最小的 K 個 basis 係數。若有效資料不足或 basis
+        不具完整 rank，回傳 K 個 NaN，表示無法可靠求解。
+    """
+    # 每一個條件的 shape 都是 (nz,)。只有 data、STAT 與全部 basis
+    # 都是有限值，且 STAT > 0 的波長，才能參與 1/STAT 加權擬合。
+    good = (
+        np.isfinite(residual)
+        & np.isfinite(variance)
+        & (variance > 0)
+        & np.all(np.isfinite(basis), axis=0)
+    )
+
+    n_coeff = basis.shape[0]  # K：需要求解的 sky-basis 係數數量
+
+    # 有效觀測數必須多於未知係數數量，否則沒有多餘資料約束這個 fit。
+    if good.sum() <= n_coeff:
+        return np.full(n_coeff, np.nan)
+
+    y = residual[good].astype(np.float64)          # (n_good,)
+    A = basis[:, good].T.astype(np.float64)        # (n_good, K)
+
+    # STAT = sigma^2；除以 sigma 等價於讓平方殘差帶有 1/STAT 權重。
+    sigma = np.sqrt(variance[good].astype(np.float64))
+    y_white = y / sigma                            # (n_good,)
+    A_white = A / sigma[:, None]                   # (n_good, K)
+
+    # 同時求解 K 個可正可負的係數，使 ||y_white - A_white @ w||^2 最小。
+    coefficients, _, rank, _ = np.linalg.lstsq(
+        A_white,
+        y_white,
+        rcond=None,
+    )
+
+    # rank < K 表示 basis 中沒有 K 個獨立方向，因此係數不是唯一解。
+    if rank < n_coeff:
+        return np.full(n_coeff, np.nan)
+
+    return coefficients
+
+
+def spectrum_stats(spec):
+    """把一條光譜濃縮成摘要統計。"""
+    spec = spec[np.isfinite(spec)]                     # 先丟掉 NaN
+    return {
+        "mean":          np.mean(spec),
+        "sigma":         np.std(spec),
+        "skewness":      skew(spec),
+        "kurtosis":      kurtosis(spec),
+        "rms_from_zero": np.sqrt(np.mean(spec**2)),    # sqrt(平方的平均) = 離 0 的均方根
+    }
+
+
+def plot_compare(wl, spec, spec_compare, out_path, label="ours", label_compare="nosky", ylim=(-20, 20), title=None):
+    """對照圖：左光譜（藍=spec、橘虛線=spec_compare），右兩組 stats。"""
+    fig, (ax, stat_ax) = plt.subplots(1, 2, figsize=(15.5, 4.5), gridspec_kw={"width_ratios": [5, 1]})
+    ax.axhline(0, color="0.5", lw=0.5)
+    ax.plot(wl, spec, lw=0.9, color="#1f77b4", label=label)
+    ax.plot(wl, spec_compare, lw=0.9, ls="--", alpha=0.7, color="#e8710a", label=label_compare)
+    ax.set_ylim(*ylim)
+    ax.set_xlabel("wavelength [A]"); ax.set_ylabel("flux")
+    if title:
+        ax.set_title(title)
+    ax.legend(fontsize=8)
+
+    stat_ax.axis("off")
+    def fmt(name, s):
+        st = spectrum_stats(s)
+        return f"[{name}]\n" + "\n".join(f"{k:<13} = {v:.4g}" for k, v in st.items())
+    stat_ax.text(0, 0.95, fmt(label, spec), color="#1f77b4", va="top", family="monospace", fontsize=8, transform=stat_ax.transAxes)
+    stat_ax.text(0, 0.45, fmt(label_compare, spec_compare), color="#e8710a", va="top", family="monospace", fontsize=8, transform=stat_ax.transAxes)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=145)
+    plt.close()
+
+
+def per_spaxel_continuum(
+    spectra,
+    line_mask,
+    window=300,
+    chunk=8000,
+):
+    """估計每個 spaxel 自己的平滑 continuum。
+
+    Parameters
+    ----------
+    spectra : ndarray, shape (nz, n_spaxels)
+        多個 spaxels 的光譜；每一欄是一個 spaxel。
+    line_mask : ndarray of bool, shape (nz,)
+        從 mean blank-sky spectrum 偵測出的全域 sky-line mask。
+        True 表示該 wavelength 不參與 running median。
+    window : int
+        running median 的 wavelength window，單位是 spectral pixels。
+        目前沿用既有值 300，不在這次 comparison 中改變。
+    chunk : int
+        每次同時處理的 spaxel 數量，只控制記憶體與速度，
+        不改變 continuum 的科學定義。
+
+    Returns
+    -------
+    continuum_own : ndarray, shape (nz, n_spaxels)
+        每個 spaxel 各自估計的平滑 continuum。
+    """
+    nz, n_spaxels = spectra.shape
+
+    continuum_own = np.empty(
+        (nz, n_spaxels),
+        dtype=np.float32,
+    )
+
+    for low in range(0, n_spaxels, chunk):
+        high = min(low + chunk, n_spaxels)
+
+        chunk_spectra = spectra[:, low:high].astype(
+            np.float64,
+            copy=True,
+        )
+
+        chunk_spectra[line_mask, :] = np.nan
+
+        chunk_continuum = (
+            pd.DataFrame(chunk_spectra)
+            .rolling(
+                window=window,
+                center=True,
+                min_periods=1,
+            )
+            .median()
+            .to_numpy()
+            .astype(np.float32)
+        )
+
+        continuum_own[:, low:high] = chunk_continuum
+
+    return continuum_own

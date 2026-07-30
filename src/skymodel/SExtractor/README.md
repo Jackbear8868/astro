@@ -53,7 +53,7 @@ sex det_ha.fits -c default.sex
 
 > **偵測影像 = whitelight（全譜 nanmean），教授指示**：whitelight 對所有連續譜源
 > （恆星、背景星系、暈的連續光）靈敏，遮罩才完備；Hα 窄帶只對發射線源靈敏、會漏源。
-> 批次腳本 `run_on_subcubes.py` 偵測 `det_white.fits`，輸出至 `results/skymodel/sextractor_sub/`。
+> 批次腳本 `run_sextractor.py` 偵測 `det_white.fits`，輸出至 `results/skymodel/sextractor_sub/`。
 
 任何參數想試不同值時，不要改 `default.sex`，用命令列覆寫（例：`-DETECT_THRESH 2.0`）；
 覆寫屬於實驗，正式產物一律出自原設定檔。
