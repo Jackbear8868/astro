@@ -72,7 +72,6 @@ def scan_object(flux, var, sky, templates, z_grid, lam_muse, n_min=0, s_fix=None
             theta = fit.x
             chi2  = 2.0 * fit.cost
 
-
             m_all    = theta[0] * np.nan_to_num(T, nan=0.0) + theta[1:] @ sky_free
             chi2_all = float((((y - m_all) / sig) ** 2)[base].sum())
 
@@ -139,8 +138,7 @@ def main():
     B      = np.load(STEP03 / f"sky_basis_{args.basis}.npy")
     sky    = np.vstack([C_sky, B])
 
-    templates = {f"{i:03d}": load_sdss_template(TPL_DIR / f"spDR2-{i:03d}.fit")
-                 for i in range(N_TPL)}
+    templates = {f"{i:03d}": load_sdss_template(TPL_DIR / f"spDR2-{i:03d}.fit") for i in range(N_TPL)}
     z_grid = np.arange(args.zmin, args.zmax + args.zstep / 2, args.zstep)
 
     if args.id == "all":
@@ -152,8 +150,8 @@ def main():
         targets = [t]
 
 
-    # 輸出檔名帶上模式,兩種 s 的處理方式並存不互相覆蓋。
-    tag = args.basis if args.s_fix is None else f"{args.basis}_sfix"
+    # 輸出檔名帶上 basis 與 s 的設定,不同設定的結果並存不互相覆蓋。
+    tag = f"{args.basis}_s_free" if args.s_fix is None else f"{args.basis}_s_{args.s_fix}"
 
     print(f"basis={args.basis}   {len(templates)} templates x {z_grid.size} z"
           f"   {wl_air.size} channels ({wl_air.min():.1f}-{wl_air.max():.1f} A air)")

@@ -46,11 +46,15 @@ def build_templates(best, lam_vac):
         out[int(best["id"][i])] = redshift_to_grid(spline, float(best["z"][i]), lam_vac)
     return out
 
-def fit_blank(D, sky):
-    """blank spaxel 的係數:未加權最小平方,s 受非負限制。
+def fit_blank(D, sky, var=None):
+    """blank spaxel 的係數,s 受非負限制。目標函數由 var 決定。
 
-    不加權時設計矩陣不隨 spaxel 改變,pinv 只算一次,乾淨的 spaxel
-    用一次矩陣乘法全部解出。有壞通道的 spaxel 設計矩陣不同,逐一解。
+    var 為 None:最小化未加權平方誤差。設計矩陣不隨 spaxel 改變,pinv
+    只算一次,乾淨的 spaxel 用一次矩陣乘法全部解出;只有帶壞通道的
+    spaxel 設計矩陣不同,需要逐一解。
+    var 給定:最小化 chi2。sigma 逐 spaxel 不同,設計矩陣跟著不同,
+    pinv 無法共用,每個 spaxel 都得逐一解 —— 慢,但統計上是正確的權重。
+
     邊界事後才處理:無約束解若已滿足 s >= 0,它就是有約束解,不必重算;
     這樣才能保住一次解完的優勢,實際只有極少數 spaxel 需要重解。
 
@@ -60,27 +64,49 @@ def fit_blank(D, sky):
         光譜,壞通道為 NaN。
     sky : ndarray, shape (K+1, nz)
         天空連續譜與天光線 basis。
+    var : ndarray or None, shape (nz, n)
+        給定則以 1/var 加權(最小化 chi2);None 則不加權。
 
     Returns
     -------
     ndarray, shape (K+1, n)
         每個 spaxel 的係數;無法求解者為 NaN。
     """
-    coef  = np.full((sky.shape[0], D.shape[1]), np.nan)
-    good  = np.isfinite(D)
-    clean = good.all(axis=0)
-    coef[:, clean] = np.linalg.pinv(sky.T) @ D[:, clean]
-    for j in np.flatnonzero(~clean):
+    K    = sky.shape[0]
+    coef = np.full((K, D.shape[1]), np.nan)
+    good = np.isfinite(D)
+    if var is not None:
+        good &= np.isfinite(var) & (var > 0)      # 加權時 var 也必須可用
+
+    if var is None:
+        clean = good.all(axis=0)
+        coef[:, clean] = np.linalg.pinv(sky.T) @ D[:, clean]
+        rest = np.flatnonzero(~clean)             # 只有壞通道的 spaxel 要逐一解
+    else:
+        rest = np.arange(D.shape[1])              # 加權:每一個都要逐一解
+
+    for j in rest:
         g = good[:, j]
-        if g.sum() <= sky.shape[0]:
+        if g.sum() <= K:
             continue
-        coef[:, j] = np.linalg.lstsq(sky[:, g].T, D[g, j], rcond=None)[0]
-    
-    lb = np.r_[0.0, np.full(sky.shape[0] - 1, -np.inf)]
-    ub = np.full(sky.shape[0], np.inf)
-    for j in np.flatnonzero(coef[0] < 0):
+        if var is None:
+            coef[:, j] = np.linalg.lstsq(sky[:, g].T, D[g, j], rcond=None)[0]
+        else:
+            sig = np.sqrt(var[g, j])
+            coef[:, j] = np.linalg.lstsq(sky[:, g].T / sig[:, None],
+                                         D[g, j] / sig, rcond=None)[0]
+
+    lb = np.r_[0.0, np.full(K - 1, -np.inf)]
+    ub = np.full(K, np.inf)
+    for j in np.flatnonzero(coef[0] < 0):         # NaN 比較為 False,不會誤抓
         g = good[:, j]
-        coef[:, j] = lsq_linear(sky[:, g].T, D[g, j], bounds=(lb, ub), method="bvls").x
+        if var is None:
+            coef[:, j] = lsq_linear(sky[:, g].T, D[g, j],
+                                    bounds=(lb, ub), method="bvls").x
+        else:
+            sig = np.sqrt(var[g, j])
+            coef[:, j] = lsq_linear(sky[:, g].T / sig[:, None], D[g, j] / sig,
+                                    bounds=(lb, ub), method="bvls").x
     return coef
 
 def fit_source(D, var, sky, T, s_fix=None):
@@ -145,8 +171,13 @@ def main():
     ap.add_argument("--basis", default="svd")
     ap.add_argument("--s-fix", type=float, default=None,
                     help="源區域的天空連續譜係數固定值;不給則 s 為自由參數。blank 區一律保持自由。")
+    ap.add_argument("--blank-chi2", action="store_true",
+                    help="blank 區改用 chi2 加權;不給則最小化未加權平方誤差。")
     args = ap.parse_args()
-    tag = args.basis if args.s_fix is None else f"{args.basis}_sfix"
+    tag = f"{args.basis}_s_free" if args.s_fix is None else f"{args.basis}_s_{args.s_fix}"
+    # blank 的加權方式只影響 step5 的輸出 —— step4 沒有 blank 區,
+    # 所以讀 step4 產出時用 tag,寫自己的輸出時用 tag_out。
+    tag_out = f"{tag}_bchi2" if args.blank_chi2 else tag
 
     STEP05.mkdir(parents=True, exist_ok=True)
 
@@ -182,7 +213,7 @@ def main():
     s_map     = np.full(ny * nx, np.nan, np.float32)
 
     blank = valid & (seg_f == 0)
-    c = fit_blank(D[:, blank], sky)
+    c = fit_blank(D[:, blank], sky, var=V[:, blank] if args.blank_chi2 else None)
     sky_model[:, blank] = sky.T @ c
     s_map[blank]        = c[0]
 
@@ -195,12 +226,13 @@ def main():
 
     sub = D - sky_model
     cube = lambda x: x.reshape(nz, ny, nx)
-    fits.writeto(STEP05 / f"sky_model_{tag}.fits",  cube(sky_model), hdr, overwrite=True)
-    fits.writeto(STEP05 / f"sky_subtracted_{tag}.fits", cube(sub),   hdr, overwrite=True)
-    np.save(STEP05 / f"A_map_{tag}.npy", A_map.reshape(ny, nx))
-    np.save(STEP05 / f"s_map_{tag}.npy", s_map.reshape(ny, nx))
+    fits.writeto(STEP05 / f"sky_model_{tag_out}.fits",  cube(sky_model), hdr, overwrite=True)
+    fits.writeto(STEP05 / f"sky_subtracted_{tag_out}.fits", cube(sub),   hdr, overwrite=True)
+    np.save(STEP05 / f"A_map_{tag_out}.npy", A_map.reshape(ny, nx))
+    np.save(STEP05 / f"s_map_{tag_out}.npy", s_map.reshape(ny, nx))
 
-    print(f"blank {int(blank.sum()):,}  source {int((valid & (seg_f > 0)).sum()):,}"
+    print(f"blank {int(blank.sum()):,} ({'chi2 加權' if args.blank_chi2 else '未加權'})"
+          f"  source {int((valid & (seg_f > 0)).sum()):,}"
           f"  放模板的區域 {len(templates)}")
     print(f"saved -> {STEP05}")
 
