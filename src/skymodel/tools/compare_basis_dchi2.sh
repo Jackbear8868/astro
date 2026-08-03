@@ -21,7 +21,7 @@ echo
 printf '%-14s %6s %10s %14s %9s %11s\n' basis tpl z dchi2 s red_chi2
 printf -- '------------------------------------------------------------------\n'
 
-for b in svd pca nmf rpca seminmf seminmf_mean; do
+for b in svd pca nmf rpca; do
     line=$(conda run -n astro python "$SCRIPT" \
                --id "$ID" --zmin 0.018 --zmax 0.023 --zstep 2.5e-5 --basis "$b" 2>/dev/null \
            | awk -v id="$ID" '$1 == id && NF >= 8 {print $3, $4, $7, $6, $8}')

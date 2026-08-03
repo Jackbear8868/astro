@@ -7,7 +7,6 @@ import matplotlib
 matplotlib.use("Agg")              # 必須在 import pyplot 之前
 import matplotlib.pyplot as plt
 from scipy.stats import skew, kurtosis
-from sklearn.cluster import KMeans
 
 
 def running_median(spectrum, window=300):
@@ -61,36 +60,6 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_
         "Check the input spectrum and parameters.")
 
     return history[-1][0], history[-1][1], history[-1][2], history
-
-
-def semi_NMF(X, K, n_iter=300, eps=1e-9):
-    """Ding-Li-Jordan (2010) 原版 semi-NMF:k-means 初始化 + 乘法更新。
-        X: (n_samples, nz);回傳 W (n_samples,K), B (K,nz)。"""
-    X = np.nan_to_num(X)
-
-    # --- 初始化(論文 §2):對波長通道做 k-means ---
-    km = KMeans(n_clusters=K, n_init=4, random_state=0).fit(X.T)
-    G = np.zeros((X.shape[1], K), dtype=X.dtype)
-    G[np.arange(X.shape[1]), km.labels_] = 1     # 指示矩陣:通道 i 屬於群 k → G[i,k]=1
-    G += 0.2                                     # 論文原文:全體加 0.2,嚴格正出發
-
-    for it in range(n_iter):
-        # --- F-step:閉式解(跟你的 W-step 同一條公式) ---
-        W = X @ G @ np.linalg.pinv(G.T @ G)
-
-        # --- G-step:乘法更新(論文式 (8)) ---
-        XtF = X.T @ W                            # (nz, K)
-        FtF = W.T @ W                            # (K, K)
-        XtF_p = (np.abs(XtF) + XtF) / 2          # A⁺:正的部分
-        XtF_n = (np.abs(XtF) - XtF) / 2          # A⁻:負的部分(取成正值)
-        FtF_p = (np.abs(FtF) + FtF) / 2
-        FtF_n = (np.abs(FtF) - FtF) / 2
-        G *= np.sqrt((XtF_p + G @ FtF_n) / (XtF_n + G @ FtF_p + eps))
-
-        if (it + 1) % 100 == 0:
-            print(f"  MU iter {it+1}/{n_iter}", flush=True)
-
-    return W, G.T
 
 
 def fit_chi2_coefficients(residual, variance, basis):

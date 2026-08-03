@@ -1,18 +1,17 @@
-"""ZAP 邏輯的參考版本:逐 spaxel 連續譜 + 三種 basis x 四種解法的完整對照。
+"""ZAP 邏輯的參考版本:逐 spaxel 連續譜 + 兩種 basis x 四種解法的完整對照。
 
 範圍:只在 blank region 上做,完全不碰 source 區。
 所有 blank spaxel 都納入(不做訓練/評測切分),與 test.py 的做法一致。
 
-完整的全因子設計:2 種連續譜 x 3 種 basis x 4 種解法 = 24 組。
+完整的全因子設計:2 種連續譜 x 2 種 basis x 4 種解法 = 16 組。
 沒有「特別待遇的基準線」—— 現行 test.py 的兩條路徑本身就是矩陣裡的兩格。
 
 --- 2 種連續譜處理 ---
   shared   所有 spaxel 共用一條 mean sky 連續譜   <- 現行 test.py 的做法
   own      每條 spaxel 自己的連續譜                <- ZAP 的做法
 
---- 3 種 basis ---
+--- 2 種 basis ---
   NMF      兩個矩陣都非負,所以「必須」把負值 clip 成 0  <- clip 會造成系統性正偏移
-  semiNMF  只有 basis 非負,資料可正可負,不需要 clip     <- test.py 裡自己寫的那個
   PCA      都可正可負,不需要 clip                        <- ZAP 真正用的
 
 --- 4 種解振幅的方式(都對每條 spaxel 各自解)---
@@ -23,11 +22,9 @@
 
 --- 現行 test.py 的兩條路徑在矩陣裡的位置 ---
   (shared, NMF,     unw+nn)    = test.py 的 NMF 路徑
-  (shared, semiNMF, unw+free)  = test.py 的 semi-NMF 路徑(semi-NMF 振幅本來就自由)
 
 這樣可以一次只看一個變因:
   shared vs own       -> 只看「逐 spaxel 連續譜」的效果
-  NMF vs semiNMF/PCA  -> 只看「clip / 分解方法」的效果
   unw+* vs chi2+*     -> 只看「chi^2 加權」的效果
   *+nn  vs *+free     -> 只看「非負」的效果
 
@@ -44,7 +41,6 @@ from astropy.io import fits
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.decomposition import NMF, PCA
-from sklearn.cluster import KMeans
 from scipy.optimize import nnls
 from scipy.stats import skew, kurtosis
 
@@ -58,41 +54,7 @@ K          = 10        # 天光線基底條數
 WINDOW     = 300       # 連續譜 running median 視窗 (px)
 THRESHOLDS = (1, 2)    # 線偵測門檻 (正, 負),教授指定
 MAX_ITER   = 20        # estimate_continuum 迭代上限(只作用在 mean sky 上)
-SEMI_ITER  = 300       # semi_NMF 乘法更新次數(= 該函式自己的預設值)
 CHUNK      = 8000      # 分塊大小,控制記憶體
-
-
-def semi_NMF(X, K, n_iter=300, eps=1e-9):
-    """Ding-Li-Jordan (2010) 原版 semi-NMF:k-means 初始化 + 乘法更新。
-        X: (n_samples, nz);回傳 W (n_samples,K), B (K,nz)。
-
-    ※ 逐字複製自 test.py,未做任何修改,以確保比較的是同一個實作。
-      (test.py 是腳本不能 import,所以這裡複製一份;之後可考慮移進 utils.py。)"""
-    X = np.nan_to_num(X)
-
-    # --- 初始化(論文 §2):對波長通道做 k-means ---
-    km = KMeans(n_clusters=K, n_init=4, random_state=0).fit(X.T)
-    G = np.zeros((X.shape[1], K), dtype=X.dtype)
-    G[np.arange(X.shape[1]), km.labels_] = 1     # 指示矩陣:通道 i 屬於群 k → G[i,k]=1
-    G += 0.2                                     # 論文原文:全體加 0.2,嚴格正出發
-
-    for it in range(n_iter):
-        # --- F-step:閉式解 ---
-        W = X @ G @ np.linalg.pinv(G.T @ G)
-
-        # --- G-step:乘法更新(論文式 (8)) ---
-        XtF = X.T @ W                            # (nz, K)
-        FtF = W.T @ W                            # (K, K)
-        XtF_p = (np.abs(XtF) + XtF) / 2          # A⁺:正的部分
-        XtF_n = (np.abs(XtF) - XtF) / 2          # A⁻:負的部分(取成正值)
-        FtF_p = (np.abs(FtF) + FtF) / 2
-        FtF_n = (np.abs(FtF) - FtF) / 2
-        G *= np.sqrt((XtF_p + G @ FtF_n) / (XtF_n + G @ FtF_p + eps))
-
-        if (it + 1) % 100 == 0:
-            print(f"    MU iter {it+1}/{n_iter}", flush=True)
-
-    return W, G.T
 
 
 # ---------------------------------------------------------------- 工具
@@ -280,14 +242,13 @@ print(f"per-spaxel continuum took {time.time()-t0:.1f}s", flush=True)
 r_shared = blank_spectra - continuum_shared[:, None]  # 共用連續譜 -> 給 A 用
 
 
-# ---------------------------------------------------------------- 3. 全因子:2 連續譜 x 3 basis
+# ---------------------------------------------------------------- 3. 全因子:2 連續譜 x 2 basis
 # 沒有「特別待遇的基準線」—— 現行 test.py 的兩條路徑本來就是這個矩陣裡的兩格:
 #   (shared, NMF,     unw+nn)    = test.py 的 NMF 路徑
-#   (shared, semiNMF, unw+free)  = test.py 的 semi-NMF 路徑(semi-NMF 的振幅本來就是自由的)
 CONTINUA = {"shared": r_shared,   # 所有 spaxel 共用一條 mean sky 連續譜(現行做法)
             "own":    r_own}      # 每條 spaxel 自己的連續譜(ZAP 做法)
 
-BASIS_KINDS = ["NMF", "semiNMF", "PCA"]
+BASIS_KINDS = ["NMF", "PCA"]
 
 
 def learn_basis(kind, R):
@@ -295,8 +256,6 @@ def learn_basis(kind, R):
     if kind == "NMF":       # 兩個矩陣都非負 -> 必須 clip 掉負值
         return NMF(n_components=K, init="nndsvda", max_iter=300).fit(
             np.nan_to_num(np.clip(R.T, 0, None))).components_
-    if kind == "semiNMF":   # 只有 basis 非負 -> 資料可正可負,免 clip
-        return semi_NMF(R.T, K=K, n_iter=SEMI_ITER)[1]
     if kind == "PCA":       # 都可正可負(ZAP 用的)-> 免 clip
         p = PCA(n_components=K - 1).fit(np.nan_to_num(R.T))
         return np.vstack([p.mean_[None, :], p.components_])   # 併入 mean,湊成 K 條才公平
@@ -311,14 +270,13 @@ for cname, R in CONTINUA.items():
         print(f"basis [{cname:<6} {kind:<8}] took {time.time()-t0:.1f}s", flush=True)
 
 
-# ---------------------------------------------------------------- 4. x 四種解法 = 24 組
+# ---------------------------------------------------------------- 4. x 四種解法 = 16 組
 SOLVERS = [("unw+nn",    False, True),
            ("chi2+nn",   True,  True),
            ("unw+free",  False, False),
            ("chi2+free", True,  False)]
 
-CURRENT = {("shared", "NMF", "unw+nn"):       "  <- test.py 的 NMF 路徑",
-           ("shared", "semiNMF", "unw+free"): "  <- test.py 的 semi-NMF 路徑"}
+CURRENT = {("shared", "NMF", "unw+nn"): "  <- test.py 的 NMF 路徑"}
 
 results, notes = {}, {}
 for (cname, kind), B in bases.items():
@@ -419,7 +377,7 @@ plt.savefig(OUT / "reduced_chi2_hist.png", dpi=150); plt.close()
 for cname in CONTINUA:
     fig, axes = plt.subplots(K, 1, figsize=(13, 1.5 * K), sharex=True)
     for k in range(K):
-        for kind, color in zip(BASIS_KINDS, ["#1f77b4", "#2ca02c", "#d62728"]):
+        for kind, color in zip(BASIS_KINDS, ["#1f77b4", "#d62728"]):
             axes[k].plot(wl, bases[(cname, kind)][k], lw=0.6, color=color,
                          label=kind if k == 0 else None)
         axes[k].axhline(0, color="0.6", lw=0.4)

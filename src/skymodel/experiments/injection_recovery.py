@@ -40,7 +40,8 @@ STEP05  = ROOT / "results/skymodel/step05"
 TPL_DIR = ROOT / "data/sdss_templates"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
-BASIS    = "svd"
+BASIS    = "svd"          # step03 的 basis 檔名
+TAG      = "svd_s_free"   # step05 的輸出 tag = {basis}_s_free 或 {basis}_s_{值}
 TEMPLATE = "027"          # Haro 11 選中的那一條
 Z        = 0.0202
 FWHM     = 4.06           # 實測 PSF,單位 px
@@ -131,7 +132,7 @@ def main():
     wl_vac = air_to_vacuum(np.load(STEP03 / "wavelength.npy"))
     sky    = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
                         np.load(STEP03 / f"sky_basis_{BASIS}.npy")])
-    s_map  = np.load(STEP05 / f"s_map_{BASIS}.npy")
+    s_map  = np.load(STEP05 / f"s_map_{TAG}.npy")
 
     with fits.open(CUBE, memmap=True) as hdul:
         D0 = np.asarray(hdul["DATA"].data, np.float32)

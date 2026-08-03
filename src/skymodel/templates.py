@@ -20,10 +20,56 @@ def load_sdss_template(path):
     good = np.isfinite(spectrum)
     return make_interp_spline(lam_rest[good], spectrum[good], k=3)
 
+def _eigen_spline(lam_rest, F):
+    """把 (n_comp, n_wave) 的本徵譜做成「批次」spline。
+
+    兩端的常數是填充,不是資料 —— 檔案把最後一個真值一直重複到邊界。
+    建 spline 時包含進去,模板在那裡會變成一條假的水平線,擬合會很樂意
+    用它去吸收殘差。所有成分同時停止變化的地方就是真實資料的邊界。
+
+    y 傳入 (n_wave, n_comp),求值一次就回傳全部成分。spline 的成本主要
+    在「二分搜尋找區間」,那一步和成分數無關,所以拿 4 條和拿 1 條一樣快
+    (實測 135.8 us vs 143.7 us),比逐條求值快 3.4 倍。
+
+    Returns
+    -------
+    BSpline
+        求值後的形狀是 (n_out, n_comp);覆蓋不到的位置為 NaN。
+    """
+    d = np.abs(np.diff(F, axis=1)).max(axis=0)
+    i = np.flatnonzero(d > 0)
+    g = slice(i[0], i[-1] + 2)                  # +2:diff 少一個,且要含右端點
+    return make_interp_spline(lam_rest[g], F[:, g].T, k=3)
+
+
+def load_eigen_galaxy(path):
+    """Bolton et al. 2012 的星系本徵譜(FITS bintable)→ 批次 spline。
+
+    真實資料 1183 – 9840 A(靜止),4 條成分。chi2 那一欄裝的是未初始化的
+    記憶體(1e-310 到 1e307),不要碰。同目錄的 .spec 是同一份資料的文字版,
+    只保留 4 位小數 —— 高階成分會跨過零點,相對誤差最大到 100%,用 FITS。
+    """
+    d = fits.open(path)[1].data
+    lam = np.asarray(d["wave"], np.float64)
+    F   = np.vstack([np.asarray(d[f"flux{i}"], np.float64) for i in range(1, 5)])
+    return _eigen_spline(lam, F)
+
+
+def load_eigen_qso(path):
+    """QSO 本徵譜(文字檔:第 1 欄波長,其餘為成分)→ 批次 spline。
+
+    真實資料 605 – 8356 A(靜止),4 條成分。檔名寫 linear,但波長格點其實
+    和星系檔、SDSS 模板一樣是等比的(dlog10 = 1e-4)。
+    """
+    q = np.loadtxt(path)
+    return _eigen_spline(q[:, 0], q[:, 1:].T)
+
+
 def redshift_to_grid(spline, z, lam_muse):
     """把模板紅移到 z、重採樣到 lam_muse。
 
-    模板覆蓋不到的通道回傳 NaN。
+    模板覆蓋不到的通道回傳 NaN。單一模板回傳 (nz,);本徵譜的批次 spline
+    回傳 (nz, n_comp)。
     """
     return spline(lam_muse / (1.0 + z), extrapolate=False)
     

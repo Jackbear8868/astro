@@ -24,7 +24,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"
 STEP05  = ROOT / "results/skymodel/step05"
 FIGURES = ROOT / "results/skymodel/figures"
-BASIS  = "svd"
+TAG    = "svd_s_free"     # step05 的輸出 tag = {basis}_s_free 或 {basis}_s_{值}
 SEED   = 0
 N_HOLE = 60          # 挖幾個洞
 R_HOLE = 5           # 洞的半徑,對應約 80 px 的源
@@ -46,7 +46,7 @@ def design(x, y, order):
 
 
 def main():
-    s     = np.load(STEP05 / f"s_map_{BASIS}.npy").astype(np.float64)
+    s     = np.load(STEP05 / f"s_map_{TAG}.npy").astype(np.float64)
     seg   = fits.getdata(STEP01 / "seg.fits")
     white = fits.getdata(STEP01 / "whitelight.fits")
     blank = (white != 0) & (seg == 0) & np.isfinite(s)

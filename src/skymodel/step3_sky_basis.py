@@ -8,16 +8,17 @@ from astropy.io import fits
 from sklearn.decomposition import PCA, NMF, TruncatedSVD
 from sklearn.utils.extmath import randomized_svd
 
-from utils import estimate_continuum, semi_NMF
+from utils import estimate_continuum
 import argparse
 import time
 
-SEMI_ITER = 10
-K          = 10          # basis 條數 = 天空模型的自由度
+SEED       = 0           # 所有分解共用的亂數種子,確保 basis 可重現
+K          = 25          # basis 條數 = 天空模型的自由度;K=10 時天光線的
+                         # 模型誤差是 ESO 的 1.7 倍,K=25 降到 0.74 倍
 WINDOW     = 300         # 連續譜 running median 視窗 (px)
 THRESHOLDS = (1, 2)      # 線偵測門檻 (正, 負),教授指定
 MAX_ITER   = 5           # estimate_continuum 迭代上限
-METHODS    = ["pca", "svd", "nmf", "seminmf", "seminmf_mean", "rpca"]
+METHODS    = ["pca", "svd", "nmf", "rpca"]
 
 def soft_threshold(X, tau):
     """逐元素軟閾值:sign(x) · max(|x| − tau, 0)。"""
@@ -92,7 +93,7 @@ def learn_sky_basis(residual, K=10, method="pca"):
     ----------
     residual : ndarray, shape (nz, n_blank)
     K : int
-    method : {"pca", "svd", "nmf", "seminmf", "seminmf_mean", "rpca"}
+    method : {"pca", "svd", "nmf", "rpca"}
 
     Returns
     -------
@@ -104,27 +105,22 @@ def learn_sky_basis(residual, K=10, method="pca"):
     """
     X = np.nan_to_num(residual.T).astype(np.float32)     # (n_blank, nz)
 
+    # random_state=SEED 是必要的,不是保險:三者的預設演算法都是隨機化的
+    # (TruncatedSVD/PCA 走 randomized SVD,NMF 的 cd solver 也有隨機成分),
+    # 不指定的話每次跑出來的 basis 都不同,下游結果無法追溯。
     if method == "pca":
-        p = PCA(n_components=K - 1).fit(X)
+        p = PCA(n_components=K - 1, random_state=SEED).fit(X)
         return np.vstack([p.mean_[None, :], p.components_]), None
 
     if method == "svd":
-        return TruncatedSVD(n_components=K).fit(X).components_, None
+        return TruncatedSVD(n_components=K, random_state=SEED).fit(X).components_, None
 
     if method == "nmf":
-        return NMF(n_components=K, init="nndsvda", max_iter=300).fit(
-            np.clip(X, 0, None)).components_, None
-
-    if method == "seminmf":
-        return semi_NMF(X, K=K, n_iter=SEMI_ITER)[1], None
-
-    if method == "seminmf_mean":
-        mean = X.mean(axis=0)
-        B = semi_NMF(X - mean, K=K - 1, n_iter=SEMI_ITER)[1]
-        return np.vstack([mean[None, :], B]), None
+        return NMF(n_components=K, init="nndsvda", max_iter=300,
+                   random_state=SEED).fit(np.clip(X, 0, None)).components_, None
 
     if method == "rpca":
-        return robust_pca(X, K=K)            # (basis, S)
+        return robust_pca(X, K=K, seed=SEED)            # (basis, S)
 
     raise ValueError(f"unknown method: {method}")
 
@@ -151,6 +147,7 @@ def main():
     blank_mask = valid_mask & ~((seg > 0) & valid_mask)
     print(f"blank spaxels: {int(blank_mask.sum())}")
 
+
     with fits.open(WSKY, memmap=True) as hdul:
         hdr = hdul["DATA"].header
         nz  = hdr["NAXIS3"]
@@ -161,10 +158,22 @@ def main():
             d = np.asarray(hdul["DATA"].data[j:j+200], np.float32)
             blank[j:j+200] = d[:, blank_mask]
 
+    # 只留光譜完整的 spaxel。大氣色散讓有效視野逐波長平移,視野邊緣因此有一圈
+    # spaxel 只在部分波長被覆蓋(有的只剩 46/3801 個通道)。learn_sky_basis 會把
+    # 缺失通道 nan_to_num 成 0 —— 那是捏造的資料,SVD 會認真去擬合它。實測在
+    # 樣本數相同的條件下,混入 1.9% 這種 spaxel 會讓天光線的模型誤差惡化 28%。
+    # 完整的 spaxel 有 8 萬多個,樣本綽綽有餘,所以直接要求 100% 覆蓋。
+    complete = np.isfinite(blank).all(axis=0)
+    print(f"完整光譜 {int(complete.sum()):,} / {blank.shape[1]:,} "
+          f"({100*complete.mean():.1f}%),其餘為視野邊緣的部分覆蓋 spaxel,不採用")
+    blank = blank[:, complete]
+
     mean_sky = np.nanmean(blank, axis=1)
-    C_sky, sigma, line_mask, _ = estimate_continuum(
+    C_sky, sigma, line_mask, history = estimate_continuum(
         mean_sky, thresholds=THRESHOLDS, window=WINDOW, max_iter=MAX_ITER)
-    print(f"line_mask: {100*line_mask.mean():.1f}% of channels")
+    print(f"line_mask: {100*line_mask.mean():.1f}% of channels  "
+          f"({len(history)} iterations: "
+          f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
 
     np.save(STEP03 / "wavelength.npy",    wl)
     np.save(STEP03 / "mean_sky.npy",      mean_sky)
@@ -172,20 +181,27 @@ def main():
     np.save(STEP03 / "sky_sigma.npy",     sigma)
     np.save(STEP03 / "line_mask.npy",     line_mask)
 
+    # 每一輪的中間結果。遮罩不是逐輪累加的 —— 每輪都用原始 mean_sky 重算,
+    # 上一輪只透過「把線挖成 NaN 再估連續譜」間接影響門檻,所以少數邊緣
+    # 通道會被放回來。要判讀遮罩為何一路成長,必須連續譜與 sigma 一起看。
+    np.save(STEP03 / "iter_continuum.npy", np.array([h[0] for h in history]))
+    np.save(STEP03 / "iter_sigma.npy",     np.array([h[1] for h in history]))
+    np.save(STEP03 / "iter_line_mask.npy", np.array([h[2] for h in history]))
+
     residual = blank - C_sky[:, None]
 
     for method in args.methods:
         t0 = time.time()
         basis, S = learn_sky_basis(residual, K=args.K, method=method)
-        np.save(STEP03 / f"sky_basis_{method}.npy", basis)
+        np.save(STEP03 / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
         if S is not None:
             energy = (S ** 2).sum(axis=1)                       # (n_blank,) 每個 spaxel
             top    = np.argsort(energy)[::-1][:50]
-            np.save(STEP03 / f"{method}_sparse_energy.npy",  energy)
-            np.save(STEP03 / f"{method}_sparse_top.npy",     S[top])
-            np.save(STEP03 / f"{method}_sparse_meanabs.npy", np.abs(S).mean(axis=0))
+            np.save(STEP03 / f"{method}_sparse_energy_K{args.K}.npy",  energy)
+            np.save(STEP03 / f"{method}_sparse_top_K{args.K}.npy",     S[top])
+            np.save(STEP03 / f"{method}_sparse_meanabs_K{args.K}.npy", np.abs(S).mean(axis=0))
             print(f"              S: 非零 {100*np.mean(S != 0):.2f}%,"
                   f" 已存前 50 個最強 spaxel 的稀疏成分")
 

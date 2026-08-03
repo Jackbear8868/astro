@@ -27,7 +27,7 @@ STEP02  = ROOT / "results/skymodel/step02"
 STEP03  = ROOT / "results/skymodel/step03"
 TPL_DIR = ROOT / "data/sdss_templates"
 OBJ_ID = 1
-BASIS  = "seminmf"
+BASIS  = "svd"
 
 # 檔名與快取都帶 basis 與判準,不同組合並存不互相覆蓋。
 FIGURES = ROOT / "results/skymodel/figures"
