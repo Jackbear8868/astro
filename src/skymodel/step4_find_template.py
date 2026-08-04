@@ -113,6 +113,28 @@ def scan_object(flux, var, sky, jobs, lam_muse, n_min=0, s_fix=None):
 
     return sorted(results, key=lambda r: r["chi2_all"])
     
+def _save_scan(path, results):
+    """把一段掃描的完整結果寫成 npz。
+
+    第 1 段(33 條離散模板)與第 2 段(本徵譜)共用同一組欄位,這樣兩段的診斷
+    程式只要寫一套讀檔邏輯。A 固定 N_SRC 欄:單一模板只有第 0 欄有值,
+    本徵譜四欄都有。
+    """
+    A = np.full((len(results), N_SRC), np.nan)
+    for i, x in enumerate(results):
+        A[i, :len(x["A"])] = x["A"]
+    np.savez(path, A=A,
+             group=np.array([x["group"] for x in results]),
+             template=np.array([x["template"] for x in results]),
+             z=np.array([x["z"] for x in results]),
+             s=np.array([x["s"] for x in results]),
+             chi2=np.array([x["chi2"] for x in results]),
+             chi2_all=np.array([x["chi2_all"] for x in results]),
+             red_chi2=np.array([x["red_chi2"] for x in results]),
+             n_good=np.array([x["n_good"] for x in results]),
+             src_min=np.array([x["src_min"] for x in results]))
+
+
 def _scan_one(t):
     """在 worker process 裡掃描單一源。
 
@@ -133,19 +155,7 @@ def _scan_one(t):
         return t, None
 
     if S["save_scan"]:
-        A = np.full((len(results), N_SRC), np.nan)
-        for i, x in enumerate(results):
-            A[i, :len(x["A"])] = x["A"]
-        np.savez(STEP04 / f"scan_id{t}_{S['basis']}.npz", A=A,
-                group=np.array([x["group"] for x in results]),
-                template=np.array([x["template"] for x in results]),
-                z=np.array([x["z"] for x in results]),
-                s=np.array([x["s"] for x in results]),
-                chi2=np.array([x["chi2"] for x in results]),
-                chi2_all=np.array([x["chi2_all"] for x in results]),
-                red_chi2=np.array([x["red_chi2"] for x in results]),
-                n_good=np.array([x["n_good"] for x in results]),
-                src_min=np.array([x["src_min"] for x in results]))
+        _save_scan(STEP04 / f"scan_id{t}_{S['basis']}.npz", results)
 
     # 每一組各自的最佳解(results 已依 chi2_all 排序,第一次遇到該組就是該組最好的)。
     # 最佳組與次佳組的差要留下來:實測 M3/M5 與三條碳星會被誤判成星系(5/23),
@@ -170,6 +180,8 @@ def _scan_one(t):
                           S["wl_vac"], s_fix=S["s_fix"])
         if ref:
             best = ref[0]
+            if S["save_scan"]:
+                _save_scan(STEP04 / f"scan2_id{t}_{S['basis']}.npz", ref)
 
     A = np.full(N_SRC, np.nan)          # 固定 4 欄,恆星只有第 0 欄有值
     A[:len(best["A"])] = best["A"]
@@ -273,11 +285,25 @@ def main():
                   f"{row['n_good']:>8}{row['chi2_all']:>16,.0f}"
                   f"{row['dchi2']:>16,.0f}", flush=True)
 
+    KEYS = ("id", "nspax", "group", "template", "z", "A", "s",
+            "chi2", "chi2_all", "red_chi2", "n_good", "dchi2", "src_min")
+    new = {k: np.array([x[k] for x in summary]) for k in KEYS}
+
+    # 併入既有結果,不要覆寫。tag 已經編碼了 basis/K/s,所以同一個檔裡的列
+    # 都出自相同的設定;重跑單一個 ID 應該只更新那一列,不該把其他 36 個源
+    # 的結果毀掉(--id 14 之前就是這樣把 --id all 的產出洗掉的)。
     out = STEP04 / f"best_{tag}.npz"
-    np.savez(out, **{key: np.array([x[key] for x in summary])
-                    for key in ("id", "nspax", "group", "template", "z", "A", "s",
-                                "chi2", "chi2_all", "red_chi2", "n_good", "dchi2",
-                                "src_min")})
+    if out.exists():
+        old = np.load(out, allow_pickle=False)
+        if set(old.files) == set(KEYS):
+            keep = ~np.isin(old["id"], new["id"])
+            if keep.any():
+                new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
+                print(f"\n併入既有的 {int(keep.sum())} 個源(本次更新 {len(summary)} 個)")
+        else:
+            print(f"\n注意:既有的 {out.name} 欄位不同(舊格式),直接覆寫")
+    o = np.argsort(new["id"])
+    np.savez(out, **{k: v[o] for k, v in new.items()})
 
     # 多成分基底沒有施加非負約束(見 scan_object),所以重建的源光譜原則上可能
     # 跑到負的。那不是物理的解,要看得見。

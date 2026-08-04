@@ -1,0 +1,18 @@
+Fit blank
+1st different matrix decomposition
+2nd chisqr only on line region when fitting blank region(1st iteration)
+3rd smooth sky (coefficient between adjacent region)
+
+
+Fit source
+1st Find a region is star and non star
+2nd 
+star: 
+galaxy: principal of galaxy
+
+Fit source
+1. use line mask
+2. do not use line specturm
+3. 4800-6000 for star and non star
+4. 4800-7000 for galaxt to find redshift
+5. reduce the galaxy and update the basis and continuum (maybe with smoothing)

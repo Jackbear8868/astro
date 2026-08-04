@@ -18,6 +18,10 @@ K          = 25          # basis 條數 = 天空模型的自由度;K=10 時天�
 WINDOW     = 300         # 連續譜 running median 視窗 (px)
 THRESHOLDS = (1, 2)      # 線偵測門檻 (正, 負),教授指定
 MAX_ITER   = 5           # estimate_continuum 迭代上限
+CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻。不是調出來的:跨 spaxel 的
+                         # 真實變化到 10 sigma 就結束(3->10 sigma 元素數掉 800 倍),
+                         # 而最輕微的壞值在 197 sigma —— 10~100 之間結果完全相同,
+                         # 30 離兩端各有 3 倍與 6.6 倍餘裕
 METHODS    = ["pca", "svd", "nmf", "rpca"]
 
 def soft_threshold(X, tau):
@@ -168,7 +172,23 @@ def main():
           f"({100*complete.mean():.1f}%),其餘為視野邊緣的部分覆蓋 spaxel,不採用")
     blank = blank[:, complete]
 
-    mean_sky = np.nanmean(blank, axis=1)
+    # 逐通道 sigma-clip 之後再平均。平均數的崩潰點是 0% —— 通道 151 (4788 A) 有
+    # 12 個 spaxel 的值是 −1,750 到 −548,029,把該通道的平均從 28.6 拉到 1.8,於是
+    # estimate_continuum 把它判成一條「負的線」遮掉,是看不見的資料損失。
+    #
+    # 剪的方向是「同一通道、跨 spaxel」,不是沿波長:一條天光線在每個 spaxel 都亮,
+    # 它的亮度就在該通道的中位數裡,不會被剪掉(實測門檻 >=10 sigma 時,線通道與
+    # 線外通道的偏移都是 0.0000%)。
+    #
+    # 中心與散布用穩健的量,但平均那一步仍用平均數:中位數在亮線通道會系統性偏低
+    # (跨 spaxel 的分布右偏,5577 A 低了 2.47),那是偏差,樣本再多也不會消失。
+    p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
+    sg   = np.maximum((p84 - p16) / 2, 1e-6)
+    keep = np.abs(blank - med[:, None]) <= CLIP_SIGMA * sg[:, None]
+    # dtype=float64:blank 是 float32,7 萬多項相加會累積出 ~0.2 的誤差
+    mean_sky = (blank * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1)
+    print(f"mean_sky: sigma-clip {CLIP_SIGMA} sigma 剔除 {int((~keep).sum()):,} / "
+          f"{keep.size:,} 個元素 ({100*(~keep).mean():.6f}%)")
     C_sky, sigma, line_mask, history = estimate_continuum(
         mean_sky, thresholds=THRESHOLDS, window=WINDOW, max_iter=MAX_ITER)
     print(f"line_mask: {100*line_mask.mean():.1f}% of channels  "
@@ -188,7 +208,18 @@ def main():
     np.save(STEP03 / "iter_sigma.npy",     np.array([h[1] for h in history]))
     np.save(STEP03 / "iter_line_mask.npy", np.array([h[2] for h in history]))
 
-    residual = blank - C_sky[:, None]
+    # 同一個 keep 直接沿用。R = blank − C_sky 只差一個逐通道常數,而常數會同時
+    # 平移 x 和它的中位數,所以 |x − med| / sg 完全不變 —— 兩處是同一個不等式。
+    #
+    # 被剔除的位置填該通道的典型殘差 med − C_sky。實測填 0 完全等價(rms 6.8757
+    # vs 6.8759),因為 167 個元素在 2.95 億裡影響不到 SVD;但在天光線通道上
+    # 「0」等於宣稱那裡沒有線,med 是比較誠實的說法。
+    #
+    # 效果(K=30, svd):那條「90% 能量壓在通道 151」的 basis 消失(n90 1 → 2),
+    # blank 殘差 rms −0.56%,而真正的收穫在源這一側 —— 模板 027 對 ID 14 的
+    # chi2_all(z) 動態範圍從 8,308 倍降到 13 倍。原本 z>0.368 以上整段被一條
+    # 壞掉的 basis 假性禁止(chi2 跳到 10^8),那不是物理,是 12 個壞 spaxel。
+    residual = np.where(keep, blank - C_sky[:, None], (med - C_sky)[:, None])
 
     for method in args.methods:
         t0 = time.time()

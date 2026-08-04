@@ -39,7 +39,8 @@ STEP03  = ROOT / "results/skymodel/step03"
 TPL_DIR = ROOT / "data/sdss_templates"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
-SEED     = 0
+SEED       = 0
+CLIP_SIGMA = 30         # 與 step3_sky_basis.CLIP_SIGMA 相同
 TEMPLATE = "027"        # step4 對 Haro 11 選中的那一條
 Z        = 0.0205
 FWHM     = 4.06         # 實測 PSF,px
@@ -113,7 +114,26 @@ def main():
     comp = np.zeros(ny * nx, bool)
     b = blank2d.ravel()
     comp[np.flatnonzero(b)] = np.isfinite(flat[:, b]).all(axis=0)
-    resid = (flat[:, comp] - C_sky[:, None]).T.astype(np.float32)   # 學 basis 用
+
+    # 殘差要和改過的 step3 一致 —— 逐通道剔除離群值,被剔除的位置填該通道的
+    # 典型殘差。不做的話這裡學到的 basis 會有一條被 12 個壞 spaxel 佔走,
+    # 等於拿舊的 basis 去測新的設定。逐段處理是為了控制峰值記憶體
+    # (整個 cube 的 DATA 與 STAT 已經在記憶體裡)。
+    blank = flat[:, comp]
+    med = np.empty(nz); sg = np.empty(nz)
+    for j in range(0, nz, 200):
+        p16, m, p84 = np.percentile(blank[j:j+200], [16, 50, 84], axis=1)
+        med[j:j+200], sg[j:j+200] = m, np.maximum((p84 - p16) / 2, 1e-6)
+    resid = np.empty((int(comp.sum()), nz), np.float32)
+    nbad = 0
+    for j in range(0, nz, 200):
+        x = blank[j:j+200]
+        k = np.abs(x - med[j:j+200, None]) <= CLIP_SIGMA * sg[j:j+200, None]
+        nbad += int((~k).sum())
+        resid[:, j:j+200] = np.where(
+            k, x - C_sky[j:j+200, None],
+            (med[j:j+200] - C_sky[j:j+200])[:, None]).T
+    print(f"學 basis 的殘差:clip {CLIP_SIGMA} sigma 剔除 {nbad:,} 個元素")
 
     T  = redshift_to_grid(load_sdss_template(TPL_DIR / f"spDR2-{TEMPLATE}.fit"), Z, wl)
     Tz = np.nan_to_num(T, nan=0.0)
@@ -132,6 +152,7 @@ def main():
     print(f"模板 {TEMPLATE} @ z={Z}   孔徑 {stamp.size} px   {len(sites)} 個位置")
     print(f"s 固定 {S_FIX}   模板覆蓋 {int(cover.sum()):,}/{nz} 通道\n")
 
+    summary = []
     for K in args.K:
         B = TruncatedSVD(n_components=K, random_state=SEED).fit(resid).components_
         design = np.vstack([Tz, B]).astype(np.float64)          # s 固定 → 不放 C_sky
@@ -169,6 +190,22 @@ def main():
                       f"{np.median(r):>10.3f}{r.std():>10.3f}"
                       f"{100*np.mean(a == 0):>13.1f}%")
         print()
+
+        # 偵測對比 = 微弱源量到的訊號 / 什麼都沒注入時量到的假訊號散布。
+        # 這是唯一同時看兩側的判準:分子大代表源留得住,分母小代表不會無中生有。
+        z = AM[AT == 0]
+        w = (AT > 100) & (AT <= 300)
+        summary.append((K, z.std(), np.median(z), np.median(AM[w] / AT[w]),
+                        np.median(AM[w]) / z.std() if z.std() > 0 else np.inf))
+
+    print("=" * 72)
+    print(f"{'K':>5}{'假訊號散布':>13}{'假訊號中位':>13}{'100–300 回收率':>16}"
+          f"{'偵測對比':>11}")
+    print("-" * 72)
+    for K, s, m, r, c in summary:
+        print(f"{K:>5}{s:>13.2f}{m:>13.2f}{r:>16.3f}{c:>11.1f}")
+    print("\n偵測對比 = 微弱源(A_true 100–300)量到的 A 中位 / 假訊號底線的散布。")
+    print("分子大 = 源留得住,分母小 = 不會把雜訊當成源 —— 兩側必須一起看。")
 
 if __name__ == "__main__":
     main()

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
+from scipy.optimize import lsq_linear
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -42,19 +43,26 @@ FIXED_SPAXELS = [
 def main():
     ap = argparse.ArgumentParser(description="blank spaxel:我們 vs ESO nosky")
     ap.add_argument("--tag", default="svd_K25_s_1.0", help="step05 的輸出 tag")
+    ap.add_argument("--from-basis", nargs=2, metavar=("BASIS", "K"), default=None,
+                    help="不讀 step05 的 cube,直接從 basis 算 blank 的殘差。"
+                         "blank 區的擬合完全不用模板,所以結果和跑完 step4+step5 "
+                         "再讀 cube 完全相同,但幾秒鐘就好(不必等 22 分鐘)。"
+                         "例:--from-basis svd 35")
     ap.add_argument("--n", type=int, default=10,
                     help=f"畫幾個 spaxel(取 FIXED_SPAXELS 的前 n 個,最多 {len(FIXED_SPAXELS)})")
     ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
                     help="固定 y 範圍;不給則用對稱的 99.5 百分位")
-    ap.add_argument("--width", type=float, default=40.0,
-                    help="圖寬(吋)。3801 個通道畫在 16 吋寬、140 dpi 的圖上是每像素"
-                         "2.4 個通道 —— 通道解析不出來,兩條線糊成一片。40 吋 = 5600 px,"
-                         "約 1.5 像素一個通道才看得見。")
-    ap.add_argument("--height", type=float, default=6.0, help="每個子圖的高(吋)")
-    ap.add_argument("--panels", type=int, default=1,
-                    help="把全波段切成幾段,每段一個子圖(預設 1 = 不切,靠加寬解決)")
+    ap.add_argument("--width", type=float, default=22.0, help="圖寬(吋)")
+    ap.add_argument("--height", type=float, default=3.2, help="每個子圖的高(吋)")
+    ap.add_argument("--panels", type=int, default=5,
+                    help="把全波段切成幾段,每段一個子圖。3801 個通道畫在一張 16 吋寬、"
+                         "140 dpi 的圖上是每像素 2.4 個通道 —— 通道解析不出來,兩條線"
+                         "糊成一片。切 5 段、每段 22 吋 = 每個通道 4 px 才看得清楚。")
     ap.add_argument("--out-suffix", default="",
                     help="輸出資料夾加後綴,讓不同版面的圖並存不互相覆蓋")
+    ap.add_argument("--with-wsky", action="store_true",
+                    help="把原始的 wsky(未扣天空)疊在同一個面板。它的連續譜約 24,"
+                         "正好落在 y 範圍內;天光線衝到 1600 以上的部分被 y 範圍切掉。")
     ap.add_argument("--zoom", type=float, nargs=2, metavar=("L1", "L2"), default=None,
                     help="只畫這一段波長(覆蓋 --panels,用來細看某幾條天光線)")
     ap.add_argument("--smooth", type=int, default=0,
@@ -66,12 +74,41 @@ def main():
     white = fits.getdata(STEP01 / "whitelight.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
 
-    S = fits.getdata(STEP05 / f"sky_subtracted_{args.tag}.fits")
+    if args.from_basis:
+        b, k = args.from_basis[0], int(args.from_basis[1])
+        # 檔名不帶 s 的設定 —— blank 區的 s 一律自由(fit_blank 沒有 s_fix 這個
+        # 參數),--s-fix/--s-free 只作用在 source 區。標上 s_1.0 會誤導。
+        args.tag = f"{b}_K{k}_blank"
+        sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
+                         np.load(STEP03 / f"sky_basis_{b}_K{k}.npy")])
+        with fits.open(WSKY, memmap=True) as h:
+            S = np.asarray(h["DATA"].data, np.float32).copy()
+        nzz, nyy, nxx = S.shape
+        Sf = S.reshape(nzz, -1)
+        want = [yy * nxx + xx for yy, xx in FIXED_SPAXELS]
+        for jj in want:                       # 只算要畫的那幾個 spaxel
+            d = Sf[:, jj].astype(np.float64)
+            g = np.isfinite(d)
+            if g.sum() <= sky.shape[0]:
+                continue
+            c = np.linalg.lstsq(sky[:, g].T, d[g], rcond=None)[0]
+            if c[0] < 0:                      # s 不能是負的,和 fit_blank 一致
+                lb = np.r_[0.0, np.full(sky.shape[0] - 1, -np.inf)]
+                c = lsq_linear(sky[:, g].T, d[g],
+                               bounds=(lb, np.full(sky.shape[0], np.inf)),
+                               method="bvls").x
+            Sf[:, jj] = d - sky.T @ c
+        S = Sf.reshape(nzz, nyy, nxx)
+    else:
+        S = fits.getdata(STEP05 / f"sky_subtracted_{args.tag}.fits")
     E = fits.getdata(ESO)
     with fits.open(WSKY, memmap=True) as h:
         V = np.asarray(h["STAT"].data, np.float32)
+        W = np.asarray(h["DATA"].data, np.float32) if args.with_wsky else None
     nz, ny, nx = S.shape
     S, E, V = S.reshape(nz, -1), E.reshape(nz, -1), V.reshape(nz, -1)
+    if W is not None:
+        W = W.reshape(nz, -1)
 
     blank = ((white != 0) & (seg == 0)).ravel()
     ok = blank & np.isfinite(S).all(0) & np.isfinite(E).all(0) & np.isfinite(V).all(0)
@@ -90,6 +127,7 @@ def main():
     for i, j in enumerate(pick, 1):
         y, x = divmod(int(j), nx)
         s, e, v = S[:, j].astype(np.float64), E[:, j].astype(np.float64), V[:, j].astype(np.float64)
+        w = W[:, j].astype(np.float64) if W is not None else None
         rs, re_ = np.sqrt(np.mean(s ** 2)), np.sqrt(np.mean(e ** 2))
         nf = np.sqrt(np.mean(v))
         print(f"{i:>3}{f'({y},{x})':>12}{rs:>11.3f}{re_:>11.3f}{nf:>11.3f}"
@@ -111,6 +149,13 @@ def main():
         for k, a in enumerate(axes):
             m = (wl >= edges[k]) & (wl <= edges[k + 1])
             a.axhline(0, color="0.55", lw=0.6, zorder=1)
+            # wsky 疊在同一個面板:它的連續譜約 24,正好落在 y 範圍內,可以直接
+            # 看出「我們把 24 這條線壓到 0」。天光線衝到 1600 以上的部分自然被
+            # y 範圍切掉 —— 那是刻意的,畫出來只會把殘差壓成一條線。
+            if w is not None:
+                a.plot(wl[m], w[m], lw=0.7, color="#7f7f7f", alpha=0.9, zorder=1.5,
+                       label=f"wsky (before)   median {np.median(w):.1f}   "
+                             f"peak {w.max():.0f}")
             # mean / sigma / rms 三個一起列:rms² = mean² + sigma²,分開看才知道
             # 優勢來自零點(mean)還是抖動(sigma)。blank 區真值是 0,三個都該接近 0。
             a.plot(wl[m], e[m], lw=0.7, color="#d62728", alpha=0.75, zorder=2,
@@ -120,9 +165,9 @@ def main():
                    label=f"ours                 mean {s.mean():+.3f}   "
                          f"sigma {s.std():.3f}   rms {rs:.3f}")
             if args.smooth > 1:
-                w = np.ones(args.smooth) / args.smooth
+                kern = np.ones(args.smooth) / args.smooth   # 不可叫 w,那是 wsky
                 for arr, col in ((e, "#d62728"), (s, "#1f77b4")):
-                    a.plot(wl[m], np.convolve(arr, w, "same")[m], lw=1.6, color=col,
+                    a.plot(wl[m], np.convolve(arr, kern, "same")[m], lw=1.6, color=col,
                            alpha=0.95, zorder=4)
             a.set_xlim(edges[k], edges[k + 1])
             a.set_ylim(*lim)
