@@ -15,6 +15,7 @@ results/
 *.fit
 *.npz
 *.tar.gz
+*.zip
 
 # Raw MUSE cubes and exposures (139 GB) — never belongs in git
 data/

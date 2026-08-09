@@ -87,6 +87,39 @@ def robust_pca(X, K=10, n_iter=100, tol=1e-7, rho=1.5, rank_buffer=5, seed=0):
     basis = randomized_svd(L, n_components=K, random_state=seed)[2]
     return basis, S
 
+def zap_k(var, nsigma=5):
+    """ZAP 的成分數判準。照抄 libs/zap/zap/zap.py:926 的 `_compute_deriv`。
+
+    回傳 (K, deriv, mn1, std1),後三個是畫圖用的中間量。
+
+    想法:把特徵值曲線(降冪)的一階差分看成「每多一條成分,還能再解釋掉多少
+    變異數」。曲線一開始陡降 —— 那些成分描述的是天光線殘差,是我們要的;
+    降幅逐漸趨於**線性**(二階導數歸零)之後,再往下就只是在移除雜訊與天體
+    訊號。所以要找的是「降幅第一次回到平坦區水準」的那個位置。
+
+        ① 只看前 25% 的成分 —— 後面早就進入平坦區,納進來只會稀釋統計
+        ② deriv = diff(var[:npix])
+        ③ 平坦區的基準取 deriv 的後 85%(跳過最前面 15% 的陡降段)
+               mn1 = mean(deriv[ind:])   std1 = nsigma * std(deriv[ind:])
+        ④ K = 第一個滿足 deriv >= mn1 - std1 的位置
+           也就是降幅第一次不再顯著陡於平坦區
+
+    nsigma=5 是 ZAP 的預設值,不是我們調的。門檻越鬆(nsigma 越大)K 越小。
+
+    注意 ZAP 是**逐波長區段**各自做這件事(它把光譜切成數段,每段自己選 K),
+    我們是全波段一組,所以兩邊的數字不能互相引用。
+    """
+    npix  = int(0.25 * var.shape[0])
+    deriv = np.diff(var[:npix])
+    ind   = int(0.15 * deriv.size)
+    mn1   = deriv[ind:].mean()
+    std1  = deriv[ind:].std() * nsigma
+    # 第一個元素補 False:deriv[i] 描述的是「從第 i 條到第 i+1 條」的降幅,
+    # 所以位置要往後挪一格才對得上成分編號。
+    hit   = np.flatnonzero(np.append([False], deriv >= (mn1 - std1)))
+    return (int(hit[0]) if hit.size else -1), deriv, mn1, std1
+
+
 def learn_sky_basis(residual, K=10, method="pca"):
     """從 blank spaxels 的殘差學出 K 條天光線 basis。
 
@@ -140,15 +173,35 @@ def main():
     ap.add_argument("--methods", nargs="+", default=["pca", "svd", "nmf"],
                     choices=METHODS, help="要跑哪些分解方法")
     ap.add_argument("-K", type=int, default=K, help="basis 條數")
+    ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
+                    help="只用這個 x 範圍(像素,含 LO 不含 HI)的 blank spaxel 學天空。"
+                         "動機:Haro 11 在 x 約 278,它的延展暈會滲進附近的 blank 樣本;"
+                         "限制在遠離它的一條裡,樣本雖然變少但更乾淨。"
+                         "代價是天空的空間變化只由視場的一部分決定")
+    ap.add_argument("--ylim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
+                    help="同 --xlim,但限制 y")
+    ap.add_argument("--out", default=None,
+                    help="輸出目錄。省略時寫回 step03(會覆蓋);做實驗時務必指定")
     args = ap.parse_args()
 
-    STEP03.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(args.out) if args.out else STEP03
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     white = fits.getdata(STEP01 / "whitelight.fits")
     seg   = fits.getdata(STEP01 / "seg.fits")
 
     valid_mask = white != 0
     blank_mask = valid_mask & ~((seg > 0) & valid_mask)
+    n_all = int(blank_mask.sum())
+    if args.xlim or args.ylim:
+        yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
+        if args.xlim:
+            blank_mask &= (xx >= args.xlim[0]) & (xx < args.xlim[1])
+        if args.ylim:
+            blank_mask &= (yy >= args.ylim[0]) & (yy < args.ylim[1])
+        print(f"空間限制 x={args.xlim} y={args.ylim}:"
+              f"blank {n_all:,} -> {int(blank_mask.sum()):,}"
+              f" ({100 * blank_mask.sum() / max(n_all, 1):.1f}%)")
     print(f"blank spaxels: {int(blank_mask.sum())}")
 
 
@@ -195,18 +248,18 @@ def main():
           f"({len(history)} iterations: "
           f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
 
-    np.save(STEP03 / "wavelength.npy",    wl)
-    np.save(STEP03 / "mean_sky.npy",      mean_sky)
-    np.save(STEP03 / "sky_continuum.npy", C_sky)
-    np.save(STEP03 / "sky_sigma.npy",     sigma)
-    np.save(STEP03 / "line_mask.npy",     line_mask)
+    np.save(out_dir / "wavelength.npy",    wl)
+    np.save(out_dir / "mean_sky.npy",      mean_sky)
+    np.save(out_dir / "sky_continuum.npy", C_sky)
+    np.save(out_dir / "sky_sigma.npy",     sigma)
+    np.save(out_dir / "line_mask.npy",     line_mask)
 
     # 每一輪的中間結果。遮罩不是逐輪累加的 —— 每輪都用原始 mean_sky 重算,
     # 上一輪只透過「把線挖成 NaN 再估連續譜」間接影響門檻,所以少數邊緣
     # 通道會被放回來。要判讀遮罩為何一路成長,必須連續譜與 sigma 一起看。
-    np.save(STEP03 / "iter_continuum.npy", np.array([h[0] for h in history]))
-    np.save(STEP03 / "iter_sigma.npy",     np.array([h[1] for h in history]))
-    np.save(STEP03 / "iter_line_mask.npy", np.array([h[2] for h in history]))
+    np.save(out_dir / "iter_continuum.npy", np.array([h[0] for h in history]))
+    np.save(out_dir / "iter_sigma.npy",     np.array([h[1] for h in history]))
+    np.save(out_dir / "iter_line_mask.npy", np.array([h[2] for h in history]))
 
     # 同一個 keep 直接沿用。R = blank − C_sky 只差一個逐通道常數,而常數會同時
     # 平移 x 和它的中位數,所以 |x − med| / sg 完全不變 —— 兩處是同一個不等式。
@@ -224,15 +277,15 @@ def main():
     for method in args.methods:
         t0 = time.time()
         basis, S = learn_sky_basis(residual, K=args.K, method=method)
-        np.save(STEP03 / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
+        np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
         if S is not None:
             energy = (S ** 2).sum(axis=1)                       # (n_blank,) 每個 spaxel
             top    = np.argsort(energy)[::-1][:50]
-            np.save(STEP03 / f"{method}_sparse_energy_K{args.K}.npy",  energy)
-            np.save(STEP03 / f"{method}_sparse_top_K{args.K}.npy",     S[top])
-            np.save(STEP03 / f"{method}_sparse_meanabs_K{args.K}.npy", np.abs(S).mean(axis=0))
+            np.save(out_dir / f"{method}_sparse_energy_K{args.K}.npy",  energy)
+            np.save(out_dir / f"{method}_sparse_top_K{args.K}.npy",     S[top])
+            np.save(out_dir / f"{method}_sparse_meanabs_K{args.K}.npy", np.abs(S).mean(axis=0))
             print(f"              S: 非零 {100*np.mean(S != 0):.2f}%,"
                   f" 已存前 50 個最強 spaxel 的稀疏成分")
 

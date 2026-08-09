@@ -49,42 +49,52 @@ STEP04  = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 
 GROUP_COLOR = {"star": "#2ca02c", "galaxy": "#1f77b4", "qso": "#d62728"}
+PLAIN_COLOR = "#ff7b7b"     # 不分組時的統一顏色。淡紅在灰階底圖上夠明顯,
+                            # 而且明確不屬於灰階,不會被誤讀成影像本身。
 PIXSCALE = 0.20                       # arcsec/px,來自 header CD1_1
 
 
-def id_map(seg, white, rows, out):
-    """白光底圖 + 依組別上色的源 + 編號。
+def id_map(seg, white, rows, out, by_group=False):
+    """白光底圖 + 源的範圍 + 編號。
 
     底圖用 asinh 拉伸:白光的動態範圍跨好幾個量級(Haro 11 本體 vs 暗源),
     線性顯示會讓除了本體以外的東西全黑。asinh 在亮處是對數、暗處是線性,
     是影像顯示的標準做法。
+
+    by_group=False(預設)只畫「範圍 + 編號」,不上組別顏色。分類是 step4 的
+    「結論」,把結論畫進定位圖裡,看圖的人會不自覺地把它當成既定事實 ——
+    而我們已經量到 15/37 個源的分類裕度小於 100。定位圖的職責只是回答
+    「哪個點是哪個源」。
     """
     fig, ax = plt.subplots(figsize=(13, 12.5))
     v = np.nanpercentile(white[np.isfinite(white) & (white != 0)], 99.5)
     ax.imshow(np.arcsinh(white / (0.02 * v)), origin="lower", cmap="gray",
               vmin=0, vmax=np.arcsinh(1 / 0.02))
 
-    # 每個源填一層半透明的組別顏色,再描一圈輪廓 —— 填色看得出範圍,
+    # 每個源填一層半透明的顏色,再描一圈輪廓 —— 填色看得出範圍,
     # 輪廓在小源上仍然看得見。
     for r in rows:
         m = seg == r["id"]
+        c = GROUP_COLOR[r["group"]] if by_group else PLAIN_COLOR
         rgba = np.zeros(seg.shape + (4,))
-        rgba[m] = list(matplotlib.colors.to_rgb(GROUP_COLOR[r["group"]])) + [0.45]
+        rgba[m] = list(matplotlib.colors.to_rgb(c)) + [0.45]
         ax.imshow(rgba, origin="lower")
-        ax.contour(m, levels=[0.5], colors=GROUP_COLOR[r["group"]], linewidths=0.9)
+        ax.contour(m, levels=[0.5], colors=c, linewidths=0.9)
         ax.text(r["x"], r["y"], str(r["id"]), color="white", fontsize=11,
                 fontweight="bold", ha="center", va="center",
                 path_effects=[pe.withStroke(linewidth=2.6, foreground="black")])
 
-    ax.set_title("source ID map — whitelight (asinh) + SExtractor segmentation\n"
-                 "colour = the group step4 assigned", fontsize=13)
+    ax.set_title("source ID map" + ("\nwhitelight (asinh) + SExtractor "
+                 "segmentation, colour = the group step4 assigned"
+                 if by_group else ""), fontsize=14)
     ax.set_xlabel("x [px]")
     ax.set_ylabel("y [px]")
-    # 圖例放在座標軸外面 —— 右上角有 ID 32/36/11 三個源,壓在上面看不見。
-    ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
-                       for g, c in GROUP_COLOR.items()],
-              loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,
-              frameon=False)
+    if by_group:
+        # 圖例放在座標軸外面 —— 右上角有 ID 32/36/11 三個源,壓在上面看不見。
+        ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
+                           for g, c in GROUP_COLOR.items()],
+                  loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,
+                  frameon=False)
     fig.tight_layout()
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -193,9 +203,11 @@ def main():
                      f"{r['chi2_all']:.6g},{r['red_chi2']:.4f},{r['n_good']},"
                      f"{r['dchi2']:.6g},{r['src_min']:.4f},{r['okpc']:.1f}\n")
 
-    png = out / "source_id_map.png"
-    id_map(seg, white, rows, png)
-    print(f"\nsaved -> {txt}\n         {csv}\n         {png}")
+    png  = out / "source_id_map.png"          # 依組別上色
+    png2 = out / "source_id_map_plain.png"    # 只有範圍與編號
+    id_map(seg, white, rows, png,  by_group=True)
+    id_map(seg, white, rows, png2, by_group=False)
+    print(f"\nsaved -> {txt}\n         {csv}\n         {png}\n         {png2}")
 
 
 if __name__ == "__main__":

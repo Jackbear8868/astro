@@ -62,6 +62,26 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_
     return history[-1][0], history[-1][1], history[-1][2], history
 
 
+def load_line_masks(path, cumulative=True):
+    """讀 step3 存下的逐輪天光線遮罩,預設回傳累加版。
+
+    存檔存的是「每一輪實際用的遮罩」—— 上面 estimate_continuum 的迴圈裡,
+    每一輪的 new_mask 是 detect_lines 從頭算出來的,整個取代舊的,不是累加
+    (`line_mask = new_mask`)。收斂條件 `np.array_equal(new_mask, line_mask)`
+    也依賴這一點:累加的遮罩只會單調成長,永遠不可能相等。所以存檔必須維持
+    非累加,那是過程的忠實紀錄。
+
+    但拿來當「遮得越來越多」的序列比較時,非累加版有例外 —— 連續譜重擬之後
+    個別通道會掉回門檻以下(實測 iter2→3 掉 5 個、iter3→4 掉 2 個),於是
+    第 i 輪並不嚴格包含第 i−1 輪。cumulative=True 用 logical_or 前綴累積補上
+    這個性質,讓通道數單調遞減。
+
+    第 1 輪兩者相同,所以只讀 [0] 的呼叫端不受影響。
+    """
+    m = np.load(path)
+    return np.logical_or.accumulate(m, axis=0) if cumulative else m
+
+
 def fit_chi2_coefficients(residual, variance, basis):
     """固定 sky basis，以 inverse-variance weighted least squares 求一條光譜的係數。
 

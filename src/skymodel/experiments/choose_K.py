@@ -19,6 +19,7 @@
     conda run -n astro python src/skymodel/experiments/choose_K.py
 """
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +29,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# 判準的實作在 pipeline 裡(step3_sky_basis.zap_k),這裡只是呼叫它。
+# 各留一份的話,改了 pipeline 而診斷程式還在用舊版,兩邊會靜靜地不一致。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from step3_sky_basis import zap_k
+
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"
 STEP03  = ROOT / "results/skymodel/step03"
@@ -35,18 +41,6 @@ FIGURES = ROOT / "results/skymodel/figures"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 SEED = 0
-
-
-def zap_criterion(var, nsigma=5):
-    """ZAP 的判準,原封不動照抄 zap.py 的 _compute_deriv + optimize。"""
-    npix = int(0.25 * var.shape[0])
-    deriv = np.diff(var[:npix])
-    ind = int(0.15 * deriv.size)
-    mn1 = deriv[ind:].mean()
-    std1 = deriv[ind:].std() * nsigma
-    cross = np.append([False], deriv >= (mn1 - std1))
-    hit = np.where(cross)[0]
-    return (int(hit[0]) if hit.size else -1), deriv, mn1, std1
 
 
 def main():
@@ -81,7 +75,7 @@ def main():
     ev = np.linalg.eigvalsh(cov)[::-1]                       # 由大到小
     ev = np.maximum(ev, 0)
 
-    k_zap, deriv, mn1, std1 = zap_criterion(ev)
+    k_zap, deriv, mn1, std1 = zap_k(ev)
     print(f"判準 1  ZAP 的差分法(全部 {ev.size} 條成分)")
     print(f"        平坦區基準 mean {mn1:.4g}   5 sigma {std1:.4g}")
     print(f"        → K = {k_zap}\n")

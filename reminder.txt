@@ -13,6 +13,10 @@ galaxy: principal of galaxy
 Fit source
 1. use line mask
 2. do not use line specturm
-3. 4800-6000 for star and non star
-4. 4800-7000 for galaxt to find redshift
+3. 4600-6000 for star and non star
+4. 4600-7000 for galaxt to find redshift
 5. reduce the galaxy and update the basis and continuum (maybe with smoothing)
+
+the doughnut
+the residual
+sky basis

@@ -8,9 +8,9 @@
 需要 step3 存下的 iter_*.npy。若還沒有,重跑一次 step3 即可:
     python src/skymodel/step3_sky_basis.py --methods svd
 
-輸出 results/skymodel/figures/linemask_iters/ 底下:
-    iter1.png …    每一輪:mean_sky + 連續譜 + 上下門檻 + 遮罩
-    summary.png    遮罩比例、連續譜中位數、sigma 中位數隨迭代的變化
+輸出 results/skymodel/figures/linemask_iters/ 底下,每一輪兩張:
+    iter{N}.png          被判成線的通道(橘)
+    iter{N}_nonline.png  沒被判成線的通道(綠)—— 連續譜就是在這些通道上擬的
 
 用法:
     python src/skymodel/experiments/plot_linemask_iters.py
@@ -79,11 +79,17 @@ def main():
         fig.savefig(out / name, dpi=args.dpi, bbox_inches="tight")
         plt.close(fig)
 
-    for i in range(n_iter):
+    def panel(i, mask, colour, label, title, name):
+        """一輪、一種遮罩(線 or 非線)畫一張。
+
+        兩張圖的差別只有陰影蓋在哪一半的通道上 —— 底下的 mean_sky、連續譜、
+        門檻完全相同。分開畫是因為 35–80% 的覆蓋率下,兩者疊在一起會互相遮蔽,
+        看不出哪一半才是重點。
+        """
         fig, a = plt.subplots(figsize=(15, 4.5))
         # 陰影畫在資料座標之外的 y 軸座標上,不必配合 ylim
-        a.fill_between(wl, 0, 1, where=M[i], transform=a.get_xaxis_transform(),
-                       color="orange", alpha=0.15, lw=0, label="masked as line")
+        a.fill_between(wl, 0, 1, where=mask, transform=a.get_xaxis_transform(),
+                       color=colour, alpha=0.18, lw=0, label=label)
         a.plot(wl, ms,   lw=0.4, color="0.35", label="mean sky")
         a.plot(wl, C[i], lw=0.9, color="#1f77b4", label="continuum")
         a.plot(wl, C[i] + THRESHOLDS[0] * S[i], lw=0.7, color="#d62728",
@@ -94,36 +100,36 @@ def main():
         a.set_xlabel("observed wavelength (air) [$\\AA$]")
         a.set_ylabel("flux")
         a.legend(fontsize=8, loc="upper right", ncol=2)
-        a.set_title(f"iteration {i+1}/{n_iter}   masked {M[i].sum()}/{M[i].size} "
-                    f"({100*M[i].mean():.1f}%)   "
-                    f"continuum med {np.median(C[i]):.2f}   "
-                    f"sigma med {np.median(S[i]):.3f}")
-        save(fig, f"iter{i+1}.png")
+        a.set_title(title, fontsize=13)
+        save(fig, name)
 
-    # ---------------- 收斂總覽 ----------------
-    it = np.arange(1, n_iter + 1)
-    fig, ax = plt.subplots(1, 3, figsize=(15, 4))
+    def panel_nonline(i, name, title):
+        """只有 mean_sky 和「沒被遮掉的通道」—— 不畫連續譜與門檻。
 
-    ax[0].plot(it, 100 * M.mean(axis=1), "o-", color="#ff7f0e")
-    ax[0].axhline(100 * (1 - 0.16), ls="--", lw=0.8, color="0.5",
-                  label="min_unmasked_frac floor (84%)")
-    ax[0].set_ylabel("masked channels [%]"); ax[0].legend(fontsize=7)
+        線遮罩那張要看的是「門檻怎麼把線切出來」,所以連續譜與 ±sigma 是主角。
+        這張要看的是「剩下哪些通道」,多畫三條線只會蓋住那些點。直接把未遮罩的
+        通道畫成紅點疊在 mean_sky 上,點的疏密就是可用資料的分布。
+        """
+        keep = ~M[i]
+        fig, a = plt.subplots(figsize=(15, 4.5))
+        a.plot(wl, ms, lw=0.4, color="0.55", label="mean sky")
+        a.plot(wl[keep], ms[keep], ".", ms=1.2, color="#ff7b7b", lw=0,
+               label="not masked")
+        a.set_ylim(*args.ylim)
+        a.set_xlabel("observed wavelength (air) [$\\AA$]")
+        a.set_ylabel("flux")
+        a.legend(fontsize=9, loc="upper right", markerscale=7)
+        a.set_title(title, fontsize=13)
+        save(fig, name)
 
-    ax[1].plot(it, np.median(C, axis=1), "o-", color="#1f77b4")
-    ax[1].set_ylabel("continuum median")
+    for i in range(n_iter):
+        n_line = int(M[i].sum())
+        panel(i, M[i], "orange", "masked as line",
+              f"iteration {i+1}: {n_line} lines", f"iter{i+1}.png")
+        panel_nonline(i, f"iter{i+1}_nonline.png",
+                      f"iteration {i+1}: {M[i].size - n_line} non-lines")
 
-    ax[2].plot(it, np.median(S, axis=1), "o-", color="#d62728")
-    ax[2].set_ylabel("sigma median"); ax[2].set_yscale("log")
-
-    for a in ax:
-        a.set_xlabel("iteration"); a.set_xticks(it); a.grid(alpha=0.25)
-    # 標題只用 ASCII —— DejaVu Sans 沒有中日韓字形,中文會變成方框
-    fig.suptitle("masking lines -> continuum drops & sigma shrinks "
-                 "-> thresholds move down -> mask grows", fontsize=10)
-    fig.tight_layout()
-    save(fig, "summary.png")
-
-    print(f"\nsaved {n_iter + 1} figures -> {out}")
+    print(f"\nsaved {2 * n_iter} figures -> {out}")
 
 
 if __name__ == "__main__":

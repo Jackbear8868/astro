@@ -3,13 +3,17 @@ import numpy as np
 from astropy.io import fits
 
 
-def sum_spectra_by_id(cube_path, seg, ids, chunk=200):
+def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
     """把屬於同一個 segmentation ID 的所有 spaxel 光譜加總。
 
     Parameters
     ----------
     cube_path : path-like
-        MUSE cube;需要 DATA(光譜)與 STAT(variance)兩個 extension。
+        MUSE cube;需要 DATA extension。
+    var_path : path-like or None
+        STAT(variance)從哪個檔案讀,預設和 cube_path 同一個。扣過天空的 cube
+        只有 DATA,沒有 STAT —— 扣掉一個確定性的天空模型不改變像素的變異數,
+        所以直接沿用原始 cube 的 STAT 是對的。
     seg : ndarray, shape (ny, nx)
         segmentation map,每格存所屬源的 ID,0 表示不屬於任何源。
         呼叫前必須先把視場外歸 0,否則視場外的像素會被一起加進來。
@@ -45,7 +49,8 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200):
     seg_flat = seg.ravel() # 2D -> 1D
     members  = [np.flatnonzero(seg_flat == i) for i in ids]
 
-    with fits.open(cube_path, memmap=True) as hdul:
+    with fits.open(cube_path, memmap=True) as hdul, \
+         fits.open(var_path or cube_path, memmap=True) as vdul:
         nz   = hdul["DATA"].header["NAXIS3"]
         flux = np.zeros((len(ids), nz))
         var  = np.zeros((len(ids), nz))
@@ -53,7 +58,7 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200):
 
         for j in range(0, nz, chunk):
             d = np.asarray(hdul["DATA"].data[j:j+chunk], np.float64).reshape(-1, seg_flat.size)
-            v = np.asarray(hdul["STAT"].data[j:j+chunk], np.float64).reshape(-1, seg_flat.size)
+            v = np.asarray(vdul["STAT"].data[j:j+chunk], np.float64).reshape(-1, seg_flat.size)
 
             ok = np.isfinite(d) & np.isfinite(v) & (v > 0)
             d  = np.where(ok, d, 0.0)
@@ -72,7 +77,19 @@ STEP02 = ROOT / "results/skymodel/step02"
 WSKY   = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 def main():
-    STEP02.mkdir(parents=True, exist_ok=True)
+    import argparse
+    ap = argparse.ArgumentParser(description="按 segmentation ID 加總源光譜")
+    ap.add_argument("--cube", default=str(WSKY),
+                    help="要萃取的 cube(取它的 DATA)。預設是含天光的原始 cube;"
+                         "分類要用扣過天空的版本,例如 "
+                         "results/skymodel/step05/sky_subtracted_svd_K30_s_1.0.fits")
+    ap.add_argument("--var-cube", default=None,
+                    help="STAT 從哪裡讀,預設同 --cube。我們自己扣天空的 cube 只有 "
+                         "DATA,要用這個指到原始 cube")
+    ap.add_argument("--out", default=str(STEP02), help="輸出目錄")
+    args = ap.parse_args()
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
 
     white = fits.getdata(STEP01 / "whitelight.fits")
     seg   = fits.getdata(STEP01 / "seg.fits")
@@ -84,7 +101,10 @@ def main():
     ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
     print(f"{len(ids)} sources, {counts.sum()} source spaxels")
 
-    flux, var, nspax = sum_spectra_by_id(WSKY, seg_valid, ids)
+    print(f"DATA <- {Path(args.cube).name}   STAT <- "
+          f"{Path(args.var_cube or args.cube).name}")
+    flux, var, nspax = sum_spectra_by_id(args.cube, seg_valid, ids,
+                                         var_path=args.var_cube)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         snr = np.nanmedian(flux / np.sqrt(var), axis=1)
@@ -94,11 +114,11 @@ def main():
     for k in order[:20]:
         print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
 
-    np.save(STEP02 / "object_ids.npy",   ids)
-    np.save(STEP02 / "object_flux.npy",  flux)
-    np.save(STEP02 / "object_var.npy",   var)
-    np.save(STEP02 / "object_nspax.npy", nspax)
-    print("saved ->", STEP02)
+    np.save(out / "object_ids.npy",   ids)
+    np.save(out / "object_flux.npy",  flux)
+    np.save(out / "object_var.npy",   var)
+    np.save(out / "object_nspax.npy", nspax)
+    print("saved ->", out)
 
 
 if __name__ == "__main__":
