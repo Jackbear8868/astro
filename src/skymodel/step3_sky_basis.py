@@ -188,7 +188,7 @@ def main():
                          "訓練")
     ap.add_argument("--seg", default=None,
                     help="用哪一份 segmentation 界定 blank。預設是 SExtractor 的 "
-                         "step01/seg.fits;指到 step1b 產生的 seg_dil{r}.fits 就是"
+                         "step01/seg.fits;指到 experiments/dilate_seg.py 產生的 seg_dil{r}.fits 就是"
                          "「把源外圍漏出來的光排除在天空樣本外」的版本")
     ap.add_argument("--work", default=str(WORK_DEFAULT),
                     help="這顆 cube 的工作區(底下有 step01/step02/...)。"

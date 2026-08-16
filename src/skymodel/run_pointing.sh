@@ -59,27 +59,25 @@ for N in "$@"; do
   echo "================================================================"
   T0=$(date +%s)
 
-  echo "--- [1/7] step0 白光（從 nosky）"
+  echo "--- [1/6] step0 白光（從 nosky）"
   $RUN src/skymodel/step0_whitelight_image.py "$NOSKY" --out "$W/step01" >/dev/null
 
-  echo "--- [2/7] SExtractor (DETECT_THRESH 2.0)"
+  echo "--- [2/6] SExtractor (DETECT_THRESH 2.0)"
   (cd src/skymodel/SExtractor && $SEX "$W/step01/whitelight.fits" -c default.sex \
       -DETECT_THRESH 2.0 -CATALOG_NAME "$W/step01/test.cat" \
       -CHECKIMAGE_TYPE SEGMENTATION -CHECKIMAGE_NAME "$W/step01/seg.fits") 2>&1 \
       | grep -E "sextracted" | tail -1
 
-  echo "--- [3/7] step2 源光譜（wsky）"
-  $RUN src/skymodel/step2_object_spectra.py --work "$W" --cube "$WSKY" >/dev/null
-  echo "--- [4/7] step2 源光譜（nosky,分類用）"
+  echo "--- [3/6] step2 源光譜（nosky,分類用）"
   $RUN src/skymodel/step2_object_spectra.py --work "$W" --cube "$NOSKY" \
        --out "$W/step02_eso" >/dev/null
 
-  echo "--- [5/7] step3 sky basis（學天光的範圍：${REGION[*]}）"
+  echo "--- [4/6] step3 sky basis（學天光的範圍：${REGION[*]}）"
   $RUN src/skymodel/step3_sky_basis.py --methods svd -K 30 \
        --work "$W" --cube "$WSKY" "${REGION[@]}" 2>&1 \
        | grep -E "空間限制|exclude-box|blank spaxels|svd "
 
-  echo "--- [6/7] step4b 模板擬合 + step4c 分類定案"
+  echo "--- [5/6] step4b 模板擬合 + step4c 分類定案"
   $RUN src/skymodel/step4b_window_fit.py --id all --basis svd -K 30 --s-fix 0.0 \
        --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1 \
        --spec-dir "$W/step02_eso" --work "$W" --num-workers 16 2>&1 | tail -2
@@ -87,7 +85,7 @@ for N in "$@"; do
        --star-window 4700 8000 --gal-window 4700 8000 --iter 1 \
        --spec-dir "$W/step02_eso" --work "$W" 2>&1 | tail -2
 
-  echo "--- [7/7] step5 逐 spaxel 擬合（--s-field）"
+  echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
   BEST=$W/step04b/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum__eso.npz
   $RUN src/skymodel/step5_fit_spaxels.py --basis svd -K 30 --s-field \
        --work "$W" --cube "$WSKY" --sky-dir "$W/step03" --best "$BEST" 2>&1 \

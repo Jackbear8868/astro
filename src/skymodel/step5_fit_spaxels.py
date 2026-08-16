@@ -363,7 +363,7 @@ def main():
                          "results/skymodel/step04b/classification_*.npz")
     ap.add_argument("--seg", default=None,
                     help="用哪一份 segmentation 劃分源與 blank。預設是 SExtractor 的 "
-                         "step01/seg.fits;指到 step1b 產生的 seg_dil{r}.fits 就是"
+                         "step01/seg.fits;指到 experiments/dilate_seg.py 產生的 seg_dil{r}.fits 就是"
                          "膨脹版。**要和 step3 用同一份**,否則天空模型的訓練樣本"
                          "和擬合時的區域劃分會對不起來")
     ap.add_argument("--sky-dir", default=None,
