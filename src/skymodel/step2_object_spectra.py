@@ -83,7 +83,7 @@ def main():
                     help="STAT 從哪裡讀,預設同 --cube。我們自己扣天空的 cube 只有 "
                          "DATA,要用這個指到原始 cube")
     ap.add_argument("--work", required=True, help="這顆 cube 的工作區")
-    ap.add_argument("--out", default=None, help="輸出目錄。省略 = {work}/step02")
+    ap.add_argument("--out", required=True, help="輸出目錄")
     args = ap.parse_args()
     work   = Path(args.work)
     STEP01 = work / "step01"

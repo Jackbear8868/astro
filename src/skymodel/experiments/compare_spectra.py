@@ -37,6 +37,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import spectrum_stats  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
+# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
+# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+EVAL = ROOT / "results/skymodel/evaluation/acceptance"
 
 Z_HARO = 0.0204
 LINES  = [("[O II]", 3727.0), ("Hb", 4861.3), ("[O III]", 4958.9),
@@ -164,7 +167,7 @@ def main():
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     tag = "_".join(f"{x}-{y}" for x, y in args.at)
     out = (Path(args.out) if args.out
-           else W / f"figures/compare_spectra_{tag}.png")
+           else EVAL / f"compare_spectra_{tag}_{W.name}.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=140, bbox_inches="tight")
     print(f"\nsaved -> {out}")

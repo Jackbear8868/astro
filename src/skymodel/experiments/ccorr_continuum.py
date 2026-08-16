@@ -52,13 +52,19 @@ from step5_fit_spaxels import fit_blank                   # noqa: E402
 from utils import build_s_field, main_source_group, running_median, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
+# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
+# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+EVAL = ROOT / "results/skymodel/evaluation/sky_basis"
 
 
 def main():
     ap = argparse.ArgumentParser(description="修正 C_sky 的形狀")
     ap.add_argument("--work", default="results/skymodel/p01")
     ap.add_argument("--run", default=None)
-    ap.add_argument("--out-dir", default="step03_ccorr")
+    ap.add_argument("--out-dir", default=None,
+                    help="修正後的天空模型寫到哪。省略 = "
+                         "results/skymodel/experiments/ccorr/{pointing}。"
+                         "不寫進工作區 —— pNN/ 底下只放 run_pointing.sh 的產物")
     ap.add_argument("--window", type=int, default=151,
                     help="平滑 delta_C 的 running median 寬度(通道)。逐通道中位"
                          "本身還帶著雜訊,不平滑的話會把雜訊寫進天空模型")
@@ -116,7 +122,9 @@ def main():
           f"跨度 {dC.max()-dC.min():.4f}")
     print(f"  相對於 C_sky 的比例 中位 {np.median(dC/C_sky)*100:+.3f}%")
 
-    out = W / args.out_dir
+    out = (Path(args.out_dir) if args.out_dir
+           else ROOT / "results/skymodel/experiments/ccorr" / W.name)
+    out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         shutil.rmtree(out)
     shutil.copytree(sky_dir, out)
@@ -139,7 +147,7 @@ def main():
     fig.suptitle(f"self-consistent correction to $C_{{sky}}$   {args.work}",
                  fontsize=12)
     fig.tight_layout()
-    o = W / "figures/ccorr_continuum.png"
+    o = EVAL / f"ccorr_continuum_{W.name}.png"
     o.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")

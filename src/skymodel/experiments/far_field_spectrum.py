@@ -42,6 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import main_source_group, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
+# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
+# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+EVAL = ROOT / "results/skymodel/evaluation/acceptance"
 BANDS = ((4600, 5500), (5500, 6500), (6500, 7500), (7500, 9350))
 
 
@@ -150,7 +153,7 @@ def main():
     fig.suptitle(f"far-field residual   {args.work}   {int(far.sum()):,} spaxels",
                  fontsize=12)
     fig.tight_layout()
-    o = W / "figures/far_field_spectrum.png"
+    o = EVAL / f"far_field_spectrum_{W.name}.png"
     o.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"\nsaved -> {o}")

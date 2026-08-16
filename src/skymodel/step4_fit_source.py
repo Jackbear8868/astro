@@ -55,7 +55,7 @@ from utils import load_line_masks
 ROOT      = Path(__file__).resolve().parents[2]
 # 這四個必須是模組層級的全域 —— multiprocessing 的 worker 重新 import 這個模組,
 # 看不到 main() 的區域變數。main() 依 --work 賦值,在開 Pool 之前。
-STEP02 = STEP02B = STEP03 = STEP04 = None
+STEP02B = STEP03 = STEP04 = None
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
@@ -358,8 +358,7 @@ def main():
     work    = Path(args.work)
     # 這四個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
     # 行程裡執行,看不到 main() 的區域變數(worker 是重新 import 這個模組的)。
-    global STEP02, STEP02B, STEP03, STEP04
-    STEP02  = work / "step02"
+    global STEP02B, STEP03, STEP04
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
     STEP04 = work / "step04"
@@ -370,10 +369,15 @@ def main():
 
     STEP04.mkdir(parents=True, exist_ok=True)
 
-    src = (Path(args.spec_dir) if args.spec_dir
-           else (STEP02B if args.aperture else STEP02))
+    # 源光譜的來源必須明講。沒有可用的預設 —— 用含天空的光譜去分類,結果看起來
+    # 完全正常,只是每個源的模板和紅移都是錯的。
+    if not args.spec_dir and not args.aperture:
+        raise SystemExit("★ 需要 --spec-dir(例如 {work}/step02_eso)或 --aperture")
+    src = Path(args.spec_dir) if args.spec_dir else STEP02B
     # 光譜來源不同 = 不同的科學產物,tag 必須分得開,否則會靜靜蓋掉上一次。
-    suffix = (f"_{src.name.replace('step02', '')}" if args.spec_dir else "") \
+    # 光譜來源編進 tag —— step02_eso 與 step02_ours 是不同的科學產物,
+    # 混在同一個檔名裡會靜靜蓋掉上一次
+    suffix = f"_{src.name.replace('step02', '')}" \
              + ("_galtpl" if args.gal_model == "sdss" else "")
     ids   = np.load(src / "object_ids.npy")
     flux  = np.load(src / "object_flux.npy")
