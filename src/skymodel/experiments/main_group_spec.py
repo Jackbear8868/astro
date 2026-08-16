@@ -56,8 +56,8 @@ def branch_best(work, sid):
     step4b 把兩條分支分開存:scan1 是恆星(z 是視向速度),scan2 是星系。
     回傳 (star 最佳 rchi2, galaxy 最佳 rchi2, galaxy 最佳 z, galaxy 的 z 與 rchi2 陣列)。
     """
-    f1 = sorted((work/"step04b").glob(f"scan1_id{sid}_*.npz"))
-    f2 = sorted((work/"step04b").glob(f"scan2_id{sid}_*.npz"))
+    f1 = sorted((work/"step04").glob(f"scan1_id{sid}_*.npz"))
+    f2 = sorted((work/"step04").glob(f"scan2_id{sid}_*.npz"))
     if not f1 or not f2:
         return None
     r_star = float(np.load(f1[0], allow_pickle=True)["red_chi2"].min())
@@ -91,7 +91,7 @@ def main():
         peak_id = int(seg[k])
         b = branch_best(W, peak_id)
         if b is None:
-            print(f"p{n:02d}: step04b 沒有 id{peak_id} 的 scan 檔,跳過")
+            print(f"p{n:02d}: step04 沒有 id{peak_id} 的 scan 檔,跳過")
             continue
         z_main = b[2]
 
@@ -104,7 +104,7 @@ def main():
         for i in ids:
             b = branch_best(W, i)
             if b is None:
-                print(f"{i:>5}  —— step04b 沒有這個 ID 的 scan 檔 ——")
+                print(f"{i:>5}  —— step04 沒有這個 ID 的 scan 檔 ——")
                 continue
             r_star, r_gal, z_gal, z, r = b
             area = int((seg == i).sum())

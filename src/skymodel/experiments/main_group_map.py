@@ -48,7 +48,7 @@ def main():
         white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
         valid = white != 0
         wn = np.where(valid, white, np.nan)
-        mg, ids, pk = main_source_group(seg, wn, W / "step04b", args.dv_max)
+        mg, ids, pk = main_source_group(seg, wn, W / "step04", args.dv_max)
         # 不給紅移就只做相鄰判準 —— 左圖要畫的正是「還沒篩」的那一團
         all_ids = main_source_group(seg, wn)[1]
 

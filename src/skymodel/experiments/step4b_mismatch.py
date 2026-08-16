@@ -29,7 +29,7 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag, EIGEN_GAL, TPL_D
 from step4b_stage1 import load_common, source_spectrum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 
 PROF_Z = {1: 0.021, 10: 0.99, 12: 1.033, 13: 0.422, 14: 0.336, 24: 1.055,
@@ -82,7 +82,7 @@ def main():
     wl = D["wl_air"]
 
     for t in args.ids:
-        f2 = STEP04B / f"scan2_id{t}_{tag}.npz"
+        f2 = STEP04 / f"scan2_id{t}_{tag}.npz"
         if not f2.exists():
             print(f"ID {t}: 找不到 {f2.name},跳過")
             continue

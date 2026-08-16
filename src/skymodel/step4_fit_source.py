@@ -56,11 +56,11 @@ ROOT      = Path(__file__).resolve().parents[2]
 WORK_DEFAULT = ROOT / "results/skymodel"
 # 這四個是模組層級的預設值(對應預設工作區);main() 會依 --work 覆寫,
 # 而且必須是全域 —— multiprocessing 的 worker 重新 import 這個模組,看不到區域變數。
-# step4c 也 import STEP04B,所以這裡不能只在 main() 裡定義。
+# 診斷程式也 import STEP04,所以這裡不能只在 main() 裡定義。
 STEP02  = WORK_DEFAULT / "step02"
 STEP02B = WORK_DEFAULT / "step02b"
 STEP03  = WORK_DEFAULT / "step03"
-STEP04B = WORK_DEFAULT / "step04b"
+STEP04 = WORK_DEFAULT / "step04"
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
@@ -220,9 +220,9 @@ def _scan_one(t):
     if not r1 and not r2:
         return t, None
     if r1:
-        _save_scan(STEP04B / f"scan1_id{t}_{S['tag']}.npz", r1)
+        _save_scan(STEP04 / f"scan1_id{t}_{S['tag']}.npz", r1)
     if r2:
-        _save_scan(STEP04B / f"scan2_id{t}_{S['tag']}.npz", r2)
+        _save_scan(STEP04 / f"scan2_id{t}_{S['tag']}.npz", r2)
 
     # 兩組各自的冠軍對決。掃描結果已依 chi2 排序,所以 [0] 就是各組最佳。
     best = min([x[0] for x in (r1, r2) if x], key=lambda d: d["red_chi2"])
@@ -357,23 +357,23 @@ def main():
                          "重新取最佳解,不會沿用原本的")
     ap.add_argument("--num-workers", type=int, default=0)
     ap.add_argument("--work", default=str(WORK_DEFAULT),
-                    help="這顆 cube 的工作區(底下有 step02/step03/step04b)")
+                    help="這顆 cube 的工作區(底下有 step02/step03/step04)")
     args = ap.parse_args()
     over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
     work    = Path(args.work)
     # 這四個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
     # 行程裡執行,看不到 main() 的區域變數(worker 是重新 import 這個模組的)。
-    global STEP02, STEP02B, STEP03, STEP04B
+    global STEP02, STEP02B, STEP03, STEP04
     STEP02  = work / "step02"
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
-    STEP04B = work / "step04b"
+    STEP04 = work / "step04"
     print(f"工作區 {work}")
     s_fix = None if args.s_free else args.s_fix
     if args.full_range:
         args.star_window = args.gal_window = FULL_RANGE
 
-    STEP04B.mkdir(parents=True, exist_ok=True)
+    STEP04.mkdir(parents=True, exist_ok=True)
 
     src = (Path(args.spec_dir) if args.spec_dir
            else (STEP02B if args.aperture else STEP02))
@@ -488,7 +488,7 @@ def main():
         new = {k: np.array([x[k] for x in summary]) for k in KEYS}
 
         # 併入既有結果,不覆寫 —— 重跑單一 ID 只該更新那一列。
-        out = STEP04B / f"best_{tag}.npz"
+        out = STEP04 / f"best_{tag}.npz"
         if out.exists():
             old = np.load(out, allow_pickle=False)
             if set(old.files) == set(KEYS):
@@ -498,7 +498,7 @@ def main():
                     print(f"併入既有的 {int(keep.sum())} 個源")
         o = np.argsort(new["id"])
         np.savez(out, **{k: v[o] for k, v in new.items()})
-        write_classification(STEP04B, tag, np.load(out), args.ids, over)
+        write_classification(STEP04, tag, np.load(out), args.ids, over)
         outs.append((it, out, summary))
 
     print(f"\n{'=' * 60}\n各輪比較")

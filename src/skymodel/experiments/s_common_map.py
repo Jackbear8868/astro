@@ -60,7 +60,7 @@ def load_all(ns):
         white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
         valid = white != 0
         mg, _, pk = main_source_group(seg, np.where(valid, white, np.nan),
-                                        W / "step04b")
+                                        W / "step04")
         blank = valid & (seg == 0) & np.isfinite(s)
         M, _, _ = rowcol_field(s, blank)     # 各顆自己的條紋各自扣掉
         h = fits.getheader(ROOT / f"data/wshy/DATACUBE_FINAL_{n}.fits", 1)

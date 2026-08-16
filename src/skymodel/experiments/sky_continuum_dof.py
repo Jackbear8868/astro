@@ -77,7 +77,7 @@ def main():
     s_free = np.load(run / "s_free.npy").astype(float)
     valid = white != 0
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
-                                        W / "step04b")
+                                        W / "step04")
     blank = valid & (seg == 0) & np.isfinite(s_free)
     s_hat, train = build_s_field(s_free, seg, blank, p["r_far"],
                                     p["r_far_haro"], p["clip"],

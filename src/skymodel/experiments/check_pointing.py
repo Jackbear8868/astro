@@ -51,7 +51,7 @@ def check(work, cube, run=None):
     wl = np.load(W / "step03/wavelength.npy")
     ch = np.flatnonzero(np.logical_or.reduce([(wl >= a) & (wl < b) for a, b in WINDOWS]))
 
-    main, mids, _ = main_source_group(seg, white, W / "step04b")
+    main, mids, _ = main_source_group(seg, white, W / "step04")
     edge = ndimage.distance_transform_edt(white != 0)
     d_all = ndimage.distance_transform_edt(seg == 0)
     d_main = ndimage.distance_transform_edt(~main)

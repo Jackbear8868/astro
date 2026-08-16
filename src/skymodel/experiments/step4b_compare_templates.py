@@ -31,7 +31,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP02  = ROOT / "results/skymodel/step02"
 STEP02B = ROOT / "results/skymodel/step02b"
 STEP03  = ROOT / "results/skymodel/step03"
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 TPL_DIR = ROOT / "data/sdss_templates"
 
@@ -69,7 +69,7 @@ def main():
     tag = make_tag(args.basis, args.K, args.s_fix, args.star_window,
                    args.gal_window, args.sky_basis, args.iter,
                    not args.raw_mask, args.aperture)
-    f = STEP04B / f"scan1_id{args.id}_{tag}.npz"
+    f = STEP04 / f"scan1_id{args.id}_{tag}.npz"
     if not f.exists():
         raise SystemExit(f"找不到 {f.name}。先跑 step4_fit_source.py")
     sc = np.load(f)

@@ -46,6 +46,9 @@ from utils import build_s_field, main_source_group, rowcol_field, scale  # noqa:
 ROOT = Path(__file__).resolve().parents[3]
 
 
+CUR = "current"      # 現行的場 = mu + a(y) + b(x),配對比較的對照組
+
+
 def lowrank_complete(s, obs, rank, init, n_iter=60, tol=1e-7):
     """缺失資料的低秩補全(iterative SVD / hard-impute)。
 
@@ -109,7 +112,7 @@ def main():
     s     = np.load(run / "s_free.npy").astype(float)
     valid = white != 0
     main, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
-                                        W / "step04b")
+                                        W / "step04")
     blank = valid & (seg == 0) & np.isfinite(s)
 
     rng = np.random.default_rng(0)
@@ -125,9 +128,10 @@ def main():
                                 main=main, exclude=hole)
         M, _, _ = rowcol_field(s, train)
         truth = s[hole]
-        # build_s_field 回傳的就是 rowcol_field 的結果,所以這裡只留一條:
-        # 兩者分開畫會看起來像兩個方法,實際上是同一個陣列
-        preds = {"current (row+col)": M[hole]}
+        # build_s_field 回傳的就是 rowcol_field 的結果 —— 現行的場**就是** M,
+        # 兩者分開列會看起來像兩個方法,實際上是同一個陣列
+        cur   = M[hole]
+        preds = {CUR: cur}
         for R in args.ranks:
             Xr = lowrank_complete(s, train, R, M)
             preds[f"rank {R}"] = Xr[hole]
@@ -143,7 +147,7 @@ def main():
             dmed = np.median(np.abs(e) - np.abs(cur - truth))
             tab.setdefault(nm, []).append((float(np.median(e)), sc_, deconv,
                                            float(win), float(dmed)))
-            mark = "" if nm != "current" else "  <- 基準"
+            mark = "  <- 基準" if nm == CUR else ""
             print(f"{nm:>10}{np.median(e):>+10.5f}{sc_:>9.5f}{deconv:>10.5f}"
                   f"{100*win:>9.0f}%{dmed:>+12.6f}{mark}")
         print()
@@ -164,8 +168,8 @@ def main():
     rk = [int(n.split()[1]) for n in names]
     ax[0].plot(rk, [np.median(np.array(tab[n])[:, 2]) for n in names], "o-",
                label="low-rank completion")
-    for nm, c, ls in (("current", "#d62728", "--"), ("M only", "0.4", ":")):
-        ax[0].axhline(np.median(np.array(tab[nm])[:, 2]), color=c, ls=ls, label=nm)
+    ax[0].axhline(np.median(np.array(tab[CUR])[:, 2]), color="#d62728", ls="--",
+                  label=CUR)
     ax[0].set_xlabel("rank"); ax[0].set_ylabel("error, noise floor removed")
     ax[0].grid(alpha=.25); ax[0].legend(fontsize=8)
     ax[1].plot(rk, [100*np.median(np.array(tab[n])[:, 3]) for n in names], "o-")

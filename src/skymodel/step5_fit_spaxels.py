@@ -359,7 +359,7 @@ def main():
                          "才算主星系的一部分")
     ap.add_argument("--best", required=True,
                     help="源模型的來源檔:step4c 定案的分類,例如 "
-                         "{work}/step04b/classification_*.npz。"
+                         "{work}/step04/classification_*.npz。"
                          "沒有預設值 —— 它決定每個源用哪個模板與紅移,"
                          "猜錯一個目錄就會安靜地套用另一次擬合的答案")
     ap.add_argument("--seg", default=None,

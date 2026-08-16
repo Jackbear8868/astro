@@ -97,7 +97,7 @@ def main():
         # 用別顆的值會讓標線和鼓包對不上而看不出來是對不上
         _, _, pk = main_source_group(seg, np.where(white != 0, white, np.nan))
         pid = int(seg[pk])
-        z = args.z if args.z is not None else galaxy_redshifts(W / "step04b",
+        z = args.z if args.z is not None else galaxy_redshifts(W / "step04",
                                                                [pid])[pid]
 
         runs = [("ESO nosky", ROOT / f"data/nosky/DATACUBE_FINAL_ESOSKY_{n}.fits",

@@ -27,7 +27,7 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 ROOT    = Path(__file__).resolve().parents[3]
 STEP02  = ROOT / "results/skymodel/step02"
 STEP02B = ROOT / "results/skymodel/step02b"
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 
 STAR_TYPE = {
     0: "O", 1: "O/B", 2: "B", 3: "A", 4: "A", 5: "F/A", 6: "F", 7: "F",
@@ -52,7 +52,7 @@ def main():
     for it in args.iters:
         tag = make_tag(args.basis, args.K, 1.0, args.star_window, args.gal_window,
                        args.sky_basis, it, not args.raw_mask, args.aperture)
-        f = STEP04B / f"best_{tag}.npz"
+        f = STEP04 / f"best_{tag}.npz"
         if not f.exists():
             print(f"iter{it}: 找不到 {f.name},跳過")
             continue
@@ -135,7 +135,7 @@ def main():
     tagbase = make_tag(args.basis, args.K, 1.0, args.star_window, args.gal_window,
                        args.sky_basis, 0, not args.raw_mask,
                        args.aperture).replace("_L0cum", "").replace("_L0raw", "")
-    out = STEP04B / f"overview{tagbase.replace('nobasis_s1.0', '')}.txt"
+    out = STEP04 / f"overview{tagbase.replace('nobasis_s1.0', '')}.txt"
     out.write_text("\n".join(L) + "\n")
     print("\n".join(L))
     print(f"\nsaved -> {out}")

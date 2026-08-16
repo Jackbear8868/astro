@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 
 GAL_TYPE = {23: "early", 24: "gal24", 25: "gal25", 26: "gal26",
@@ -78,7 +78,7 @@ def main():
     # --ids 省略時取第一個 tag 的 best 檔裡的全部源 —— 每顆 pointing 的
     # SExtractor 編號都不同,寫死一串編號只在某一顆上成立
     if args.ids is None:
-        bf = STEP04B / f"best_{tags[0]}.npz"
+        bf = STEP04 / f"best_{tags[0]}.npz"
         if not bf.exists():
             raise SystemExit(f"找不到 {bf.name},先跑 step4_fit_source.py")
         args.ids = [int(i) for i in np.load(bf)["id"]]
@@ -91,8 +91,8 @@ def main():
                                  squeeze=False)
         for k, t in enumerate(args.ids):
             ax = axes[k // ncol][k % ncol]
-            f2 = STEP04B / f"scan2_id{t}_{tag}.npz"
-            f1 = STEP04B / f"scan1_id{t}_{tag}.npz"
+            f2 = STEP04 / f"scan2_id{t}_{tag}.npz"
+            f1 = STEP04 / f"scan1_id{t}_{tag}.npz"
             if not f2.exists():
                 ax.axis("off")
                 continue

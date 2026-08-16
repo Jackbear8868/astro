@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 
 STAR_TYPE = {0: "O", 1: "O/B", 2: "B", 3: "A", 4: "A", 5: "F/A", 6: "F", 7: "F",
@@ -49,7 +49,7 @@ def per_template(tag, t):
     不是「用贏家的 z 去配得多差」。星系那邊,本徵譜只有一個候選('eigen'),
     SDSS 星系模板有 6 個,所以回傳一個清單而不是單一數字。
     """
-    f1 = STEP04B / f"scan1_id{t}_{tag}.npz"
+    f1 = STEP04 / f"scan1_id{t}_{tag}.npz"
     if not f1.exists():
         return None, None
     sc = np.load(f1)
@@ -58,7 +58,7 @@ def per_template(tag, t):
         m = sc["template"] == nm
         star[int(nm)] = sc["red_chi2"][m].min()
 
-    f2 = STEP04B / f"scan2_id{t}_{tag}.npz"
+    f2 = STEP04 / f"scan2_id{t}_{tag}.npz"
     if not f2.exists():
         return star, []
     s2 = np.load(f2)
@@ -101,7 +101,7 @@ def main():
     # --ids 省略時取第一個 tag 的 best 檔裡的全部源 —— 每顆 pointing 的
     # SExtractor 編號都不同,寫死一串編號只在某一顆上成立
     if args.ids is None:
-        bf = STEP04B / f"best_{tags[0]}.npz"
+        bf = STEP04 / f"best_{tags[0]}.npz"
         if not bf.exists():
             raise SystemExit(f"找不到 {bf.name},先跑 step4_fit_source.py")
         args.ids = [int(i) for i in np.load(bf)["id"]]

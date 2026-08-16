@@ -40,7 +40,7 @@ from step4b_stage1 import load_common, source_spectrum, STAR_TYPE
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"        # 白光圖 + segmentation map
-STEP04B = ROOT / "results/skymodel/step04b"
+STEP04 = ROOT / "results/skymodel/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 TPL_DIR = ROOT / "data/sdss_templates"
 
@@ -57,7 +57,7 @@ GAL_TYPE = {23: "early-type", 24: "galaxy", 25: "galaxy", 26: "galaxy",
 def stage1_best(tag, t, best):
     """第 1 段的最佳解。和 step4b_stage1.py 一樣從 scan1 取,不是從 best 取 ——
     best 是兩段跑完的結果,若該源進了第 2 段,裡面存的會是星系解。"""
-    f = STEP04B / f"scan1_id{t}_{tag}.npz"
+    f = STEP04 / f"scan1_id{t}_{tag}.npz"
     if not f.exists():
         return None
     sc = np.load(f)
@@ -70,7 +70,7 @@ def stage1_best(tag, t, best):
 
 def stage2_best(tag, t):
     """第 2 段(星系)的最佳解。沒跑過第 2 段就回傳 None。"""
-    f = STEP04B / f"scan2_id{t}_{tag}.npz"
+    f = STEP04 / f"scan2_id{t}_{tag}.npz"
     if not f.exists():
         return None
     sc = np.load(f)
@@ -337,7 +337,7 @@ def main():
     tag  = make_tag(args.basis, args.K, args.s_fix, args.star_window,
                     args.gal_window, args.sky_basis, args.iter,
                     not args.raw_mask, args.aperture, suffix)
-    bf   = STEP04B / f"best_{tag}.npz"
+    bf   = STEP04 / f"best_{tag}.npz"
     if not bf.exists():
         raise SystemExit(f"找不到 {bf.name}。先跑 step4_fit_source.py")
     best = np.load(bf)

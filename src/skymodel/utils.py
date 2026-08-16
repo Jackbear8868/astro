@@ -298,7 +298,7 @@ C_KMS = 299792.458
 DV_MAX = 1468.0
 
 
-def galaxy_redshifts(step04b, ids):
+def galaxy_redshifts(step04, ids):
     """每個 seg ID 的星系分支最佳紅移。回傳 {id: z}。
 
     step4b 把兩條分支分開存,scan2 是星系分支。不讀 classification 的 z ——
@@ -306,15 +306,15 @@ def galaxy_redshifts(step04b, ids):
     """
     out = {}
     for i in ids:
-        f = sorted(Path(step04b).glob(f"scan2_id{i}_*.npz"))
+        f = sorted(Path(step04).glob(f"scan2_id{i}_*.npz"))
         if not f:
-            raise SystemExit(f"★ {step04b} 裡找不到 scan2_id{i}_*.npz")
+            raise SystemExit(f"★ {step04} 裡找不到 scan2_id{i}_*.npz")
         d = np.load(f[0], allow_pickle=True)
         out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
     return out
 
 
-def main_source_group(seg, white, step04b=None, dv_max=DV_MAX):
+def main_source_group(seg, white, step04=None, dv_max=DV_MAX):
     """主星系的完整足跡 —— 最亮像素所在的那一團,只收紅移相符的成員。
     回傳 (遮罩, ID 清單, 峰值座標)。
 
@@ -333,7 +333,7 @@ def main_source_group(seg, white, step04b=None, dv_max=DV_MAX):
        父偵測的子代,因此同樣貼著。用 step4b 擬合出來的星系分支紅移分辨:和主源
        差超過 dv_max 的成員不是這個星系的。主源的紅移取最亮像素所在的那個成員。
 
-    step04b 省略時只做 ①。教授交付的 seg 沒有對應的模板擬合,那種情況下沒有紅移
+    step04 省略時只做 ①。教授交付的 seg 沒有對應的模板擬合,那種情況下沒有紅移
     可用,回傳整個相鄰塊是唯一誠實的選擇。
 
     回傳的遮罩再與連通塊取交集,不是 `isin(seg, ids)` —— SExtractor 的 CLEAN 會把
@@ -346,8 +346,8 @@ def main_source_group(seg, white, step04b=None, dv_max=DV_MAX):
     blob = lab == lab[k]
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
 
-    if step04b is not None:
-        z = galaxy_redshifts(step04b, ids)
+    if step04 is not None:
+        z = galaxy_redshifts(step04, ids)
         z0 = z[int(seg[k])]
         ids = [i for i in ids
                if abs(C_KMS * (z[i] - z0) / (1 + z0)) <= dv_max]

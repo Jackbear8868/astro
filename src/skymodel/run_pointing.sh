@@ -83,7 +83,7 @@ for N in "$@"; do
        --spec-dir "$W/step02_eso" --work "$W" --num-workers 16 2>&1 | tail -3
 
   echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
-  BEST=$W/step04b/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum__eso.npz
+  BEST=$W/step04/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum__eso.npz
   $RUN src/skymodel/step5_fit_spaxels.py --basis svd -K 30 --s-field \
        --work "$W" --cube "$WSKY" --sky-dir "$W/step03" --best "$BEST" 2>&1 \
        | grep -E "s 空間場|ridge|blank 以場|源區域|saved"
