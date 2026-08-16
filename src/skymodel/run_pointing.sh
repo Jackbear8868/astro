@@ -59,8 +59,8 @@ for N in "$@"; do
   echo "================================================================"
   T0=$(date +%s)
 
-  echo "--- [1/6] step0 白光（從 nosky）"
-  $RUN src/skymodel/step0_whitelight_image.py "$NOSKY" --out "$W/step01" >/dev/null
+  echo "--- [1/6] step1 白光（從 nosky）"
+  $RUN src/skymodel/step1_whitelight.py "$NOSKY" --out "$W/step01" >/dev/null
 
   echo "--- [2/6] SExtractor (DETECT_THRESH 2.0)"
   (cd src/skymodel/SExtractor && $SEX "$W/step01/whitelight.fits" -c default.sex \
@@ -77,13 +77,10 @@ for N in "$@"; do
        --work "$W" --cube "$WSKY" "${REGION[@]}" 2>&1 \
        | grep -E "空間限制|exclude-box|blank spaxels|svd "
 
-  echo "--- [5/6] step4b 模板擬合 + step4c 分類定案"
-  $RUN src/skymodel/step4b_window_fit.py --id all --basis svd -K 30 --s-fix 0.0 \
+  echo "--- [5/6] step4 模板擬合與分類"
+  $RUN src/skymodel/step4_fit_source.py --id all --basis svd -K 30 --s-fix 0.0 \
        --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1 \
-       --spec-dir "$W/step02_eso" --work "$W" --num-workers 16 2>&1 | tail -2
-  $RUN src/skymodel/step4c_record_classification.py --basis svd -K 30 --s-fix 0.0 \
-       --star-window 4700 8000 --gal-window 4700 8000 --iter 1 \
-       --spec-dir "$W/step02_eso" --work "$W" 2>&1 | tail -2
+       --spec-dir "$W/step02_eso" --work "$W" --num-workers 16 2>&1 | tail -3
 
   echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
   BEST=$W/step04b/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum__eso.npz

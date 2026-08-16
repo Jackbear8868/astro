@@ -31,7 +31,7 @@ chi2 的絕對值可信;但天光線殘差與流量刻度誤差會把所有源�
 n_good 由通道集合決定。視窗不同就不是同一個統計量,比大小沒有意義。
 main() 會擋下不一致的設定。
 
-    conda run -n astro python src/skymodel/step4b_window_fit.py --id all -K 54 \\
+    conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
         --spec-dir results/skymodel/step02_eso --s-fix 0.0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
 """
@@ -239,6 +239,65 @@ def _scan_one(t):
                    **{**best, "A": A})
 
 
+def write_classification(out_dir, tag, best, ids=None, over=None):
+    """把擬合結果收斂成 step5 讀的那份清單。
+
+    分類本身已經由上面的掃描決定 —— 恆星模板與星系本徵譜在同一組通道上競爭,
+    reduced chi2 低的勝出。這裡不重算:同樣的判定寫兩份,改了一邊就會靜靜地
+    不一致,而那種錯誤從輸出看不出來。
+
+    ids  只收錄這些 seg ID;None = best 檔裡的全部。少寫一個源,那個源在 step5
+         就沒有模板可扣,沒有別的好處,所以預設不篩選。
+    over {id: z} 把某個源的紅移改成指定值,只用來做敏感度測試。振幅會在該 z 上
+         重新取最佳解 —— 模板形狀隨 z 變,振幅不通用。
+    """
+    over = over or {}
+    idx  = {int(i): k for k, i in enumerate(best["id"])}
+    ids  = ids if ids else [int(i) for i in best["id"]]
+
+    rows = []
+    print(f"\n{'ID':>4}{'class':>8}{'template':>10}{'z':>10}"
+          f"{'star X2':>10}{'gal X2':>10}{'margin':>9}")
+    print("-" * 61)
+    for t in ids:
+        if t not in idx:
+            print(f"{t:>4}   best 檔裡沒有這個源,跳過")
+            continue
+        k = idx[t]
+        group, tpl = str(best["group"][k]), str(best["template"][k])
+        z, A = float(best["z"][k]), np.asarray(best["A"][k], float)
+        r1, r2 = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
+
+        if t in over:
+            s2 = np.load(out_dir / f"scan2_id{t}_{tag}.npz")
+            j  = int(np.argmin(np.abs(s2["z"] - over[t])))
+            group, tpl = "galaxy", str(s2["template"][j])
+            z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
+
+        a = np.full(N_SRC, np.nan)
+        a[:len(A)] = A
+        rows.append(dict(id=t, group=group, template=tpl, z=z, A=a))
+        mark = "  <- overridden" if t in over else ""
+        print(f"{t:>4}{group:>8}{tpl:>10}{z:>10.4f}{r1:>10.2f}{r2:>10.2f}"
+              f"{max(r1, r2) / min(r1, r2):>8.2f}x{mark}")
+
+    if not rows:
+        raise SystemExit("沒有任何源,不寫分類檔")
+
+    out = out_dir / f"classification_{tag}.npz"
+    np.savez(out,
+             id=np.array([r["id"] for r in rows]),
+             group=np.array([r["group"] for r in rows]),
+             template=np.array([r["template"] for r in rows]),
+             z=np.array([r["z"] for r in rows]),
+             A=np.vstack([r["A"] for r in rows]))
+    ns = sum(1 for r in rows if r["group"] == "star")
+    print(f"\n{len(rows)} 個源:{ns} 恆星 / {len(rows) - ns} 星系")
+    print("margin = 兩個模型的 reduced chi2 比值,越接近 1 代表分類越沒有裕度")
+    print(f"saved -> {out}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="單階段源模板擬合(固定視窗 + 天光線遮罩)")
     ap.add_argument("--id",    default="all",           help="segmentation ID,或 all")
@@ -290,10 +349,17 @@ def main():
                          "「遮得越來越多」序列。")
     ap.add_argument("--s-fix", type=float, default=1.0)
     ap.add_argument("--s-free", action="store_true")
+    ap.add_argument("--ids", type=int, nargs="+", default=None,
+                    help="分類檔只收錄這些 seg ID。省略 = 擬合到的全部源")
+    ap.add_argument("--z-override", nargs="*", default=[], metavar="ID=Z",
+                    help="把某個源的紅移改成指定值,只用來做敏感度測試 —— "
+                         "正式的記錄檔不該有手動指定的數字。振幅會在該 z 上"
+                         "重新取最佳解,不會沿用原本的")
     ap.add_argument("--num-workers", type=int, default=0)
     ap.add_argument("--work", default=str(WORK_DEFAULT),
                     help="這顆 cube 的工作區(底下有 step02/step03/step04b)")
     args = ap.parse_args()
+    over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
     work    = Path(args.work)
     # 這四個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
     # 行程裡執行,看不到 main() 的區域變數(worker 是重新 import 這個模組的)。
@@ -432,6 +498,7 @@ def main():
                     print(f"併入既有的 {int(keep.sum())} 個源")
         o = np.argsort(new["id"])
         np.savez(out, **{k: v[o] for k, v in new.items()})
+        write_classification(STEP04B, tag, np.load(out), args.ids, over)
         outs.append((it, out, summary))
 
     print(f"\n{'=' * 60}\n各輪比較")

@@ -23,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, make_tag
+from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP04B = ROOT / "results/skymodel/step04b"
@@ -103,7 +103,7 @@ def main():
     if args.ids is None:
         bf = STEP04B / f"best_{tags[0]}.npz"
         if not bf.exists():
-            raise SystemExit(f"找不到 {bf.name},先跑 step4b_window_fit.py")
+            raise SystemExit(f"找不到 {bf.name},先跑 step4_fit_source.py")
         args.ids = [int(i) for i in np.load(bf)["id"]]
 
     ids  = list(args.ids)

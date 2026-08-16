@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 from utils import load_line_masks
-from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, make_tag
+from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP02  = ROOT / "results/skymodel/step02"
@@ -71,7 +71,7 @@ def main():
                    not args.raw_mask, args.aperture)
     f = STEP04B / f"scan1_id{args.id}_{tag}.npz"
     if not f.exists():
-        raise SystemExit(f"找不到 {f.name}。先跑 step4b_window_fit.py")
+        raise SystemExit(f"找不到 {f.name}。先跑 step4_fit_source.py")
     sc = np.load(f)
 
     wl   = np.load(STEP03 / "wavelength.npy")

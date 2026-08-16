@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 # 視窗常數與檔名規則都從 step4b 進口 —— 兩邊各寫一份的話,改了一邊忘了另一邊,
 # 圖上標的視窗就會和實際算 chi2 的視窗不一樣,而那種錯誤看不出來。
-from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, FULL_RANGE, make_tag
+from step4_fit_source import STAR_WINDOW, GAL_WINDOW, FULL_RANGE, make_tag
 from utils import load_line_masks
 
 ROOT    = Path(__file__).resolve().parents[3]
@@ -496,7 +496,7 @@ def main():
                        args.aperture, suffix)
         bf  = STEP04B / f"best_{tag}.npz"
         if not bf.exists():
-            print(f"iter{it}: 找不到 {bf.name},跳過。先跑 step4b_window_fit.py")
+            print(f"iter{it}: 找不到 {bf.name},跳過。先跑 step4_fit_source.py")
             continue
         D    = load_common(args)
         best = np.load(bf)

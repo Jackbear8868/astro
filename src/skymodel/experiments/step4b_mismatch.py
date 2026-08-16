@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_eigen_galaxy, load_sdss_template, redshift_to_grid
-from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, make_tag, EIGEN_GAL, TPL_DIR
+from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag, EIGEN_GAL, TPL_DIR
 from step4b_stage1 import load_common, source_spectrum
 
 ROOT    = Path(__file__).resolve().parents[3]

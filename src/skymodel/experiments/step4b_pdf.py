@@ -32,7 +32,7 @@ from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, load_eigen_galaxy, redshift_to_grid
-from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, make_tag,
+from step4_fit_source import (STAR_WINDOW, GAL_WINDOW, make_tag,
                                EIGEN_GAL)
 # 圖的內容必須和 step4b_stage1.py 完全同源 —— 光譜怎麼算、遮罩怎麼定義都直接
 # 進口它的函式,不另外寫一份。兩份各自實作的話,哪天改了一邊,兩種圖會悄悄不一樣。
@@ -323,14 +323,14 @@ def main():
                          "其餘的是雜訊尖峰/宇宙線/探測器條紋")
     ap.add_argument("--dpi", type=int, default=200, help="點陣化資料線的解析度")
     ap.add_argument("--spec-dir", default=None,
-                    help="源光譜的目錄,要和 step4b_window_fit.py 跑時用的一致,"
+                    help="源光譜的目錄,要和 step4_fit_source.py 跑時用的一致,"
                          "例如 results/skymodel/step02_eso")
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
-                    help="要和 step4b_window_fit.py 跑時用的一致")
+                    help="要和 step4_fit_source.py 跑時用的一致")
     ap.add_argument("--out", default=None, help="輸出檔名,預設由 tag 決定")
     args = ap.parse_args()
 
-    # tag 的組法必須和 step4b_window_fit.py 逐字相同,否則會讀到別的檔案。
+    # tag 的組法必須和 step4_fit_source.py 逐字相同,否則會讀到別的檔案。
     suffix = (f"_{Path(args.spec_dir).name.replace('step02', '')}"
               if args.spec_dir else "") \
              + ("_galtpl" if args.gal_model == "sdss" else "")
@@ -339,7 +339,7 @@ def main():
                     not args.raw_mask, args.aperture, suffix)
     bf   = STEP04B / f"best_{tag}.npz"
     if not bf.exists():
-        raise SystemExit(f"找不到 {bf.name}。先跑 step4b_window_fit.py")
+        raise SystemExit(f"找不到 {bf.name}。先跑 step4_fit_source.py")
     best = np.load(bf)
     D    = load_common(Namespace(**vars(args)))
 
