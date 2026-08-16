@@ -6,7 +6,7 @@ step4b_template_chi2.py 畫的是「每條模板最好能配到多好」,一條�
 要看的是曲線的形狀,不是最低點的位置:
 
     深而窄的單一谷      紅移被資料決定了
-    兩個差不多深的谷    紅移在兩個解之間擲骰子(#27、#30 就是這樣)
+    兩個差不多深的谷    紅移在兩個解之間擲骰子
     幾乎平的            資料裡沒有紅移的資訊
 
 灰色虛線是教授給的 z,紅色星號是我們的解。兩者不重合時,看教授那條線的位置
@@ -118,7 +118,7 @@ def main():
                 ax.set_xlim(max(zbest - args.zoom, sc["z"].min()),
                             min(zbest + args.zoom, sc["z"].max()))
             # y 的範圍只由畫得出來的那一段決定。下限一定要把恆星那條線含進去:
-            # 恆星贏的源(ID 35),恆星的值比整條星系曲線都低,只用星系曲線定範圍
+            # 恆星贏的源,恆星的值比整條星系曲線都低,只用星系曲線定範圍
             # 會把那條線切到框外 —— 而那正好是唯一需要看到它的一格。
             vis = ((sc["z"] >= ax.get_xlim()[0]) & (sc["z"] <= ax.get_xlim()[1]))
             v   = sc["red_chi2"][vis]
@@ -126,12 +126,11 @@ def main():
 
             if args.yscale == "clip":
                 # 截在最小值的 2 倍。谷看得最清楚,代價是曲線主體遠在上限之上的
-                # 源(ID 1、ID 28)整格幾乎是空的。
+                # 源,整格幾乎是空的。
                 ax.set_ylim(lo * 0.97, max(v.min(), lo) * 2.0)
             elif args.yscale == "zero":
                 # 從 0 起算,上限是最小值的 2 倍:谷底落在面板的正中間,深度
-                # 相對於「零」直接讀得出來。代價是曲線主體高過 2 倍最小值的源
-                # (ID 1 基準 12,000 vs 最小 4,429;ID 28 基準 12 vs 最小 4.55)
+                # 相對於「零」直接讀得出來。代價是曲線主體高過 2 倍最小值的源,
                 # 主體會被切在框外,那一格只看得到谷。
                 ax.set_ylim(0, max(v.min(), lo) * 2.0)
             else:                                   # log
@@ -152,7 +151,7 @@ def main():
             ax.set_xlabel("redshift  z", fontsize=7)
             ax.set_ylabel("reduced chi2", fontsize=7)
             # 判定寫進標題 —— 這張圖上「誰贏」是靠兩條線的相對高低表達的,
-            # 而那在 ID 35 那種恆星贏的情形最容易被讀反,直接寫出來最保險。
+            # 而那在恆星贏的情形最容易被讀反,直接寫出來最保險。
             win = "STAR" if (s1 is not None and s1 < v.min()) else "GALAXY"
             ax.set_title(f"ID {t}   " + (f"gt z = {pz}" if pz
                                          else "gt: star")

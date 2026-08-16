@@ -10,7 +10,7 @@
 兩邊都做了自由度修正,可以直接比。門檻不自己拍:blank 的分布就是「一個真的
 天空 spaxel 長什麼樣」,落在它之外的源區 spaxel 才剔除。
 
-blank 有 84,052 個,逐一解太慢也沒必要 —— 抽樣幾千個就足以定出分布。
+blank spaxel 數量龐大,逐一解太慢也沒必要 —— 抽樣幾千個就足以定出分布。
 
     conda run -n astro python src/skymodel/experiments/step4d_spaxel_quality.py \\
         --basis svd -K 30 \\

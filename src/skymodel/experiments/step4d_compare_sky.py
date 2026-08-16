@@ -133,7 +133,7 @@ def main():
     for i in range(3):
         # basis 的正負號由分解決定,不具意義 —— 對齊之後才比得出形狀。
         s = np.sign(np.dot(b_old[i], b_new[i])) or 1.0
-        # 舊的畫粗、放底下,新的畫細、疊上去 —— 兩者幾乎重合,同樣粗細會讓
+        # 舊的畫粗、放底下,新的畫細、疊上去 —— 兩條曲線接近時,同樣粗細會讓
         # 上面那條把下面那條完全蓋掉,看起來像只畫了一條。
         a.plot(wl, b_old[i] - i * 0.6, lw=2.0, color="0.75",
                label="step3" if i == 0 else None)

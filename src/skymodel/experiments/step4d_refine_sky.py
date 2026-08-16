@@ -1,56 +1,53 @@
 """把源扣掉,讓源區也變成天空樣本,重新推導 C_sky 與天光線 basis。
 
-step3 只從 blank spaxel 學天空(84,052 個),源區的 14,610 個一直被排除在外 ——
-而其中 Haro 11 本體就佔 13,726 個,正好是視場中央、天空最需要扣準的地方。
-源被模型扛住之後,那些 spaxel 也可以當天空樣本用:
+step3 只從 blank spaxel 學天空,源區的 spaxel 一直被排除在外 —— 而 Haro 11
+本體正好在視場中央,是天空最需要扣準的地方。源被模型扛住之後,那些 spaxel
+也可以當天空樣本用:
 
-    ①  9 個源的區域逐 spaxel 擬合(模板形狀與 z 固定,只解係數)
+    ①  真源的區域逐 spaxel 擬合(模板形狀與 z 固定,只解係數)
             D(p,λ) = Σⱼ aⱼ(p)·Tⱼ(λ) + s·C_sky(λ) + Σₖ cₖ(p)·Lₖ(λ)
     ②  只扣掉源那一項,天空留著
             sky_only(p,λ) = D(p,λ) − Σⱼ aⱼ(p)·Tⱼ(λ)
-    ③  其餘 spaxel 原樣保留 —— blank、26 個假源、教授移除的 #27/#30,
+    ③  其餘 spaxel 原樣保留 —— blank、假源、未列入擬合的源,
         它們本來就是天空
     ④  用全視場重新推導 C_sky 與 basis
 
 和 step5 的關係:同一個擬合,相反的輸出。step5 扣天空留源,這裡扣源留天空。
 
-沒有加任何 spaxel 層級的門檻。實測(step4d_spaxel_quality)扣完源之後,8/9 個源
-的逐 spaxel reduced chi2 中位落在 1.71–2.57,blank 是 1.95 —— 統計上分不出來,
-沒有證據需要剔除。真正的壞值(宇宙線、壞像素)由逐通道的 CLIP_SIGMA 處理,
-那個機制已經存在而且對門檻不敏感(10~100 結果相同)。
+沒有加任何 spaxel 層級的門檻。真正的壞值(宇宙線、壞像素)由逐通道的
+CLIP_SIGMA 處理,那個機制已經存在。
 
 源的振幅是用**現有的**(step3)天空模型解出來的 —— 這是必然的,那是唯一存在的
-天空模型。所以這是單向的一次修正,不迭代;教授 2026-08-07 指示迭代只用於
-天空連續譜與天光線的區域劃分,不重做分類。
+天空模型。所以這是單向的一次修正,不迭代。
 
-    conda run -n astro python src/skymodel/step4d_refine_sky.py \\
+    conda run -n astro python src/skymodel/experiments/step4d_refine_sky.py \\
         --basis svd -K 30 --methods svd \\
         --best results/skymodel/step04b/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum__eso.npz
 """
 import os
 
 # BLAS 的執行緒數必須在 import numpy 之前設定 —— 函式庫載入時只讀一次。
-# 這裡是逐 spaxel 呼叫 lsq_linear,每次的矩陣只有 3801x58,對 BLAS 來說太小:
-# 分工同步的成本遠超過平行的好處,而 OpenMP 的執行緒預設忙碌等待,會一邊空轉
-# 一邊燒 CPU。實測(K=54, 3801 通道)每個 spaxel 單執行緒 7.7 ms、8 執行緒
-# 228.7 ms —— **慢 30 倍**。14,610 個源 spaxel 因此從 1.9 分變成 55.7 分。
+# 這裡是逐 spaxel 呼叫 lsq_linear,每次的矩陣對 BLAS 來說太小:分工同步的成本
+# 遠超過平行的好處,而 OpenMP 的執行緒預設忙碌等待,會一邊空轉一邊燒 CPU。
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step3_sky_basis import (learn_sky_basis, CLIP_SIGMA, WINDOW, THRESHOLDS,
                              MAX_ITER)
 from step5_fit_spaxels import build_templates, fit_source, N_SRC, MIN_COVERAGE
 from templates import air_to_vacuum
 from utils import estimate_continuum
 
-ROOT   = Path(__file__).resolve().parents[2]
+ROOT   = Path(__file__).resolve().parents[3]
 STEP01 = ROOT / "results/skymodel/step01"
 STEP03 = ROOT / "results/skymodel/step03"
 STEP04D = ROOT / "results/skymodel/step04d"
@@ -71,8 +68,8 @@ def main():
     ap.add_argument("--best", required=True)
     ap.add_argument("--sources", choices=["subtract", "exclude"], default="subtract",
                     help="真源的區域怎麼處理。subtract = 扣掉源模型之後也當天空樣本"
-                         "(預設);exclude = 整個排除,只把 28 個假源與教授移除的"
-                         "#27/#30 當成 blank 併入樣本。後者是隔離變因用的對照組 —— "
+                         "(預設);exclude = 整個排除,只把假源與未列入擬合的源"
+                         "當成 blank 併入樣本。後者是隔離變因用的對照組 —— "
                          "假源本來就是天空,不需要扣任何模型,樣本裡就不會混進源模型"
                          "的誤差")
     ap.add_argument("--out", default=None)
@@ -106,10 +103,10 @@ def main():
     templates = build_templates(best, air_to_vacuum(wl))
     n_sub = 0
     if args.sources == "exclude":
-        # 隔離變因用的對照組。假源(以及教授移除的 #27/#30)本來就是天空,
+        # 隔離變因用的對照組。假源(以及未列入擬合的源)本來就是天空,
         # 不需要扣任何模型,所以樣本裡不會混進源模型的誤差;真源整個排除。
-        # 若這一組就有改善,代表改善來自「樣本變多」;若沒有,代表原版那點
-        # 改善全部來自真源的 spaxel —— 而那正是最可能把源吃掉的地方。
+        # 若這一組就有改善,代表改善來自「樣本變多」;若沒有,代表改善
+        # 全部來自真源的 spaxel —— 而那正是最可能把源吃掉的地方。
         n_real = int((valid & np.isin(seg_f, fit_ids)).sum())
         valid &= ~np.isin(seg_f, fit_ids)
         print(f"--sources exclude:排除 {len(fit_ids)} 個真源的 {n_real:,} 個 spaxel,"
@@ -122,10 +119,10 @@ def main():
             continue
         T = templates.get(t)
         c = fit_source(D[:, m], V[:, m], sky, T, s_fix=args.s_fix)
-        # T 在模板覆蓋不到的通道是 NaN —— 恆星模板靜止只到 9192 A,#35 的觀測
-        # 紅端(9350 A → 靜止 9362 A)就超出去了。那些通道的源沒有被扣掉,
-        # 不是乾淨的天空,所以標成 NaN 讓後面的統計逐元素排除,而不是把整條
-        # spaxel 丟掉(那會白白損失 231 個 spaxel 的 3670 個好通道)。
+        # T 在模板覆蓋不到的通道是 NaN —— 恆星模板靜止只到 9192 A,觀測的紅端
+        # 可能超出去。那些通道的源沒有被扣掉,不是乾淨的天空,所以標成 NaN 讓
+        # 後面的統計逐元素排除,而不是把整條 spaxel 丟掉(那會白白損失同一條
+        # spaxel 上其他所有的好通道)。
         src = T @ np.nan_to_num(c[:T.shape[1]])
         src = np.where(np.all(np.isfinite(T), axis=1)[:, None], src, np.nan)
         # 係數解不出來的 spaxel(有效通道太少)整欄是 NaN,src 會是 0,

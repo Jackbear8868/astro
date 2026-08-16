@@ -47,7 +47,7 @@ FWHM     = 4.06
 RADIUS   = 4
 N_SITE   = 8
 SEED     = 0
-Z_GRID   = np.arange(0.0, 1.5 + 5e-5, 1e-4)      # 教授指定
+Z_GRID   = np.arange(0.0, 1.5 + 5e-5, 1e-4)      # z 掃描網格
 Z_TOL    = 1e-3           # z 判定為正確的容差
 
 AMPS = np.array([0.0, 30.0, 100.0, 300.0, 1000.0])

@@ -20,8 +20,8 @@ step4 只留下贏家一列,中間的過程全部丟掉了。這支程式讀 `--
     stage2/                第 2 段(4 條本徵譜 × 可正可負係數)的地形與最佳光譜。
     compare/               兩段疊在一起:地形、光譜、殘差、自由度。
 
-模型是重算的,不是存下來的 —— 給定 (組別, 模板, z) 重解一次只要 0.6 ms,
-存下 15 萬個候選的光譜則要 4 TB。
+模型是重算的,不是存下來的 —— 給定 (組別, 模板, z) 重解一次很便宜,
+存下所有候選的光譜則要天文數字的空間。
 
     conda run -n astro python src/skymodel/experiments/step4_diagnostics.py --id 14
     conda run -n astro python src/skymodel/experiments/step4_diagnostics.py --id all
@@ -231,8 +231,8 @@ def one_source(args):
     def spectra_fig(path, title, src, skym):
         """每個波段兩列:上看擬合,下看源與殘差。
 
-        不能共用一個 y 軸 —— 天光線衝到 1600、源只有 0–12,兩者差兩個數量級,
-        擠在同一個軸上源會被壓成貼著 0 的直線(5 個波段裡有 4 個會這樣)。
+        不能共用一個 y 軸 —— 天光線比源亮好幾個數量級,擠在同一個軸上源會被
+        壓成貼著 0 的直線。
         """
         full = src + skym
         res = flux - full

@@ -1,11 +1,10 @@
 """Haro 11:兩種比較方式選出的模型,以及它們的逐通道 chi2。
 
-改前  固定的共同通道集合,比 total chi2          → 全部候選用同一批通道
-改後  各候選用自己覆蓋到的通道,比 reduced chi2   → 教授指定
+A  各候選只用自己覆蓋到的通道,比 reduced chi2
+B  把解出的係數套到全部通道再算 total chi2      → 全部候選用同一批通道
 
-搜尋(改後)完全依教授指定:z ∈ [0, 1.5] 步長 1e-4、全部 33 條模板、
-唯一下限是數學上必需的 n > p。改前的解以 REF 給定,是舊方法在 z ≤ 0.06
-的共同通道上得到的最小 total chi2。
+搜尋範圍:z ∈ [0, 1.5] 步長 1e-4、全部 33 條模板,
+唯一下限是數學上必需的 n > p。REF 另外給一組文獻對照的解一起列出。
 
     conda run -n astro python src/skymodel/experiments/haro11_fit_diagnostic.py
 
@@ -38,8 +37,8 @@ OUT   = {k: (FIGURES / f"haro11_spectrum_{k}_{BASIS}.png",
 CACHE = Path(__file__).parent / f"haro11_fit_diagnostic.cache_{BASIS}.npz"
 
 N_TPL  = 33
-Z_GRID = np.arange(0.0, 1.5 + 5e-5, 1e-4)      # 教授指定
-REF    = ("027", 0.0205)                        # 改前的解
+Z_GRID = np.arange(0.0, 1.5 + 5e-5, 1e-4)
+REF    = ("027", 0.0205)                        # 文獻對照的解
 
 C_DATA, C_BEFORE, C_AFTER = "#6b7280", "#2563eb", "#ea580c"
 
@@ -79,7 +78,7 @@ def fit(name, z):
     model = (M @ th) * sig
     per   = ((f[g] - model) / sig) ** 2
 
-    # 擬合只用 g 的通道(教授指定);這裡另外把解出的係數套到全部波長,
+    # 擬合只用 g 的通道;這裡另外把解出的係數套到全部波長,
     # 看這個解在被 discount 掉的區域預測成什麼樣。模板蓋不到處源項為零。
     m_all   = th[0] * np.nan_to_num(T, nan=0.0) + th[1:] @ sky
     per_all = ((f - m_all) / sig_all) ** 2

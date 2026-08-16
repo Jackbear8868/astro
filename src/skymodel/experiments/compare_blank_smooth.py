@@ -97,8 +97,8 @@ def main():
     D = D.reshape(nz, -1)
     cov = np.isfinite(D).sum(axis=0) / nz
     E = fits.getdata(ESO).reshape(nz, -1)
-    # ESO 也要一起要求有限 —— 它有少數通道是 NaN(例:(300,200) 有 1 個),
-    # 不擋掉的話下面拿它當基準的統計整列都會變成 NaN。
+    # ESO 也要一起要求有限 —— 它有少數通道是 NaN,不擋掉的話下面拿它當基準的
+    # 統計整列都會變成 NaN。
     blank = ((white != 0).ravel() & (seg.ravel() == 0) & (cov >= MIN_COVERAGE)
              & np.isfinite(D).all(axis=0) & np.isfinite(E).all(axis=0))
     idx = np.flatnonzero(blank)

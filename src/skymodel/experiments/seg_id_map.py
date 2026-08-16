@@ -31,13 +31,18 @@ def main():
     ap = argparse.ArgumentParser(description="任一份 segmentation 的 source ID map")
     ap.add_argument("--seg", default=str(ROOT / "data/Haro11_NEpointing_seg1sigma.fits"),
                     help="要畫的 segmentation 圖")
+    ap.add_argument("--white", default=None,
+                    help="底圖。預設是 NE 工作區的 step01/whitelight.fits;"
+                         "畫別的 pointing 時要指到**那一顆自己的**白光 —— "
+                         "配錯底圖會看到對不齊的錯覺,而那不是資料的問題")
     ap.add_argument("--min-area", type=int, default=1,
-                    help="只畫面積 >= 這個值的源。1 sigma 有 116 個源,"
+                    help="只畫面積 >= 這個值的源;"
                          "小到幾個像素的標上去只會互相蓋住")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    white = fits.getdata(STEP01 / "whitelight.fits")
+    white = fits.getdata(Path(args.white) if args.white
+                         else STEP01 / "whitelight.fits")
     seg   = fits.getdata(args.seg)
     if seg.shape != white.shape:
         raise SystemExit(f"seg {seg.shape} 與白光圖 {white.shape} 尺寸不同")

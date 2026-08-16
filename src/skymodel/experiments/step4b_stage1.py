@@ -4,8 +4,8 @@
 
     flux(λ) − s·C_sky(λ)  =  A · T(λ / (1+z)),   A ≥ 0
 
-通道集合固定(4800–6000 A 扣掉天光線 = 599 個),自由參數固定 1 個,所以
-**chi2 與 reduced chi2 是同一條曲線**,只差 dof = 598 這個常數。兩個刻度
+通道集合固定(擬合視窗扣掉天光線),自由參數固定 1 個,所以
+**chi2 與 reduced chi2 是同一條曲線**,只差 dof 這個常數。兩個刻度
 畫在同一張圖的左右兩側,不畫兩張一樣的圖。
 
 判讀一個 chi2 之前要先知道它在量什麼。這裡有兩種完全不同的高 chi2:
@@ -20,8 +20,8 @@
     模板的張力  23 條模板之間 chi2 的散布   —— 資料分不分得出模板的差別
 
 產出 figures/step4b_{tag}/
-    stage1_all_sources.png   37 個源排在一起,用來挑門檻
-    chi2_vs_z.png            37 個源的 chi2(z) 小圖總覽
+    stage1_all_sources.png   所有源排在一起,用來挑門檻
+    chi2_vs_z.png            所有源的 chi2(z) 小圖總覽
     id{NN}/landscape.png     單一源:chi2(z) 地形
     id{NN}/per_template.png  單一源:23 條模板各自的最佳 chi2
     id{NN}/spectrum.png      單一源:全波段光譜 + 最佳模板 + 進 chi2 的通道,
@@ -213,8 +213,8 @@ def summarise(D, t, sc, best, args, out, draw=True):
         # σ 是 chi2 的分母,和 step4b 擬合時用的完全是同一個量:
         #     sig = sqrt(var / nspax**2) = sqrt(Σ var) / N
         # 配的是平均光譜(flux / nspax),所以除的是 N 而不是 sqrt(N)。
-        # 天光線處的 σ 比連續譜區高約 20 倍(37 個源的中位,最大 60 倍),線性軸
-        # 會把連續譜區壓進面板底下 1/20 的高度,看不出任何結構,所以用 log 軸。
+        # 天光線處的 σ 遠高於連續譜區,線性軸會把連續譜區壓進面板底部,
+        # 看不出任何結構,所以用 log 軸。
         # 紅點的意義和上面那一列一模一樣 —— 同一個符號在同一張圖裡只能有一個意思。
         axs.plot(wl[m], sig[m], lw=0.5, color="0.45",
                  label=r"$\sigma = \sqrt{\Sigma\,\mathrm{var}}\,/\,N$"
@@ -238,7 +238,7 @@ def summarise(D, t, sc, best, args, out, draw=True):
 
 
 def all_sources(rows, args, out):
-    """37 個源排在一起 —— 這是挑門檻真正要看的圖。"""
+    """所有源排在一起 —— 這是挑門檻真正要看的圖。"""
     rows = sorted(rows, key=lambda r: r["red_chi2"])
     x    = np.arange(len(rows))
     dof  = rows[0]["dof"]
@@ -308,7 +308,7 @@ def all_sources(rows, args, out):
 
 
 def chi2_vs_z_grid(scans, args, tag, out):
-    """37 個源的 chi2(z) 擺在一起 —— 每格一個源。
+    """所有源的 chi2(z) 擺在一起 —— 每格一個源。
 
     每格畫兩層:淡灰是 23 條模板各自的曲線,粗線是「每個 z 上最好的那條模板」
     的包絡線。掃描實際比較的就是包絡線 —— 對每個 z,擬合器可以自由挑模板。
@@ -404,7 +404,7 @@ def iter_compare(per_iter, args, out):
                        label="A = 0  (no source: unconstrained fit went negative)")
         ax.legend(fontsize=10, loc="upper left")
 
-        # ID 1(Haro 11)約 10,000,其餘 36 個在 2–11。不截頂的話那 36 個會壓成
+        # 主源的 chi2 比其餘的源高好幾個數量級,不截頂的話其餘的會壓成
         # 一條線。紅色不是資料,是「這裡有一個點被切掉了」的記號。
         hi = np.sort(y)[-2] * 1.12
         lo = y.min() * 0.92
@@ -475,7 +475,7 @@ def main():
                     help="光譜圖每一段的高(吋)")
     ap.add_argument("--only-summary", action="store_true",
                     help="只重畫總覽圖(stage1_all_sources / chi2_vs_z / 跨輪比較),"
-                         "跳過逐源的三張 —— 只改總覽的版面時省下 90%% 的時間")
+                         "跳過逐源的三張 —— 只改總覽的版面時快很多")
     ap.add_argument("--spec-dir", default=None,
                     help="源光譜的目錄。分類用的是扣過天空的版本(step02_eso),"
                          "和 step4b 保持一致才比得上")

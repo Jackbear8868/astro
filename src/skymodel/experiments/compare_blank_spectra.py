@@ -31,9 +31,8 @@ ESO     = ROOT / "data/Haro11_NEpointing_esonosky.fits"
 #
 # 選法:在 25 的倍數格點中,取滿足「seg == 0、白光非零、我們與 ESO 兩個 cube 的
 # 3801 個通道都有資料、離任何 seg > 0 至少 10 px」的點,再挑 10 個散佈全視場的。
-# 座標全部取整是為了好讀好對照 —— 視場 320 x 332,合格的格點有 97 個,不缺選擇。
-# (ESO 的 cube 要一起檢查:(300, 200) 在我們的輸出乾淨,ESO 卻有 1 個 NaN 通道。)
-# 實際離最近源的距離:21.6 – 51.0 px(PSF FWHM 4.06 px,即 5 – 13 個 FWHM)。
+# 座標全部取整是為了好讀好對照。
+# (ESO 的 cube 要一起檢查:有的 spaxel 在我們的輸出乾淨,ESO 卻有 NaN 通道。)
 FIXED_SPAXELS = [
     ( 50,  50), ( 50, 150), (100, 100), (150, 200), (200, 100),
     (200, 200), (250,  50), (250, 250), (300, 150), (300, 225),
@@ -46,7 +45,7 @@ def main():
     ap.add_argument("--from-basis", nargs=2, metavar=("BASIS", "K"), default=None,
                     help="不讀 step05 的 cube,直接從 basis 算 blank 的殘差。"
                          "blank 區的擬合完全不用模板,所以結果和跑完 step4+step5 "
-                         "再讀 cube 完全相同,但幾秒鐘就好(不必等 22 分鐘)。"
+                         "再讀 cube 完全相同,但只要幾秒鐘。"
                          "例:--from-basis svd 35")
     ap.add_argument("--n", type=int, default=10,
                     help=f"畫幾個 spaxel(取 FIXED_SPAXELS 的前 n 個,最多 {len(FIXED_SPAXELS)})")
@@ -61,13 +60,13 @@ def main():
     ap.add_argument("--out-suffix", default="",
                     help="輸出資料夾加後綴,讓不同版面的圖並存不互相覆蓋")
     ap.add_argument("--with-wsky", action="store_true",
-                    help="把原始的 wsky(未扣天空)疊在同一個面板。它的連續譜約 24,"
-                         "正好落在 y 範圍內;天光線衝到 1600 以上的部分被 y 範圍切掉。")
+                    help="把原始的 wsky(未扣天空)疊在同一個面板。它的連續譜落在 "
+                         "y 範圍內;天光線的峰值遠超出去,會被 y 範圍切掉。")
     ap.add_argument("--zoom", type=float, nargs=2, metavar=("L1", "L2"), default=None,
                     help="只畫這一段波長(覆蓋 --panels,用來細看某幾條天光線)")
     ap.add_argument("--smooth", type=int, default=0,
                     help="另外疊一條 N 通道移動平均。雜訊被壓成 1/sqrt(N),"
-                         "零點偏移才浮得出來(這是我們相對 ESO 最大的優勢)。0 = 不畫")
+                         "零點偏移才浮得出來。0 = 不畫")
     args = ap.parse_args()
 
     seg   = fits.getdata(STEP01 / "seg.fits")
@@ -76,8 +75,8 @@ def main():
 
     if args.from_basis:
         b, k = args.from_basis[0], int(args.from_basis[1])
-        # 檔名不帶 s 的設定 —— blank 區的 s 一律自由(fit_blank 沒有 s_fix 這個
-        # 參數),--s-fix/--s-free 只作用在 source 區。標上 s_1.0 會誤導。
+        # 檔名不帶 s 的設定 —— 這裡的 blank 一律自由解 s,
+        # --s-fix / --s-free 只作用在 source 區。標上 s_1.0 會誤導。
         args.tag = f"{b}_K{k}_blank"
         sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
                          np.load(STEP03 / f"sky_basis_{b}_K{k}.npy")])
@@ -149,9 +148,9 @@ def main():
         for k, a in enumerate(axes):
             m = (wl >= edges[k]) & (wl <= edges[k + 1])
             a.axhline(0, color="0.55", lw=0.6, zorder=1)
-            # wsky 疊在同一個面板:它的連續譜約 24,正好落在 y 範圍內,可以直接
-            # 看出「我們把 24 這條線壓到 0」。天光線衝到 1600 以上的部分自然被
-            # y 範圍切掉 —— 那是刻意的,畫出來只會把殘差壓成一條線。
+            # wsky 疊在同一個面板:它的連續譜落在 y 範圍內,可以直接看出「我們
+            # 把那條線壓到 0」。天光線的峰值遠超出去,自然被 y 範圍切掉 ——
+            # 那是刻意的,畫出來只會把殘差壓成一條線。
             if w is not None:
                 a.plot(wl[m], w[m], lw=0.7, color="#7f7f7f", alpha=0.9, zorder=1.5,
                        label=f"wsky (before)   median {np.median(w):.1f}   "

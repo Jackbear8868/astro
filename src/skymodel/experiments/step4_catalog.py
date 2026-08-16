@@ -1,4 +1,4 @@
-"""37 個源的總表 + 一張標了編號的位置圖。
+"""所有源的總表 + 一張標了編號的位置圖。
 
 step4 的 best_*.npz 已經有擬合結果,但少了兩件事:源在天上的樣子(多大、在哪、
 多亮),以及第 1 段自己的 z —— 那被第 2 段覆寫掉了。要判斷一個解可不可信,
@@ -18,7 +18,7 @@ step4 的 best_*.npz 已經有擬合結果,但少了兩件事:源在天上的樣
                     是「這可能不是真的源」的警訊。
     白光淨          遮罩內白光中位數 − blank 區白光中位數,單位同白光影像。
                     不用 object_flux 算面亮度:那是從含天空的 cube 抽的,
-                    中位數量到的是天空(全部落在 29–32),不是源。
+                    中位數量到的是天空,不是源。
     z1 / z2         第 1 段(離散模板)與第 2 段(本徵譜)各自定出的紅移。
                     兩者差很多 = 換一個模型就換一個答案,這個 z 不穩。
     dchi2           最佳組與次佳組的 chi2_all 差。小 = 分類幾乎是擲骰子。
@@ -62,9 +62,8 @@ def id_map(seg, white, rows, out, by_group=False):
     是影像顯示的標準做法。
 
     by_group=False(預設)只畫「範圍 + 編號」,不上組別顏色。分類是 step4 的
-    「結論」,把結論畫進定位圖裡,看圖的人會不自覺地把它當成既定事實 ——
-    而我們已經量到 15/37 個源的分類裕度小於 100。定位圖的職責只是回答
-    「哪個點是哪個源」。
+    「結論」,把結論畫進定位圖裡,看圖的人會不自覺地把它當成既定事實;
+    定位圖的職責只是回答「哪個點是哪個源」。
     """
     fig, ax = plt.subplots(figsize=(13, 12.5))
     v = np.nanpercentile(white[np.isfinite(white) & (white != 0)], 99.5)
@@ -90,7 +89,7 @@ def id_map(seg, white, rows, out, by_group=False):
     ax.set_xlabel("x [px]")
     ax.set_ylabel("y [px]")
     if by_group:
-        # 圖例放在座標軸外面 —— 右上角有 ID 32/36/11 三個源,壓在上面看不見。
+        # 圖例放在座標軸外面 —— 右上角有源時,放在軸內會把它們蓋掉。
         ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
                            for g, c in GROUP_COLOR.items()],
                   loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,
@@ -101,7 +100,7 @@ def id_map(seg, white, rows, out, by_group=False):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="37 個源的總表與位置圖")
+    ap = argparse.ArgumentParser(description="所有源的總表與位置圖")
     ap.add_argument("--tag", default="svd_K30_s_1.0")
     args = ap.parse_args()
 

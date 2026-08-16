@@ -9,7 +9,7 @@
          回答「單一條成分的形狀」—— 影像看得出位置,看不出正負與線型。
 
 色階用百分位而不是最大值:第一條成分的振幅比後面大一個量級,用最大值當上限
-會讓其餘 50 幾條全部變成同一個顏色。
+會讓其餘的成分全部變成同一個顏色。
 
     conda run -n astro python src/skymodel/experiments/plot_sky_basis.py \\
         --basis results/skymodel/_backup_prof2sigma/step03/sky_basis_svd_K54.npy
@@ -35,8 +35,7 @@ def main():
     ap.add_argument("--n-trace", type=int, default=6, help="下方單獨畫幾條")
     ap.add_argument("--per-component", action="store_true",
                     help="每條成分各存一張 eNN.png,放進 figures/step3_basis/"
-                         "basis_{method}_K{K}/。沿用舊 pipeline 的命名 —— 那批圖的"
-                         "產生程式在 2026-07-23 重構時被刪了,只留下產物")
+                         "{來源目錄}__basis_{method}_K{K}/")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -51,11 +50,14 @@ def main():
     B = B * np.sign(B[np.arange(K), np.abs(B).argmax(axis=1)])[:, None]
 
     if args.per_component:
-        # 名稱從 basis 檔名還原:sky_basis_svd_K54.npy -> basis_svd_K54。
-        # 但檔名不含「這是哪一版 seg 跑的」,不同 seg 的同 K 會撞名而互相覆蓋 ——
-        # 需要區分時用 --out 指定資料夾。
+        # 輸出目錄必須帶上**來源目錄**,不能只用 basis 的檔名。
+        # sky_basis_svd_K30.npy 這個名字只說得出方法與 K,說不出「從哪些 spaxel
+        # 學的」—— 而那正是不同版本之間唯一的差別(全場 blank / x0-170 / 膨脹遮罩
+        # /...)。只用檔名的話,不同來源的同 K 會寫進同一個資料夾互相覆蓋,而且
+        # **覆蓋掉的是別人的科學產物,從檔名完全看不出來**。
         d = (Path(args.out) if args.out
-             else FIGURES / "step3_basis" / bp.stem.replace("sky_basis_", "basis_"))
+             else FIGURES / "step3_basis" /
+                  f"{bp.parent.name}__{bp.stem.replace('sky_basis_', 'basis_')}")
         d.mkdir(parents=True, exist_ok=True)
         # y 範圍全部成分共用 —— 各自 autoscale 的話,一條只有雜訊的成分會被
         # 放大到和真正的天光線成分看起來一樣強,逐張翻閱時完全誤導。

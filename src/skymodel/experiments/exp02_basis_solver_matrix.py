@@ -52,7 +52,7 @@ from utils import estimate_continuum, running_median
 # ---------------------------------------------------------------- 參數
 K          = 10        # 天光線基底條數
 WINDOW     = 300       # 連續譜 running median 視窗 (px)
-THRESHOLDS = (1, 2)    # 線偵測門檻 (正, 負),教授指定
+THRESHOLDS = (1, 2)    # 線偵測門檻 (正, 負)
 MAX_ITER   = 20        # estimate_continuum 迭代上限(只作用在 mean sky 上)
 CHUNK      = 8000      # 分塊大小,控制記憶體
 
@@ -107,7 +107,7 @@ def per_spaxel_continuum(spectra, line_mask, window=WINDOW, chunk=CHUNK):
     """ZAP 的 continuum filter:每條 spaxel 沿波長取 running median(遮掉天光線通道)。
 
     數值定義就是 utils.running_median;這裡改用 pandas 的 rolling median 做量產,
-    因為它算的是同一個東西但快約 87 倍(下方 verify_fast_median 會當場驗證)。
+    因為它算的是同一個東西但快很多(下方 verify_fast_median 會當場驗證)。
     spectra: (nz, n) -> 回傳 (nz, n) float32
     """
     nz, n = spectra.shape

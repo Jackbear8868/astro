@@ -1,19 +1,18 @@
 """把源的「光譜 + 最佳模板 + 殘差 + 誤差譜」合成一份 PDF —— 寄給教授用。
 
-預設只畫 KEEP_IDS 那 11 個真源(教授 2026-08-06:37 個偵測裡其餘 26 個是雜訊
-尖峰、宇宙線、探測器條紋)。`--all-ids` 才畫全部。
+預設只畫 KEEP_IDS 那幾個真源(其餘的偵測是雜訊尖峰、宇宙線、探測器條紋)。
+`--all-ids` 才畫全部。
 
 
-step4b_stage1.py 產的 id{NN}/spectrum.png 一張 40 吋寬、約 800 KB,37 張沒辦法
-寄也沒辦法一次讀。這支把同樣的內容重畫進一份 A4 橫式 PDF,一頁 N 個源,外加
-第一頁的總表。
+step4b_stage1.py 產的 id{NN}/spectrum.png 又寬又大,整批沒辦法寄也沒辦法一次
+讀。這支把同樣的內容重畫進一份 A4 橫式 PDF,一頁 N 個源,外加第一頁的總表。
 
 版面語言和 spectrum.png 逐項一致 —— 灰線是觀測、藍線是模型、紅點是真正進 chi2
 的通道、下面那一小列是誤差譜 σ(log 軸)。兩份東西看起來必須是同一種圖,不然
 對照著看的人要重學一次怎麼讀。
 
-資料線用 rasterized=True 轉成點陣,文字與座標軸維持向量:3801 個通道 × 5 條線
-× 37 個源全部走向量的話 PDF 會到幾十 MB、開啟很慢;文字仍是向量,放大不會糊。
+資料線用 rasterized=True 轉成點陣,文字與座標軸維持向量:每個源好幾條線、每條
+線數千個通道,全部走向量的話 PDF 會很大、開啟很慢;文字仍是向量,放大不會糊。
 
     conda run -n astro python src/skymodel/experiments/step4b_pdf.py \\
         --star-window 4600 5800 --iter 1
@@ -207,7 +206,7 @@ def draw_source(fig, cell, D, t, b, args, xlim, legend=False, g=None):
         axr.set_ylabel(r"(obs$-$mod)/$\sigma$", fontsize=6)
         axr.legend(fontsize=5.8, loc="upper right", framealpha=0.85)
 
-    # σ:chi2 的分母。天光線處比連續譜高約 20 倍,線性軸會把連續譜區壓扁 -> log。
+    # σ:chi2 的分母。天光線處遠高於連續譜,線性軸會把連續譜區壓扁 -> log。
     axs.plot(wl, sig, lw=0.4, color="0.72", rasterized=True)
     axs.plot(wl, np.where(ok, sig, np.nan), lw=0.5, color="0.25", rasterized=True,
              label=fr"$\sigma$, {int(ok.sum())} channels in chi2")
@@ -220,7 +219,7 @@ def draw_source(fig, cell, D, t, b, args, xlim, legend=False, g=None):
         axs.set_ylim(float(np.nanpercentile(sig[vis], 0.5)) * 0.7,
                      float(np.nanpercentile(sig[vis], 99.9)) * 1.4)
     # log 軸的預設刻度是給整張圖用的:這一列只有 1 吋高,預設會把 4×10⁰、6×10⁰
-    # 這種次要刻度全部標上去,標籤互相疊成一團(ID 1 最明顯,σ 跨兩個數量級)。
+    # 這種次要刻度全部標上去,標籤互相疊成一團。
     # 只留 1/2/5 三個位置,而且用普通數字寫(0.5 1 2 5 10),不用科學記號 ——
     # 這一列要傳達的是量級,不是精確值。
     axs.yaxis.set_major_locator(
@@ -267,7 +266,7 @@ def cover(pdf, rows, args, tag):
         yy, xx = np.nonzero(seg == r["id"])
         if yy.size == 0:
             continue
-        # 標籤不寫在源身上,往外挪 8 點。最小的源只有 10 個 spaxel(圖上約 4 px),
+        # 標籤不寫在源身上,往外挪 8 點。最小的源在圖上只有幾個像素寬,
         # 字直接壓上去會把源整個蓋掉,看起來像「這裡標了一個編號卻沒有東西」。
         # 靠近上緣的源改成往下標,否則字會跑到圖框外面。
         up = yy.mean() < 0.92 * ny
@@ -320,8 +319,8 @@ def main():
                     help="一頁畫幾個源。一個源現在佔五列(恆星流量/殘差、"
                          "星系流量/殘差、σ),一頁放兩個的話每一列只剩 0.8 吋")
     ap.add_argument("--all-ids", action="store_true",
-                    help="畫全部 37 個偵測。預設只畫 KEEP_IDS 那 11 個真源 —— "
-                         "其餘 26 個是雜訊尖峰/宇宙線/探測器條紋(教授 2026-08-06)")
+                    help="畫全部的偵測。預設只畫 KEEP_IDS 那幾個真源 —— "
+                         "其餘的是雜訊尖峰/宇宙線/探測器條紋")
     ap.add_argument("--dpi", type=int, default=200, help="點陣化資料線的解析度")
     ap.add_argument("--spec-dir", default=None,
                     help="源光譜的目錄,要和 step4b_window_fit.py 跑時用的一致,"
@@ -359,13 +358,13 @@ def main():
         b["gal"] = stage2_best(tag, t)      # 沒跑第 2 段就是 None,圖只畫恆星
         rows.append(b)
 
-    # 檔名要能分辨 11 個真源版和 37 個全偵測版 —— 兩份的頁數和結論都不同,
+    # 檔名要能分辨「只畫真源」和「全偵測」兩版 —— 兩份的頁數和結論都不同,
     # 同名互相覆蓋的話,看不出手上這份是哪一種。
     out = (Path(args.out) if args.out else
            FIGURES / f"step4b_{tag}{'' if args.all_ids else '_keep11'}.pdf")
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # 兩節,每節都把 37 個源走完再換下一節:先只畫擬合視窗,再畫全波段。
+    # 兩節,每節都把所有源走完再換下一節:先只畫擬合視窗,再畫全波段。
     # 一個源的兩張圖分開在兩節,而不是相鄰兩頁 —— 這樣「所有源在同一個尺度下
     # 排在一起」,翻過去比較的是源與源,不是同一個源的兩種畫法。
     wl       = D["wl_air"]

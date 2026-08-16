@@ -1,10 +1,10 @@
-"""剔除離群值之後,chi2_all 在 z=0.368 的暴增有沒有消失?
+"""剔除離群值之後,chi2_all 在高 z 的暴增有沒有消失?
 
-背景:通道 151(4788.4 A)有 12 個 blank spaxel 的值是 −1,750 到 −548,029。
+背景:通道 151(4788.4 A)有少數 blank spaxel 是極端的負值。
 兩個後果串在一起:
 
-    mean_sky 用 np.nanmean → 該通道被拉到 1.8(鄰居 29.5)→ C_sky 也歪掉
-    SVD 學到一條「90% 能量集中在通道 151」的 basis → 它描述的是那 12 個壞
+    mean_sky 用 np.nanmean → 該通道的平均被拉離鄰居 → C_sky 也歪掉
+    SVD 學到一條能量幾乎全集中在通道 151 的 basis → 它描述的是那些壞
     spaxel,不是天空
 
 第二個才是真正傷人的。模板紅移到某個 z 之後藍端會蓋過 4788 A,那條 basis
@@ -188,8 +188,7 @@ def main():
            "A'  clipped mean, keep outliers",
            "B   plain mean, reject outliers",
            "C   clipped mean, reject outliers"]
-    # A 和 A' 的曲線完全重合,B 和 C 也是 —— 那正是結論(mean_sky 的改動對這件事
-    # 沒有貢獻)。粗實線在下、細虛線在上,四條才都看得見。
+    # 曲線可能兩兩重合,所以粗實線在下、細虛線在上,四條才都看得見。
     fig, ax = plt.subplots(figsize=(11, 6))
     for lbl, c, col, lw, ls in zip(LBL, curves,
                                    ["#d62728", "#ff7f0e", "#1f77b4", "#2ca02c"],

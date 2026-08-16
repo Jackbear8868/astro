@@ -12,7 +12,7 @@ step4b 的圖畫的是 `observed − 1.0·C_sky`,已經扣過天空,所以那條
 blank 區的 mean sky 預設不畫(--with-mean-sky 可加回)——它是 C_sky 的來源而不是
 被扣掉的東西,而且連續譜和 C_sky 幾乎重合,疊上去只會混淆。
 
-線性刻度、單一面板。天光線衝到 1,676,照實畫會把連續譜壓成一條線,所以直接
+線性刻度、單一面板。天光線遠高於連續譜,照實畫會把連續譜壓成一條線,所以直接
 截斷 —— 這張圖要回答的是「連續譜和源的比例」,不是天光線有多高。
 
     conda run -n astro python src/skymodel/experiments/sky_vs_source.py --id 35
@@ -93,7 +93,7 @@ def main():
         print(f"{f'{lo}-{hi}':>14}{oo:>11.2f}{cc:>9.2f}{ss:>9.2f}{100*cc/oo:>7.1f}%")
 
     # ---------------- 圖 ----------------
-    # 單一面板、線性刻度。天光線衝到 1,676,照實畫會把連續譜壓成一條線 ——
+    # 單一面板、線性刻度。天光線遠高於連續譜,照實畫會把連續譜壓成一條線 ——
     # 直接截斷,因為這張圖要回答的是「連續譜和源的比例」,不是天光線多高。
     fig, a = plt.subplots(figsize=(args.width, 7))
     # 三條就把算式講完了:observed = C_sky + source。
@@ -112,8 +112,7 @@ def main():
     a.set_xlim(xlo, xhi)
     a.set_ylim(*args.ylim)
     # 另一個候選視窗:界線畫成虛線,界線外(會被砍掉的部分)打上淡淡的底色。
-    # 這是為了回答「改成 4700-5800 會少掉哪一段」——那一段的樣子才是重點,
-    # 不是界線本身。
+    # 重點是被砍掉的那一段長什麼樣,不是界線本身。
     if args.mark_window:
         mlo, mhi = args.mark_window
         for v in (mlo, mhi):

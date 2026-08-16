@@ -88,8 +88,8 @@ def main():
     a.axvline(K, color="#d62728", ls="--", lw=1.2)
     a.axvspan(0, ind, color="#ffcc80", alpha=0.35,
               label=f"skipped for the baseline (first 15%)")
-    # symlog:第一個差分是 -1.07e7,線性軸會把其餘 949 個點全部壓成一條零線,
-    # 而判準要看的正是那 949 個點怎麼趨於平坦。linthresh 取 1 —— 平坦區的
+    # symlog:第一個差分比其餘的大好幾個量級,線性軸會把後面的點全部壓成一條
+    # 零線,而判準要看的正是那些點怎麼趨於平坦。linthresh 取 1 —— 平坦區的
     # 尺度是個位數,小於 1 的部分用線性顯示才不會把零附近撐開成噪音。
     a.set_yscale("symlog", linthresh=1)
     a.set_xlabel("component"); a.set_ylabel("$\\Delta$ explained variance (symlog)")

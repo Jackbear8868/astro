@@ -171,7 +171,7 @@ def main():
     a.set_xlabel("redshift  z")
     a.set_ylabel("chi2")
     a.xaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter("%.4f"))
-    # 第二個刻度:reduced chi2。通道數固定 713、自由參數固定 1,所以它和 chi2
+    # 第二個刻度:reduced chi2。通道數與自由參數在這張圖裡都固定,所以它和 chi2
     # 是同一條曲線除以 dof —— 畫成第二個 y 軸,不另外畫一張一模一樣的圖。
     a2 = a.twinx()
     a2.set_ylim(*[v / dof for v in a.get_ylim()])

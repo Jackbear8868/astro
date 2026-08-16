@@ -3,14 +3,11 @@
 剔除的判準已經定了(|x − med| / sg > 30),剩下的問題是被剔掉的位置填什麼值。
 殘差矩陣 R = blank − C_sky 是 SVD 的輸入,填進去的值會被當成真實資料學習。
 
-    填 0        線通道上 R ~ 1600,填 0 等於宣稱「這裡沒有天光線」——
-                本身就是一個 1600 的假訊號,只是比原本的 −548,029 小 340 倍
+    填 0        線通道上的 R 很大,填 0 等於宣稱「這裡沒有天光線」——
+                本身就是一個假訊號,只是比原本的離群值小
     填 med(R)   該通道的典型殘差。被剔掉的位置看起來像一個完全正常的 spaxel
 
-這件事在線通道上特別要緊:30 sigma 剪掉的 167 個元素有 120 個落在線通道
-(線通道只佔 35.6% 的波長,卻吃掉 72% 的離群值)。
-
-兩個判準,和先前一致:
+兩個判準:
     blank 端   train/test 分半,basis 只用 train 學,殘差在 test 上算
     source 端  同一個源、同一條模板的 chi2_all(z) 動態範圍 —— 假性禁止有沒有消失
 
@@ -92,7 +89,7 @@ def main():
     blank = blank[:, np.isfinite(blank).all(axis=0)].astype(np.float64)
     print(f"blank spaxels {blank.shape[1]:,}   {nz} channels")
 
-    # ---- C_sky 用改好的 step3 做法(sigma-clipped mean)算,兩個變體共用 ----
+    # ---- C_sky 用 step3 的做法(sigma-clipped mean)算,各變體共用 ----
     p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
     sg   = np.maximum((p84 - p16) / 2, 1e-6)
     keep = np.abs(blank - med[:, None]) <= CLIP_SIGMA * sg[:, None]

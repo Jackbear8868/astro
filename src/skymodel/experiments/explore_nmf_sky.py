@@ -1,8 +1,4 @@
-"""早期探索:用 NMF 從 blank spaxels 學天光線 basis,並檢查扣完之後的殘差。
-
-保留為記錄。原本還有 semi-NMF 的段落(以及建立在 semi-NMF basis 上的
-chi2 加權擬合與 per-spaxel 連續譜實驗),已隨 semi-NMF 一併移除。
-"""
+"""用 NMF 從 blank spaxels 學天光線 basis,並檢查扣完之後的殘差。"""
 import numpy as np
 from astropy.io import fits
 import matplotlib; matplotlib.use("Agg")

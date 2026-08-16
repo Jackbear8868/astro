@@ -7,10 +7,9 @@
     WINDOW       連續譜 running median 的視窗(px)。1.25 A/px,所以 300 px
                  = 375 A。物理限制:必須遠寬於一條天光線(FWHM ~2.5 px),
                  又必須窄於天空連續譜本身的結構尺度(~1000 A)
-    THRESHOLDS   線偵測門檻(正, 負)。教授指定 (1, 2) —— 這裡只是量出
+    THRESHOLDS   線偵測門檻(正, 負)。目前用 (1, 2) —— 這裡只是量出
                  鄰近值的行為供討論,不是要取代它
-    CLIP_SIGMA   離群值門檻。已知 10-100 是一段平台,這裡確認在新的評分
-                 方式下仍然成立
+    CLIP_SIGMA   離群值門檻,掃它是為了知道結果對這個選擇有多敏感
     method       分解方式 svd/pca/nmf/rpca
 
 三個防過擬合的設計:
@@ -170,7 +169,7 @@ def main():
         C, R = build(Dtr, w, BASE["thr"], c)
         show(f"CLIP_SIGMA = {c if c else '不剔除'}", C, decompose(R, 30, "svd"), 30)
 
-    # 教授指定 (1,2);列出鄰近值只是為了知道這個選擇有多敏感,不是要取代它
+    # 目前用 (1,2);列出鄰近值只是為了知道這個選擇有多敏感,不是要取代它
     for thr in [(1, 1), (2, 2), (1, 3), (0.5, 2)]:
         C, R = build(Dtr, w, thr, BASE["clip"])
         show(f"THRESHOLDS = {thr}", C, decompose(R, 30, "svd"), 30)

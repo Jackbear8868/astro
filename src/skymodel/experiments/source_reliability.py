@@ -12,7 +12,6 @@
 判讀:
     譜線 S/N >= 5           紅移被譜線釘住,可信
     只有連續譜、沒有譜線     紅移只能靠平滑的連續譜形狀猜,不可信
-                            (實測:換個 z 網格答案就變)
 
     conda run -n astro python src/skymodel/experiments/source_reliability.py
 """

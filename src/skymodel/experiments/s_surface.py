@@ -31,7 +31,7 @@ R_HOLE = 5           # 洞的半徑,對應約 80 px 的源
 
 
 def scale(a):
-    """穩健的散布估計。s(p) 有少數被邊界夾住的極端值,np.std 會被拉高兩倍以上。"""
+    """穩健的散布估計。s(p) 有少數被邊界夾住的極端值,np.std 會被它們拉高。"""
     a = a[np.isfinite(a)]
     return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2)
 
