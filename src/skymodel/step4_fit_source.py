@@ -375,9 +375,10 @@ def main():
         raise SystemExit("★ 需要 --spec-dir(例如 {work}/step02_eso)或 --aperture")
     src = Path(args.spec_dir) if args.spec_dir else STEP02B
     # 光譜來源不同 = 不同的科學產物,tag 必須分得開,否則會靜靜蓋掉上一次。
-    # 光譜來源編進 tag —— step02_eso 與 step02_ours 是不同的科學產物,
-    # 混在同一個檔名裡會靜靜蓋掉上一次
-    suffix = f"_{src.name.replace('step02', '')}" \
+    # 光譜來源編進 tag —— 同一個工作區裡若有多種來源(例如 ne_pointing 的
+    # step02_eso 與 step02_ours),不編進檔名就會靜靜蓋掉上一次。
+    # 預設來源 step02 不加後綴:後綴標記的是「偏離預設」,預設本身不必標。
+    suffix = ("" if src.name == "step02" else f"_{src.name.replace('step02', '')}") \
              + ("_galtpl" if args.gal_model == "sdss" else "")
     ids   = np.load(src / "object_ids.npy")
     flux  = np.load(src / "object_flux.npy")
