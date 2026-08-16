@@ -352,10 +352,6 @@ def main():
                     metavar=("Y0", "Y1", "X0", "X1"),
                     help="建場:這個框裡的格不當訓練樣本(仍然會被扣天空)。"
                          "用途與 step3 的 --exclude-box 相同,而且兩者應該給同一個框")
-    ap.add_argument("--sf-main-id", type=int, default=None,
-                    help="建場:主源的 segmentation ID。省略 = 自動取面積最大的源。"
-                         "距離從它的**主連通塊**算 —— SExtractor 的 CLEAN 會把假偵測"
-                         "的像素併進亮源,一個 ID 可能包含散在遠處的小碎塊")
     ap.add_argument("--sf-clip", type=float, default=8.0,
                     help="建場:|s − 中位| > clip x 穩健散布 的格不當訓練樣本")
     ap.add_argument("--main-dv-max", type=float, default=DV_MAX,
@@ -525,9 +521,10 @@ def main():
         print(f"  主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):{len(mids)} 個 ID"
               f",共 {int(mg.sum()):,} px"
               f"(紅移相符 <= {args.main_dv_max:g} km/s)")
+        # 用關鍵字傳 —— 位置參數裡夾一個 None 佔位,漏掉一個就會安靜地錯位
         s_hat, sf_train = build_s_field(
             s2d, seg, ok2d, args.sf_r_far, args.sf_r_far_haro or None,
-            args.sf_clip, args.sf_main_id, sf_box, mg)
+            args.sf_clip, exclude=sf_box, main=mg)
         if args.sf_file:
             # 用外部算好的場取代。訓練遮罩仍然照上面算,因為 meta 要記錄它,
             # 而且外部的場理應是用同一組訓練點建的 —— 形狀對不上就直接停,

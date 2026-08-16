@@ -8,10 +8,8 @@ from astropy.io import fits
 from sklearn.decomposition import PCA, NMF, TruncatedSVD
 from sklearn.utils.extmath import randomized_svd
 
-from scipy import ndimage
 
-from utils import (estimate_continuum, half_field_mask, main_source_mask,
-                   main_source_group)
+from utils import estimate_continuum
 import argparse
 import time
 
@@ -182,18 +180,6 @@ def main():
                          "一部分決定")
     ap.add_argument("--ylim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
                     help="同 --xlim,但限制 y")
-    ap.add_argument("--mask-half", action="store_true",
-                    help="自動遮掉主源所在的那半邊視場(見 utils.half_field_mask)。"
-                         "主源偏心時沿偏得較嚴重的那一軸切一半;主源在視場中央時"
-                         "改挖掉一個置中矩形、留外圈。用途和 --xlim 相同,但界線由"
-                         "資料算出,不必逐顆手給")
-    ap.add_argument("--main-id", type=int, default=None,
-                    help="主源的 segmentation ID。省略 = 自動取面積最大的源。"
-                         "不要假設它是 1 —— SExtractor 的編號按偵測順序給")
-    ap.add_argument("--r-far-src", type=float, default=None,
-                    help="排除離**主源以外**的源這麼近(px)的 blank 格,避免小源的 "
-                         "PSF 翼把源的光帶進天空模型的形狀裡。主源不歸它管 —— "
-                         "主源用 --xlim / --ylim / --mask-half 排除。省略 = 不排除")
     ap.add_argument("--exclude-box", type=int, nargs=4, default=None,
                     metavar=("Y0", "Y1", "X0", "X1"),
                     help="這個框裡的 blank 不當天空的訓練樣本(含端點)。--xlim/--ylim "
@@ -239,37 +225,12 @@ def main():
               f"blank {n_all:,} -> {int(blank_mask.sum()):,}"
               f" ({100 * blank_mask.sum() / max(n_all, 1):.1f}%)")
 
-    if args.mask_half:
-        # 主源用「最亮像素所在的那一整團」,不是單一 ID —— deblender 會把
-        # Haro 11 拆成數塊,選一塊會遮錯半邊(見 utils.main_source_group)。
-        # 這一步跑在 step4b 之前,還沒有紅移可用,所以只能做相鄰判準。
-        mg, mids, mk = main_source_group(seg, white)
-        print(f"主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):"
-              f"{len(mids)} 個 ID {mids[:8]}{'...' if len(mids) > 8 else ''}"
-              f",共 {int(mg.sum()):,} px")
-        half, txt = half_field_mask(seg, valid_mask, args.main_id, main=mg)
-        n0 = int(blank_mask.sum()); blank_mask &= half
-        print(f"--mask-half:{txt}")
-        print(f"            blank {n0:,} -> {int(blank_mask.sum()):,}"
-              f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
-
     if args.exclude_box:
         y0, y1, x0, x1 = args.exclude_box
         yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
         box = (yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1)
         n0 = int(blank_mask.sum()); blank_mask &= ~box
         print(f"--exclude-box y {y0}-{y1}, x {x0}-{x1}:"
-              f"blank {n0:,} -> {int(blank_mask.sum()):,}"
-              f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
-
-    if args.r_far_src:
-        # 只擋主源**以外**的源 —— 主源的暈比小源延伸得遠得多,適合它的半徑
-        # 和適合小源的差一個量級,所以主源另外由 --mask-half / --xlim 處理。
-        main, sid = main_source_mask(seg, args.main_id)
-        others = (seg > 0) & ~main
-        d = ndimage.distance_transform_edt(~others)
-        n0 = int(blank_mask.sum()); blank_mask &= d > args.r_far_src
-        print(f"--r-far-src {args.r_far_src:g} px(離主源 ID {sid} 以外的源):"
               f"blank {n0:,} -> {int(blank_mask.sum()):,}"
               f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
 

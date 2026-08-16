@@ -378,69 +378,6 @@ def main_source_mask(seg, source_id=None, main_blob=True):
     return m, source_id
 
 
-def half_field_mask(seg, valid, source_id=None, central=0.3, round_to=5,
-                    main=None):
-    """遮掉主源所在的那一半視場,回傳 (可用來學天空的布林遮罩, 說明字串)。
-
-    規則:
-      ① 找主源的主連通塊,算質心
-      ② 量質心在 y、x 兩個方向偏離視場中心多遠,以半邊長為單位
-      ③ 偏心量 >= central 的那一軸,遮掉主源所在的那一半
-      ④ 兩軸都 < central(主源在視場中央)-> 改遮掉一個**以質心為中心的置中矩形**,
-         矩形與視場同長寬比,大小取到「涵蓋一半的有效面積」,留下外圈
-      ⑤ 所有界線取整到 round_to 的倍數(預設 5) —— 半個像素的精度在這裡沒有意義,
-         整數的界線比較好記、好在文件裡引用、也比較好和別人對齊
-
-    用途是讓「遮掉主源那半邊」的判斷能自動套到任何一個 pointing,不必逐顆手給
-    界線;需要指定確切界線時仍可改用 step3 的 --xlim / --ylim。
-    """
-    def snap(v):
-        return int(round(v / round_to) * round_to) if round_to else int(round(v))
-
-    if main is None:
-        main, sid = main_source_mask(seg, source_id)
-    else:
-        sid = "(group)"      # 呼叫端已用 main_source_group 算好整團
-    ny, nx = seg.shape
-    ys, xs = np.nonzero(main)
-    cy, cx = ys.mean(), xs.mean()
-    off_y, off_x = (cy - ny / 2) / (ny / 2), (cx - nx / 2) / (nx / 2)
-
-    if max(abs(off_y), abs(off_x)) < central:
-        # 主源在中央:挖掉一個置中矩形,大小二分搜尋到剛好一半的有效面積
-        n_half = valid.sum() / 2.0
-        yy, xx = np.mgrid[0:ny, 0:nx]
-        lo, hi = 0.0, 1.0
-        for _ in range(40):
-            t = (lo + hi) / 2
-            box = (np.abs(yy - cy) <= t * ny / 2) & (np.abs(xx - cx) <= t * nx / 2)
-            if (box & valid).sum() < n_half:
-                lo = t
-            else:
-                hi = t
-        y0, y1 = snap(cy - hi * ny / 2), snap(cy + hi * ny / 2)
-        x0, x1 = snap(cx - hi * nx / 2), snap(cx + hi * nx / 2)
-        box = (yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1)
-        return valid & ~box, (f"主源 ID {sid} 在視場中央(偏心 y {off_y:+.2f}, "
-                              f"x {off_x:+.2f} 都 < {central:g}):挖掉 "
-                              f"y {y0}-{y1}, x {x0}-{x1} 的矩形(涵蓋一半有效面積),"
-                              f"留外圈")
-
-    yy, xx = np.mgrid[0:ny, 0:nx]
-    if abs(off_y) >= abs(off_x):
-        cut = snap(ny / 2)
-        keep = (yy < cut) if off_y > 0 else (yy >= cut)
-        side = "上" if off_y > 0 else "下"
-        txt = f"沿 y 切,主源在{side}半 -> 留 y {'<' if off_y > 0 else '>='} {cut}"
-    else:
-        cut = snap(nx / 2)
-        keep = (xx < cut) if off_x > 0 else (xx >= cut)
-        side = "右" if off_x > 0 else "左"
-        txt = f"沿 x 切,主源在{side}半 -> 留 x {'<' if off_x > 0 else '>='} {cut}"
-    return valid & keep, (f"主源 ID {sid} 質心 (y={cy:.0f}, x={cx:.0f}),"
-                          f"偏心 y {off_y:+.2f} / x {off_x:+.2f};{txt}")
-
-
 def rowcol_field(s, w, n_iter=4):
     """s ≈ mu + a(y) + b(x),交替以中位數求解(Tukey 的 median polish)。
 
