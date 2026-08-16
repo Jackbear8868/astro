@@ -71,7 +71,7 @@ from astropy.io import fits
 
 from templates import (load_sdss_template, load_eigen_galaxy, load_eigen_qso,
                        redshift_to_grid, air_to_vacuum)
-from utils import build_s_field, main_source_group
+from utils import DV_MAX, build_s_field, main_source_group
 
 ROOT      = Path(__file__).resolve().parents[2]
 WORK_DEFAULT = ROOT / "results/skymodel"
@@ -358,6 +358,9 @@ def main():
                          "的像素併進亮源,一個 ID 可能包含散在遠處的小碎塊")
     ap.add_argument("--sf-clip", type=float, default=8.0,
                     help="建場:|s − 中位| > clip x 穩健散布 的格不當訓練樣本")
+    ap.add_argument("--main-dv-max", type=float, default=DV_MAX,
+                    help="主源分組:相鄰成員的星系分支紅移離主源多少 km/s 之內"
+                         "才算主星系的一部分")
     ap.add_argument("--best", default=None,
                     help="源模型的來源檔。預設是舊 step4 的 best_{tag}.npz;"
                          "教授流程第 2 步要用 step4c 定案的分類,例如 "
@@ -515,9 +518,13 @@ def main():
             by0, by1, bx0, bx1 = args.sf_exclude_box
             yy, xx = np.mgrid[0:ny, 0:nx]
             sf_box = (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
-        mg, mids, mk = main_source_group(seg, white)
+        # 紅移取自 --best 那一份擬合的同一個目錄 —— 分類和紅移必須來自同一次
+        # step4b,否則遮罩用的是 A 的紅移、模板用的是 B 的分類
+        mg, mids, mk = main_source_group(seg, white, best_file.parent,
+                                         args.main_dv_max)
         print(f"  主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):{len(mids)} 個 ID"
-              f",共 {int(mg.sum()):,} px")
+              f",共 {int(mg.sum()):,} px"
+              f"(紅移相符 <= {args.main_dv_max:g} km/s)")
         s_hat, sf_train = build_s_field(
             s2d, seg, ok2d, args.sf_r_far, args.sf_r_far_haro or None,
             args.sf_clip, args.sf_main_id, sf_box, mg)
@@ -620,6 +627,8 @@ def main():
         s_field_params=(dict(r_far=args.sf_r_far, r_far_haro=args.sf_r_far_haro,
                              clip=args.sf_clip,
                              exclude_box=args.sf_exclude_box,
+                             main_dv_max=args.main_dv_max,
+                             main_ids=[int(i) for i in mids],
                              n_train=int(sf_train.sum()))
                         if args.s_field else None),
         blank_weight="chi2" if args.blank_chi2 else "unweighted",

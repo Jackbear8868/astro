@@ -6,6 +6,7 @@
 """
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -289,8 +290,31 @@ def nanmed(a, axis):
         return np.nan_to_num(np.nanmedian(a, axis=axis))
 
 
-def main_source_group(seg, white, min_frac=0.05):
-    """主星系的完整足跡 —— 最亮像素所在的那一團,只收夠大的成員。
+C_KMS = 299792.458
+
+# 離主源多少 km/s 之內算主星系的一部分。星系內部有轉動與外流,速度場本身就有
+# 寬度,所以判準是「落在星系的速度範圍內」,不是「和主源同一個紅移」。
+DV_MAX = 1468.0
+
+
+def galaxy_redshifts(step04b, ids):
+    """每個 seg ID 的星系分支最佳紅移。回傳 {id: z}。
+
+    step4b 把兩條分支分開存,scan2 是星系分支。不讀 classification 的 z ——
+    那是勝出分支的值,源被判成恆星時它是視向速度,不是紅移。
+    """
+    out = {}
+    for i in ids:
+        f = sorted(Path(step04b).glob(f"scan2_id{i}_*.npz"))
+        if not f:
+            raise SystemExit(f"★ {step04b} 裡找不到 scan2_id{i}_*.npz")
+        d = np.load(f[0], allow_pickle=True)
+        out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
+    return out
+
+
+def main_source_group(seg, white, step04b=None, dv_max=DV_MAX):
+    """主星系的完整足跡 —— 最亮像素所在的那一團,只收紅移相符的成員。
     回傳 (遮罩, ID 清單, 峰值座標)。
 
     為什麼不能用「面積最大」或「流量最大」的**單一** ID:SExtractor 的 deblender
@@ -299,14 +323,17 @@ def main_source_group(seg, white, min_frac=0.05):
     都只會拿到星系的一部分,而下游用它來決定「遮掉哪半邊」與「排除周圍多少像素」
     —— 選錯一塊,兩件事都會遮錯位置。
 
-    兩個判準,缺一不可:
+    兩個判準:
 
     ① **直接相鄰**(不做任何膨脹)。deblend 出來的兄弟是把同一塊超過門檻的連通
        區域切開,彼此貼著;另一個天體則被低於門檻的背景隔開。膨脹會抹掉這個分野,
        把附近不相干的源一起吸進來。
-    ② **面積 >= min_frac x 最大成員**。相鄰還不夠 —— 疊在星系上的另一個天體
-       也會被 deblend 成同一個父偵測的子代,因此同樣貼著。真正的亮結彼此大小相當,
-       而混進來的通常小一到兩個數量級。
+    ② **紅移相符**。相鄰還不夠 —— 疊在星系上的另一個天體也會被 deblend 成同一個
+       父偵測的子代,因此同樣貼著。用 step4b 擬合出來的星系分支紅移分辨:和主源
+       差超過 dv_max 的成員不是這個星系的。主源的紅移取最亮像素所在的那個成員。
+
+    step04b 省略時只做 ①。教授交付的 seg 沒有對應的模板擬合,那種情況下沒有紅移
+    可用,回傳整個相鄰塊是唯一誠實的選擇。
 
     回傳的遮罩再與連通塊取交集,不是 `isin(seg, ids)` —— SExtractor 的 CLEAN 會把
     散落各處的假偵測併進亮源的 ID,那些像素帶著主源的編號卻不在主源身上。
@@ -317,10 +344,14 @@ def main_source_group(seg, white, min_frac=0.05):
     lab, _ = ndimage.label(src)
     blob = lab == lab[k]
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
-    area = {i: int((seg == i).sum()) for i in ids}
-    top = max(area.values())
-    keep = sorted(i for i in ids if area[i] >= min_frac * top)
-    return np.isin(seg, keep) & blob, keep, k
+
+    if step04b is not None:
+        z = galaxy_redshifts(step04b, ids)
+        z0 = z[int(seg[k])]
+        ids = [i for i in ids
+               if abs(C_KMS * (z[i] - z0) / (1 + z0)) <= dv_max]
+
+    return np.isin(seg, ids) & blob, ids, k
 
 
 def main_source_mask(seg, source_id=None, main_blob=True):

@@ -242,6 +242,7 @@ def main():
     if args.mask_half:
         # 主源用「最亮像素所在的那一整團」,不是單一 ID —— deblender 會把
         # Haro 11 拆成數塊,選一塊會遮錯半邊(見 utils.main_source_group)。
+        # 這一步跑在 step4b 之前,還沒有紅移可用,所以只能做相鄰判準。
         mg, mids, mk = main_source_group(seg, white)
         print(f"主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):"
               f"{len(mids)} 個 ID {mids[:8]}{'...' if len(mids) > 8 else ''}"

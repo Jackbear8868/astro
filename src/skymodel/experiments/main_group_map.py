@@ -5,11 +5,11 @@ SExtractor 的 deblender 會把 Haro 11 拆成好幾塊(它是並合星系,本�
 下游用它決定「排除周圍多少 px」與「遮掉哪半邊」時就會遮錯位置。
 
 utils.main_source_group 的做法:取最亮像素所在的連通塊(不做膨脹),再要求成員的
-面積至少是最大成員的 min_frac 倍 —— 相鄰只說明它們是同一次 deblend 的兄弟,
-疊在星系上的另一個天體同樣會相鄰,要靠面積把它分出去。
+星系分支紅移和主源相差在 dv_max 以內 —— 相鄰只說明它們是同一次 deblend 的兄弟,
+疊在星系上的另一個天體同樣會相鄰,要靠紅移把它分出去。
 
     左  處理前:相鄰的整團裡每個 seg ID 各給一個顏色,標上編號
-    右  處理後:通過面積判準、留下來的那些
+    右  處理後:通過紅移判準、留下來的那些
 
     conda run -n astro python src/skymodel/experiments/main_group_map.py -n 12 5 1
 """
@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import main_source_group  # noqa: E402
+from utils import DV_MAX, main_source_group  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 FIG  = ROOT / "results/skymodel/figures/main_group"
@@ -35,8 +35,10 @@ FIG  = ROOT / "results/skymodel/figures/main_group"
 def main():
     ap = argparse.ArgumentParser(description="主源合併的處理前後對照")
     ap.add_argument("-n", type=int, nargs="+", default=[12, 5, 1])
-    ap.add_argument("--min-frac", type=float, default=0.05,
-                    help="成員的面積至少要是最大成員的幾倍才收")
+    ap.add_argument("--dv-max", type=float, default=DV_MAX,
+                    help="成員的紅移離主源多少 km/s 之內才收")
+    ap.add_argument("--out-suffix", default="",
+                    help="輸出檔名加後綴,不同設定的圖才不會互相覆蓋")
     args = ap.parse_args()
 
     FIG.mkdir(parents=True, exist_ok=True)
@@ -45,8 +47,10 @@ def main():
         seg = fits.getdata(W / "step01/seg.fits").astype(int)
         white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
         valid = white != 0
-        mg, ids, pk = main_source_group(seg, np.where(valid, white, np.nan),
-                                        min_frac=args.min_frac)
+        wn = np.where(valid, white, np.nan)
+        mg, ids, pk = main_source_group(seg, wn, W / "step04b", args.dv_max)
+        # 不給紅移就只做相鄰判準 —— 左圖要畫的正是「還沒篩」的那一團
+        all_ids = main_source_group(seg, wn)[1]
 
         # 畫整個視場 —— 裁切會看不到被剔除的成員落在哪裡,
         # 而「哪些東西沒被收進來」正是這張圖要回答的
@@ -63,8 +67,8 @@ def main():
             a.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
             a.set_xticks([]); a.set_yticks([])
 
-        # 左:每個 seg ID 一個顏色
-        for k, i in enumerate(ids):
+        # 左:相鄰整團裡每個 seg ID 一個顏色(篩選前)
+        for k, i in enumerate(all_ids):
             m = (seg == i)[sub]
             rgba = np.zeros(m.shape + (4,))
             rgba[m] = list(cmap[k % 20][:3]) + [0.55]
@@ -76,9 +80,8 @@ def main():
                            path_effects=[pe.withStroke(linewidth=2.5,
                                                        foreground="k")])
         # 圖上一律英文 —— matplotlib 預設字型沒有中文字符
-        ax[0].set_title(f"before — the deblender split the main source into "
-                        f"{len(ids)} seg IDs   ({seg.max()} sources in total)",
-                        fontsize=11)
+        ax[0].set_title(f"before — {len(all_ids)} seg IDs touch each other   "
+                        f"({seg.max()} sources in total)", fontsize=11)
 
         # 右:合併之後
         m = mg[sub]
@@ -86,28 +89,30 @@ def main():
         rgba[m] = [1.0, 0.5, 0.05, 0.5]
         ax[1].imshow(rgba, origin="lower")
         ax[1].contour(m, levels=[0.5], colors="#ff7f0e", linewidths=1.6)
-        # 相鄰判準用的連通塊 —— 面積篩掉的成員也在這一塊裡
+        # 相鄰判準用的連通塊 —— 紅移篩掉的成員也在這一塊裡
         lab, _ = ndimage.label(seg > 0)
         ax[1].contour((lab == lab[pk])[sub], levels=[0.5],
                       colors="#00e5ff", linewidths=0.9, linestyles="--")
         ax[1].plot(pk[1] - x0, pk[0] - y0, "w+", ms=14, mew=2)
-        ax[1].set_title(f"after — main_source_group: one blob, {int(mg.sum()):,} px\n"
-                        f"cyan dashed = the touching blob (before the area cut), "
+        ax[1].set_title(f"after — {len(ids)} kept by redshift, {int(mg.sum()):,} px\n"
+                        f"cyan dashed = the touching blob (before the redshift cut), "
                         f"white cross = brightest pixel", fontsize=11)
 
         f = {int(i): float(np.nansum(np.where(seg == i, white, 0)))
              for i in np.unique(seg) if i > 0}
         tot = sum(f.values()); mf = sum(f[i] for i in ids)
         rest = sorted((v_ for k_, v_ in f.items() if k_ not in ids), reverse=True)
-        fig.suptitle(f"p{n:02d}   main source = {len(ids)} seg IDs merged,   "
+        fig.suptitle(f"p{n:02d}   dv_max = {args.dv_max:g} km/s   —   "
+                     f"main source = {len(ids)} seg IDs merged,   "
                      f"{100*mf/tot:.1f}% of all source flux   "
                      f"(runner-up: {100*rest[0]/tot:.1f}%)", fontsize=13)
         fig.tight_layout()
-        out = FIG / f"main_group_p{n:02d}.png"
+        out = FIG / f"main_group_p{n:02d}{args.out_suffix}.png"
         fig.savefig(out, dpi=140, bbox_inches="tight")
         plt.close(fig)
-        print(f"p{n:02d}: {len(ids)} 個 ID {ids} -> {int(mg.sum()):,} px   "
-              f"佔源流量 {100*mf/tot:.1f}%   saved -> {out}")
+        print(f"p{n:02d}: 相鄰 {len(all_ids)} 個 -> 紅移留下 {len(ids)} 個 {ids}"
+              f" -> {int(mg.sum()):,} px   佔源流量 {100*mf/tot:.1f}%"
+              f"   剔除 {sorted(set(all_ids) - set(ids))}   saved -> {out}")
 
 
 if __name__ == "__main__":

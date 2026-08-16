@@ -81,9 +81,9 @@ def box_mean(hdu, y0, y1, x0, x1):
         return np.nanmean(sub.reshape(sub.shape[0], -1), axis=1)
 
 
-def pick_boxes(seg, white, half, n_blank, edge_targets, margin):
+def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04b):
     """依內容挑方框,回傳 {名稱: (y0, y1, x0, x1)}(含端點)。"""
-    main, ids, peak = main_source_group(seg, white)
+    main, ids, peak = main_source_group(seg, white, step04b)
     valid = white != 0
     size  = 2 * half + 1
 
@@ -282,7 +282,7 @@ def main():
     s_hat = np.load(run / "s_hat.npy") if (run / "s_hat.npy").exists() else None
 
     boxes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
-                                   args.edge, args.margin)
+                                   args.edge, args.margin, W / "step04b")
     print(f"主源 {int(main.sum()):,} px,最亮像素 (y, x) = {peak}")
     for nm, (y0, y1, x0, x1) in boxes.items():
         print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}")

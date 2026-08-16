@@ -115,7 +115,8 @@ def main():
     white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
     s     = np.load(run / "s_free.npy").astype(float)
     valid = white != 0
-    main, _, _ = main_source_group(seg, np.where(valid, white, np.nan))
+    main, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
+                                        W / "step04b")
     blank = valid & (seg == 0) & np.isfinite(s)
 
     rng = np.random.default_rng(0)

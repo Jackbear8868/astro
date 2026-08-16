@@ -49,7 +49,8 @@ def far_mask(W, edge_margin=15, d_all=30, d_main=110):
     seg = fits.getdata(W / "step01/seg.fits").astype(int)
     white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
     valid = white != 0
-    mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan))
+    mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
+                                        W / "step04b")
     return ((seg == 0) & valid
             & (ndimage.distance_transform_edt(valid) > edge_margin)
             & (ndimage.distance_transform_edt(seg == 0) > d_all)
