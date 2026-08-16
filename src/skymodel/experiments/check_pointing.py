@@ -110,8 +110,7 @@ def check(work, cube, run=None):
 
 CUBES = {"p04": "data/wshy/DATACUBE_FINAL_4.fits",
          "p08": "data/wshy/DATACUBE_FINAL_8.fits",
-         "p12": "data/wshy/DATACUBE_FINAL_12.fits",
-         "wfm": "data/Haro11_wsky.fits"}
+         "p12": "data/wshy/DATACUBE_FINAL_12.fits"}
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
