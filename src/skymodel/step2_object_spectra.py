@@ -72,24 +72,26 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
     return flux, var, nspax
 
 ROOT   = Path(__file__).resolve().parents[2]
-STEP01 = ROOT / "results/skymodel/step01"
-STEP02 = ROOT / "results/skymodel/step02"
-WSKY   = ROOT / "data/Haro11_NEpointing_wsky.fits"
+WORK_DEFAULT = ROOT / "results/skymodel"
+CUBE_DEFAULT = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="按 segmentation ID 加總源光譜")
-    ap.add_argument("--cube", default=str(WSKY),
+    ap.add_argument("--cube", default=str(CUBE_DEFAULT),
                     help="要萃取的 cube(取它的 DATA)。預設是含天光的原始 cube;"
-                         "分類要用扣過天空的版本,例如 "
-                         "results/skymodel/step05/sky_subtracted_svd_K30_s_1.0.fits")
+                         "分類要用扣過天空的版本(step05 的 sky_subtracted.fits)")
     ap.add_argument("--var-cube", default=None,
                     help="STAT 從哪裡讀,預設同 --cube。我們自己扣天空的 cube 只有 "
                          "DATA,要用這個指到原始 cube")
-    ap.add_argument("--out", default=str(STEP02), help="輸出目錄")
+    ap.add_argument("--work", default=str(WORK_DEFAULT), help="這顆 cube 的工作區")
+    ap.add_argument("--out", default=None, help="輸出目錄。省略 = {work}/step02")
     args = ap.parse_args()
-    out = Path(args.out)
+    work   = Path(args.work)
+    STEP01 = work / "step01"
+    out    = Path(args.out) if args.out else work / "step02"
     out.mkdir(parents=True, exist_ok=True)
+    print(f"工作區 {work}   cube {Path(args.cube).name}")
 
     white = fits.getdata(STEP01 / "whitelight.fits")
     seg   = fits.getdata(STEP01 / "seg.fits")

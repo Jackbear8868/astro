@@ -8,31 +8,24 @@
              低的一組勝出,同時定出紅移。chi2 只算在指定視窗內、且不是天光線
              的通道上。
 
-規格來自 reminder.txt:
-
-    Fit source
-    1. use line mask
-    2. do not use line specturm
-    3. 4800-6000 for star and non star
-    4. 4800-7000 for galaxt to find redshift
+規格來自 reminder.txt:用 line mask、不用線區的通道、恆星與星系各自在一個
+固定的波長視窗裡擬合。視窗的實際值見 --star-window / --gal-window 的預設值,
+不在這裡重複寫 —— 兩個地方寫同一組數字遲早會不同步。
 
 為什麼排除天光線通道:那些通道的殘差被天空扣除的誤差主導,不是源的資訊。
 把它們算進 chi2,等於讓「哪個模板比較能吸收天空殘差」去決定分類與紅移。
 (blank 區的規則正好相反 —— 那裡只用線區,因為要學的就是天空。)
 
 為什麼用固定視窗:step4 讓每個候選各自用它覆蓋到的通道,於是 n_good 隨 z 變,
-chi2(z) 出現純粹來自通道數的階梯。固定視窗之後,星系本徵譜(靜止 1183–9840 A)
-在 z = 0–1.5 全程蓋滿 4800–7000 A,所有候選的通道集合完全相同 —— 階梯消失,
-chi2 之間可以直接相減。
+chi2(z) 出現純粹來自通道數的階梯。固定視窗之後,只要視窗落在星系本徵譜
+(靜止 1183–9840 A)在整個掃描 z 範圍內都蓋得住的區間,所有候選的通道集合
+完全相同 —— 階梯消失,chi2 之間可以直接相減。
 
-為什麼分類不用絕對門檻:本檔原本是兩段式 —— 第 1 段用一個絕對門檻
-(reduced chi2 < 2.0)問「像不像恆星」,通過就停,不通過才進第 2 段掃星系。
-動機是讓「哪一組都不像」成為可以說出口的答案。但實測**沒有任何源通得過**
-那個門檻:天光線殘差與流量刻度誤差讓所有源的 reduced chi2 都遠大於 2,
-於是 group 永遠是 galaxy,而真正的判定一直是事後在 step4c 手算的
-「同一組通道上誰的 reduced chi2 低」。現在把那個比較放回這裡,一次擬合、
-直接比大小。門檻拿掉之後,分類的可信度改由**兩組冠軍的差距**來表達 ——
-star_red_chi2 與 gal_red_chi2 都寫進輸出,差距小就代表這個分類不穩。
+為什麼分類不用絕對門檻:一個「像不像恆星」的絕對門檻要能用,前提是 reduced
+chi2 的絕對值可信;但天光線殘差與流量刻度誤差會把所有源的 reduced chi2 一起
+抬高,門檻不是太鬆就是全部不過。改成直接比兩組冠軍的大小,分類的可信度則由
+**兩組冠軍的差距**來表達 —— star_red_chi2 與 gal_red_chi2 都寫進輸出,
+差距小就代表這個分類不穩。
 
 兩個視窗必須相同:reduced chi2 = chi2 / (n_good - n_param),分母裡的
 n_good 由通道集合決定。視窗不同就不是同一個統計量,比大小沒有意義。
@@ -60,10 +53,14 @@ from templates import (load_sdss_template, load_eigen_galaxy, redshift_to_grid,
 from utils import load_line_masks
 
 ROOT      = Path(__file__).resolve().parents[2]
-STEP02    = ROOT / "results/skymodel/step02"      # segmentation footprint
-STEP02B   = ROOT / "results/skymodel/step02b"     # 圓形孔徑 (step2b_aperture.py)
-STEP03    = ROOT / "results/skymodel/step03"
-STEP04B   = ROOT / "results/skymodel/step04b"      # 不碰 step04/,兩套結果並存
+WORK_DEFAULT = ROOT / "results/skymodel"
+# 這四個是模組層級的預設值(對應預設工作區);main() 會依 --work 覆寫,
+# 而且必須是全域 —— multiprocessing 的 worker 重新 import 這個模組,看不到區域變數。
+# step4c 也 import STEP04B,所以這裡不能只在 main() 裡定義。
+STEP02  = WORK_DEFAULT / "step02"
+STEP02B = WORK_DEFAULT / "step02b"
+STEP03  = WORK_DEFAULT / "step03"
+STEP04B = WORK_DEFAULT / "step04b"
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
@@ -71,18 +68,17 @@ STAR_IDX = range(0, 23)     # spDR2-000..022 是恆星(docs/sdss-templates.md �
 GAL_IDX  = range(23, 29)    # 023 早型、024-026、027 晚型、028 LRG,共 6 條星系模板
 N_SRC    = 4                # A 欄位固定寬度:本徵譜 4 條,恆星只用第 0 欄
 
-# 教授(2026-08-06)看過白光圖後指定:37 個 SExtractor 偵測裡只有這 11 個是真源,
-# 其餘是雜訊尖峰、宇宙線、探測器條紋。在假源上算 chi2、排名、統計中位數都無效。
-# 定義在這裡、由診斷程式一起 import —— 分成幾份寫的話,改了一邊就會有一支程式
-# 還在畫假源,而那種錯誤從圖上看不出來。
+# 教授從 SExtractor 的偵測裡指出的真源(舊 37 源編號),其餘是雜訊尖峰、宇宙線、
+# 探測器條紋。在假源上算 chi2、排名、統計中位數都無效。定義在這裡、由診斷程式
+# 一起 import —— 分成幾份寫的話,改了一邊就會有一支程式還在畫假源,而那種錯誤
+# 從圖上看不出來。
 KEEP_IDS = (1, 10, 12, 13, 14, 24, 27, 28, 30, 34, 35)
 
 # 兩段各自的波長視窗 (A, 空氣波長)。改這裡就等於改預設值;
 # 也可以在命令列用 --star-window / --gal-window 覆蓋,不必動程式。
 # 視窗會編進輸出的 tag,所以不同視窗的結果各存各的,不互相覆蓋。
-# 下限三者一致取 4600 —— MUSE 的第一個通道在 4599.7 A,所以 4600 就是「從頭開始」。
-# 註:reminder.txt 記的是 4800;改成 4600 是把藍端那 160 個通道也放進來,
-# 三個視窗共用同一個起點,彼此的差別才單純是「右邊延伸到哪」。
+# 下限三者取同一個值 —— MUSE 的第一個通道在 4599.7 A,所以 4600 就是「從頭開始」;
+# 起點一致,三個視窗的差別才單純是「右邊延伸到哪」。
 STAR_WINDOW = (4600.0, 6000.0)      # 恆星模板的擬合視窗
 GAL_WINDOW  = (4600.0, 7000.0)      # 星系本徵譜的擬合視窗(須與上者相同)
 FULL_RANGE  = (4600.0, 9400.0)      # MUSE 全波段,拿來當對照組用
@@ -151,8 +147,8 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
                 continue
             # 覆蓋不滿整個視窗的候選直接丟掉。chi2 是「加總」,通道少的候選天生
             # 就小 —— 不擋的話,掃描會跑去模板剛好只覆蓋到幾個通道的那個 z,
-            # 得到 chi2/dof = 0.07 這種看似完美其實沒有資料的解。
-            # (SDSS 星系模板靜止只到 3500 A,z > 0.343 就蓋不住 4700-8000。)
+            # 得到一個看似完美其實沒有資料的解。模板的靜止波長範圍有限,z 大到
+            # 一定程度就蓋不住視窗,這種候選必須排除而不是讓它贏。
             if not allow_partial and n < n_full:
                 continue
 
@@ -201,13 +197,7 @@ def _scan_one(t):
 
     共用資料由 fork 繼承,不經過 pickle。
 
-    為什麼不再分兩段
-        舊版第 1 段用一個**絕對門檻**問「像不像恆星」(reduced chi2 < 2.0),
-        通過就停,不通過才進第 2 段掃星系。實測**沒有任何源通得過那個門檻**
-        —— 天光線殘差與流量刻度誤差讓所有源的 reduced chi2 都遠大於 2 ——
-        於是輸出的 group 永遠是 galaxy,第 1 段等於只是在挑「最像的恆星模板」。
-        真正的判定一直是事後在 step4c 手算「同一組通道上誰的 reduced chi2 低」。
-        這裡把那個比較放回它該在的地方:兩組都掃、直接比,不需要任何絕對門檻。
+    兩組都掃、直接比大小,不需要任何絕對門檻。
 
     為什麼 reduced chi2 可以直接比
         reduced chi2 = chi2 / (n_good - n_param),分母已經把「星系本徵譜有 4 個
@@ -263,12 +253,12 @@ def main():
                          "覆蓋到的通道數不再相同,chi2 之間的比較會被通道數影響。")
     ap.add_argument("--line-mask-iter", type=int, nargs="+", default=[1, 2, 3, 4],
                     help="用 step3 的第幾輪天光線遮罩,可給多個,每一輪各存一份結果。"
-                         "1 最鬆(只標最強的線,35.5%% 通道),越後面涵蓋越多,"
-                         "第 4 輪已達 79.6%%。預設四輪全跑。")
+                         "1 最鬆(只標最強的線),輪次越後面涵蓋的通道越多。"
+                         "預設四輪全跑。")
     ap.add_argument("--sky-basis", action="store_true",
                     help="把天光線 basis 也放進源的擬合(step4 的做法)。預設不放:"
-                         "天光線通道已經排除在 chi2 之外,basis 在剩下的通道上只有"
-                         "約 10%% 的能量,那 K 個弱約束的參數只會吸走源訊號。"
+                         "天光線通道已經排除在 chi2 之外,basis 在剩下的通道上幾乎"
+                         "沒有能量,那 K 個弱約束的參數只會吸走源訊號。"
                          "不放的話源的模型只有 1 個自由參數 A。")
     ap.add_argument("--zmin",  type=float, default=0.0)
     ap.add_argument("--zmax",  type=float, default=1.5)
@@ -285,7 +275,7 @@ def main():
                          "剛好蓋不住的那個 z。只有在明確知道自己在做什麼時才開。")
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
                     help="用哪種星系模型。eigen = Bolton 2012 的 4 條本徵譜"
-                         "(教授指定,在星系族群裡連續內插);sdss = spDR2-023..028 "
+                         "(在星系族群裡連續內插);sdss = spDR2-023..028 "
                          "那 6 條星系模板(各自是一條完整光譜,挑最像的一條,"
                          "而且可以施加 A >= 0)")
     ap.add_argument("--spec-dir", default=None,
@@ -300,7 +290,18 @@ def main():
     ap.add_argument("--s-fix", type=float, default=1.0)
     ap.add_argument("--s-free", action="store_true")
     ap.add_argument("--num-workers", type=int, default=0)
+    ap.add_argument("--work", default=str(WORK_DEFAULT),
+                    help="這顆 cube 的工作區(底下有 step02/step03/step04b)")
     args = ap.parse_args()
+    work    = Path(args.work)
+    # 這四個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
+    # 行程裡執行,看不到 main() 的區域變數(worker 是重新 import 這個模組的)。
+    global STEP02, STEP02B, STEP03, STEP04B
+    STEP02  = work / "step02"
+    STEP02B = work / "step02b"
+    STEP03  = work / "step03"
+    STEP04B = work / "step04b"
+    print(f"工作區 {work}")
     s_fix = None if args.s_free else args.s_fix
     if args.full_range:
         args.star_window = args.gal_window = FULL_RANGE

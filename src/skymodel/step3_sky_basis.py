@@ -8,20 +8,21 @@ from astropy.io import fits
 from sklearn.decomposition import PCA, NMF, TruncatedSVD
 from sklearn.utils.extmath import randomized_svd
 
-from utils import estimate_continuum
+from scipy import ndimage
+
+from utils import (estimate_continuum, half_field_mask, main_source_mask,
+                   main_source_group)
 import argparse
 import time
 
 SEED       = 0           # 所有分解共用的亂數種子,確保 basis 可重現
-K          = 25          # basis 條數 = 天空模型的自由度;K=10 時天光線的
-                         # 模型誤差是 ESO 的 1.7 倍,K=25 降到 0.74 倍
+K          = 25          # basis 條數 = 天空模型的自由度
 WINDOW     = 300         # 連續譜 running median 視窗 (px)
-THRESHOLDS = (1, 2)      # 線偵測門檻 (正, 負),教授指定
+THRESHOLDS = (1, 2)      # 線偵測門檻 (正, 負)
 MAX_ITER   = 5           # estimate_continuum 迭代上限
-CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻。不是調出來的:跨 spaxel 的
-                         # 真實變化到 10 sigma 就結束(3->10 sigma 元素數掉 800 倍),
-                         # 而最輕微的壞值在 197 sigma —— 10~100 之間結果完全相同,
-                         # 30 離兩端各有 3 倍與 6.6 倍餘裕
+CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻,單位是穩健散布 sg。
+                         # 目標只是擋掉壞像素等級的離群值,不是修剪跨 spaxel 的
+                         # 真實變化,所以門檻要遠高於後者的自然幅度
 METHODS    = ["pca", "svd", "nmf", "rpca"]
 
 def soft_threshold(X, tau):
@@ -161,10 +162,11 @@ def learn_sky_basis(residual, K=10, method="pca"):
 
     raise ValueError(f"unknown method: {method}")
 
-ROOT   = Path(__file__).resolve().parents[2]
-STEP01 = ROOT / "results/skymodel/step01"
-STEP03 = ROOT / "results/skymodel/step03"
-WSKY   = ROOT / "data/Haro11_NEpointing_wsky.fits"
+ROOT = Path(__file__).resolve().parents[2]
+# 預設的工作區與 cube。--work / --cube 可以換掉,讓同一支程式跑不同的 pointing:
+# 每個 cube 一個工作區資料夾,底下的 step01/step02/... 結構完全相同。
+WORK_DEFAULT = ROOT / "results/skymodel"
+CUBE_DEFAULT = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 
 
@@ -175,20 +177,54 @@ def main():
     ap.add_argument("-K", type=int, default=K, help="basis 條數")
     ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
                     help="只用這個 x 範圍(像素,含 LO 不含 HI)的 blank spaxel 學天空。"
-                         "動機:Haro 11 在 x 約 278,它的延展暈會滲進附近的 blank 樣本;"
-                         "限制在遠離它的一條裡,樣本雖然變少但更乾淨。"
-                         "代價是天空的空間變化只由視場的一部分決定")
+                         "用途:主源的延展暈會滲進附近的 blank 樣本,限制在遠離它的"
+                         "一條裡,樣本變少但更乾淨。代價是天空的空間變化只由視場的"
+                         "一部分決定")
     ap.add_argument("--ylim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
                     help="同 --xlim,但限制 y")
+    ap.add_argument("--mask-half", action="store_true",
+                    help="自動遮掉主源所在的那半邊視場(見 utils.half_field_mask)。"
+                         "主源偏心時沿偏得較嚴重的那一軸切一半;主源在視場中央時"
+                         "改挖掉一個置中矩形、留外圈。用途和 --xlim 相同,但界線由"
+                         "資料算出,不必逐顆手給")
+    ap.add_argument("--main-id", type=int, default=None,
+                    help="主源的 segmentation ID。省略 = 自動取面積最大的源。"
+                         "不要假設它是 1 —— SExtractor 的編號按偵測順序給")
+    ap.add_argument("--r-far-src", type=float, default=None,
+                    help="排除離**主源以外**的源這麼近(px)的 blank 格,避免小源的 "
+                         "PSF 翼把源的光帶進天空模型的形狀裡。主源不歸它管 —— "
+                         "主源用 --xlim / --ylim / --mask-half 排除。省略 = 不排除")
+    ap.add_argument("--exclude-box", type=int, nargs=4, default=None,
+                    metavar=("Y0", "Y1", "X0", "X1"),
+                    help="這個框裡的 blank 不當天空的訓練樣本(含端點)。--xlim/--ylim "
+                         "只能切邊,做不到「挖中間、留外圈」。用途:鑲嵌視場裡曝光數"
+                         "不足的高雜訊區塊。框內的 spaxel 仍然會被扣天空,只是不參與"
+                         "訓練")
+    ap.add_argument("--seg", default=None,
+                    help="用哪一份 segmentation 界定 blank。預設是 SExtractor 的 "
+                         "step01/seg.fits;指到 step1b 產生的 seg_dil{r}.fits 就是"
+                         "「把源外圍漏出來的光排除在天空樣本外」的版本")
+    ap.add_argument("--work", default=str(WORK_DEFAULT),
+                    help="這顆 cube 的工作區(底下有 step01/step02/...)。"
+                         "一個 pointing 一個工作區,結構相同、彼此不干擾")
+    ap.add_argument("--cube", default=str(CUBE_DEFAULT),
+                    help="要學天空的 cube。**必須是含天空的 wsky** —— 已經被 ESO "
+                         "扣過天空的 nosky 沒有天空可學,只會灌雜訊")
     ap.add_argument("--out", default=None,
-                    help="輸出目錄。省略時寫回 step03(會覆蓋);做實驗時務必指定")
+                    help="輸出目錄。省略時寫到 {work}/step03(會覆蓋);做實驗時務必指定")
     args = ap.parse_args()
 
-    out_dir = Path(args.out) if args.out else STEP03
+    work   = Path(args.work)
+    STEP01 = work / "step01"
+    out_dir = Path(args.out) if args.out else work / "step03"
     out_dir.mkdir(parents=True, exist_ok=True)
+    WSKY = Path(args.cube)
+    print(f"工作區 {work}   cube {WSKY.name}")
 
-    white = fits.getdata(STEP01 / "whitelight.fits")
-    seg   = fits.getdata(STEP01 / "seg.fits")
+    white  = fits.getdata(STEP01 / "whitelight.fits")
+    seg_f  = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+    seg    = fits.getdata(seg_f)
+    print(f"segmentation: {seg_f.name}  源 spaxel {int((seg > 0).sum()):,}")
 
     valid_mask = white != 0
     blank_mask = valid_mask & ~((seg > 0) & valid_mask)
@@ -202,6 +238,40 @@ def main():
         print(f"空間限制 x={args.xlim} y={args.ylim}:"
               f"blank {n_all:,} -> {int(blank_mask.sum()):,}"
               f" ({100 * blank_mask.sum() / max(n_all, 1):.1f}%)")
+
+    if args.mask_half:
+        # 主源用「最亮像素所在的那一整團」,不是單一 ID —— deblender 會把
+        # Haro 11 拆成數塊,選一塊會遮錯半邊(見 utils.main_source_group)。
+        mg, mids, mk = main_source_group(seg, white)
+        print(f"主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):"
+              f"{len(mids)} 個 ID {mids[:8]}{'...' if len(mids) > 8 else ''}"
+              f",共 {int(mg.sum()):,} px")
+        half, txt = half_field_mask(seg, valid_mask, args.main_id, main=mg)
+        n0 = int(blank_mask.sum()); blank_mask &= half
+        print(f"--mask-half:{txt}")
+        print(f"            blank {n0:,} -> {int(blank_mask.sum()):,}"
+              f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
+
+    if args.exclude_box:
+        y0, y1, x0, x1 = args.exclude_box
+        yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
+        box = (yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1)
+        n0 = int(blank_mask.sum()); blank_mask &= ~box
+        print(f"--exclude-box y {y0}-{y1}, x {x0}-{x1}:"
+              f"blank {n0:,} -> {int(blank_mask.sum()):,}"
+              f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
+
+    if args.r_far_src:
+        # 只擋主源**以外**的源 —— 主源的暈比小源延伸得遠得多,適合它的半徑
+        # 和適合小源的差一個量級,所以主源另外由 --mask-half / --xlim 處理。
+        main, sid = main_source_mask(seg, args.main_id)
+        others = (seg > 0) & ~main
+        d = ndimage.distance_transform_edt(~others)
+        n0 = int(blank_mask.sum()); blank_mask &= d > args.r_far_src
+        print(f"--r-far-src {args.r_far_src:g} px(離主源 ID {sid} 以外的源):"
+              f"blank {n0:,} -> {int(blank_mask.sum()):,}"
+              f" ({100 * blank_mask.sum() / max(n0, 1):.1f}%)")
+
     print(f"blank spaxels: {int(blank_mask.sum())}")
 
 
@@ -216,29 +286,26 @@ def main():
             blank[j:j+200] = d[:, blank_mask]
 
     # 只留光譜完整的 spaxel。大氣色散讓有效視野逐波長平移,視野邊緣因此有一圈
-    # spaxel 只在部分波長被覆蓋(有的只剩 46/3801 個通道)。learn_sky_basis 會把
-    # 缺失通道 nan_to_num 成 0 —— 那是捏造的資料,SVD 會認真去擬合它。實測在
-    # 樣本數相同的條件下,混入 1.9% 這種 spaxel 會讓天光線的模型誤差惡化 28%。
-    # 完整的 spaxel 有 8 萬多個,樣本綽綽有餘,所以直接要求 100% 覆蓋。
+    # spaxel 只在部分波長被覆蓋。learn_sky_basis 會把缺失通道 nan_to_num 成 0
+    # —— 那是捏造的資料,SVD 會認真去擬合它,所以直接要求 100% 覆蓋。
     complete = np.isfinite(blank).all(axis=0)
     print(f"完整光譜 {int(complete.sum()):,} / {blank.shape[1]:,} "
           f"({100*complete.mean():.1f}%),其餘為視野邊緣的部分覆蓋 spaxel,不採用")
     blank = blank[:, complete]
 
-    # 逐通道 sigma-clip 之後再平均。平均數的崩潰點是 0% —— 通道 151 (4788 A) 有
-    # 12 個 spaxel 的值是 −1,750 到 −548,029,把該通道的平均從 28.6 拉到 1.8,於是
-    # estimate_continuum 把它判成一條「負的線」遮掉,是看不見的資料損失。
+    # 逐通道 sigma-clip 之後再平均。平均數的崩潰點是 0% —— 單一通道裡只要有幾個
+    # 極端負值,就足以把該通道的平均拉低,於是 estimate_continuum 把它判成一條
+    # 「負的線」遮掉,是看不見的資料損失。
     #
     # 剪的方向是「同一通道、跨 spaxel」,不是沿波長:一條天光線在每個 spaxel 都亮,
-    # 它的亮度就在該通道的中位數裡,不會被剪掉(實測門檻 >=10 sigma 時,線通道與
-    # 線外通道的偏移都是 0.0000%)。
+    # 它的亮度就在該通道的中位數裡,不會被剪掉。
     #
-    # 中心與散布用穩健的量,但平均那一步仍用平均數:中位數在亮線通道會系統性偏低
-    # (跨 spaxel 的分布右偏,5577 A 低了 2.47),那是偏差,樣本再多也不會消失。
+    # 中心與散布用穩健的量,但平均那一步仍用平均數:跨 spaxel 的分布在亮線通道
+    # 右偏,中位數會系統性偏低,那是偏差,樣本再多也不會消失。
     p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
     sg   = np.maximum((p84 - p16) / 2, 1e-6)
     keep = np.abs(blank - med[:, None]) <= CLIP_SIGMA * sg[:, None]
-    # dtype=float64:blank 是 float32,7 萬多項相加會累積出 ~0.2 的誤差
+    # dtype=float64:blank 是 float32,累加上萬項會累積出可觀的捨入誤差
     mean_sky = (blank * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1)
     print(f"mean_sky: sigma-clip {CLIP_SIGMA} sigma 剔除 {int((~keep).sum()):,} / "
           f"{keep.size:,} 個元素 ({100*(~keep).mean():.6f}%)")
@@ -264,14 +331,8 @@ def main():
     # 同一個 keep 直接沿用。R = blank − C_sky 只差一個逐通道常數,而常數會同時
     # 平移 x 和它的中位數,所以 |x − med| / sg 完全不變 —— 兩處是同一個不等式。
     #
-    # 被剔除的位置填該通道的典型殘差 med − C_sky。實測填 0 完全等價(rms 6.8757
-    # vs 6.8759),因為 167 個元素在 2.95 億裡影響不到 SVD;但在天光線通道上
-    # 「0」等於宣稱那裡沒有線,med 是比較誠實的說法。
-    #
-    # 效果(K=30, svd):那條「90% 能量壓在通道 151」的 basis 消失(n90 1 → 2),
-    # blank 殘差 rms −0.56%,而真正的收穫在源這一側 —— 模板 027 對 ID 14 的
-    # chi2_all(z) 動態範圍從 8,308 倍降到 13 倍。原本 z>0.368 以上整段被一條
-    # 壞掉的 basis 假性禁止(chi2 跳到 10^8),那不是物理,是 12 個壞 spaxel。
+    # 被剔除的位置填該通道的典型殘差 med − C_sky,而不是 0:在天光線通道上
+    # 填 0 等於宣稱那裡沒有線,med 是比較誠實的說法。
     residual = np.where(keep, blank - C_sky[:, None], (med - C_sky)[:, None])
 
     for method in args.methods:

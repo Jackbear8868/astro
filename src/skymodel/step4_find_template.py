@@ -72,10 +72,9 @@ def scan_object(flux, var, sky, jobs, lam_muse, n_min=0, s_fix=None):
         # s 自由時落在 index n_comp,前面隔著 n_comp−1 個源係數。
         #
         # 單一模板時 A ≥ 0 和「源的光譜 ≥ 0」完全等價(模板本身恆正),那是嚴格的
-        # 物理陳述,保留。多成分基底則沒有任何單一係數的約束等價於那件事 —— 要真正
-        # 約束得對 3801 個通道各下一條不等式,太貴。實測對 Haro 11 硬壓 a₁ ≥ 0 讓
-        # chi2_all 差 8.2%(16.56M vs 15.20M),而源光譜在兩種情況下都是全正的
-        # (最小 +13.1 / +13.3):約束只是在扭曲擬合。改成記下 src_min 事後檢查。
+        # 物理陳述,保留。多成分基底則沒有任何單一係數的約束等價於那件事 —— 成分
+        # 有正有負,壓住 a₁ 只是扭曲擬合而不保證光譜為正;要真正約束得對每一個通道
+        # 各下一條不等式,太貴。改成不設限、記下 src_min 事後檢查。
         lb = np.full(p, -np.inf)
         if n_comp == 1:
             lb[0] = 0.0
@@ -96,8 +95,8 @@ def scan_object(flux, var, sky, jobs, lam_muse, n_min=0, s_fix=None):
             M[:, :n_comp] = T[good] / sig[good][:, None]
             M[:, n_comp:] = skyw[good]
 
-            # bvls(主動集法)適合這種稠密、少量邊界的小問題,比預設的 trf 快 2.3 倍;
-            # 兩者求同一個凸問題的同一個最佳解。
+            # bvls(主動集法)適合這種稠密、少量邊界的小問題;它和預設的 trf
+            # 求的是同一個凸問題的同一個最佳解。
             fit   = lsq_linear(M, yw[good], bounds=(lb, ub), method="bvls")
             theta = fit.x
             chi2  = 2.0 * fit.cost
@@ -138,8 +137,8 @@ def _save_scan(path, results):
 def _scan_one(t):
     """在 worker process 裡掃描單一源。
 
-    共用資料由 fork 繼承,不經過 pickle。回傳值只有摘要一列,
-    完整掃描結果(若需要)由 worker 自己寫檔,避免把 168028 筆傳回主行程。
+    共用資料由 fork 繼承,不經過 pickle。回傳值只有摘要一列,完整掃描結果
+    (若需要)由 worker 自己寫檔,避免把整份候選表傳回主行程。
     """
     S = _SHARED
     k = int(np.flatnonzero(S["ids"] == t)[0])
@@ -158,9 +157,8 @@ def _scan_one(t):
         _save_scan(STEP04 / f"scan_id{t}_{S['basis']}.npz", results)
 
     # 每一組各自的最佳解(results 已依 chi2_all 排序,第一次遇到該組就是該組最好的)。
-    # 最佳組與次佳組的差要留下來:實測 M3/M5 與三條碳星會被誤判成星系(5/23),
-    # 而那時每一組的殘差都有 15–24%,是絕對意義上的爛擬合 —— 差距小或品質差
-    # 的案例必須看得見,不能被 argmin 靜靜吞掉。
+    # 最佳組與次佳組的差要留下來:分類是由這兩個 chi2_all 的大小決定的,差距小
+    # 或每一組的擬合品質都差的案例必須看得見,不能被 argmin 靜靜吞掉。
     top = {}
     for r in results:
         top.setdefault(r["group"], r)
@@ -171,9 +169,9 @@ def _scan_one(t):
 
     # ---- 第 2 段:星系/QSO 換成本徵譜重新掃 z ----
     # 離散模板只有 6 條星系、4 條 QSO,是很粗的取樣;本徵譜的四條成分能連續
-    # 內插出中間的型態(Haro 11 實測 chi2_all 少 37%,且覆蓋全部 3801 個通道)。
-    # 掃全域而不是只在第 1 段的 z 附近微調 —— 只多約 10 秒,沒必要假設第 1 段
-    # 用不同模型定出的 z 對這個模型也是最佳的。恆星沒有本徵譜,維持第 1 段的結果。
+    # 內插出中間的型態。掃全域而不是只在第 1 段的 z 附近微調 —— 沒必要假設
+    # 第 1 段用不同模型定出的 z 對這個模型也是最佳的。恆星沒有本徵譜,
+    # 維持第 1 段的結果。
     if group in S["eigen"]:
         ref = scan_object(f, v, S["sky"],
                           [(group, "eigen", S["eigen"][group], S["z_exg"])],
@@ -204,14 +202,15 @@ def main():
                          "一顆 300 km/s 的暈星會位移 4 個像素。")
     ap.add_argument("--save-scan", action="store_true", help="每個源都存完整掃描結果(all 模式下每個源一個檔)")
     ap.add_argument("--num-workers", type=int, default=0,
-                    help="平行 process 數,0 = 自動(可用核數的 1/3);超過 1/3 後記憶體頻寬成為瓶頸")
+                    help="平行 process 數,0 = 自動(可用核數的 1/3)。這類工作受記憶體"
+                         "頻寬限制,開滿核數不會等比變快")
     ap.add_argument("-K", type=int, default=25,
                     help="天光線 basis 條數;必須和 step3 用的 K 相同")
     ap.add_argument("--s-fix", type=float, default=1.0,
-                    help="天空連續譜係數的固定值(預設 1.0 —— blank 區量到 0.9992±0.0156,"
-                         "天空不會因為底下有源就變弱)")
+                    help="天空連續譜係數的固定值(預設 1.0 —— 天空不會因為底下有源"
+                         "就變弱)")
     ap.add_argument("--s-free", action="store_true",
-                    help="改讓 s 成為自由參數(教授原本的做法),覆蓋 --s-fix")
+                    help="改讓 s 成為自由參數,覆蓋 --s-fix")
     args = ap.parse_args()
     s_fix = None if args.s_free else args.s_fix
 
@@ -230,7 +229,7 @@ def main():
     sky    = np.vstack([C_sky, B])
 
     # 各組自己的 z 網格。恆星只掃 ±star_dz,是物理決定的:銀河系前景星沒有
-    # 哈伯流。實測放到 ±0.01 才開始出現「恆星模板搶走星系」的案例(1/42)。
+    # 哈伯流。掃得太寬,恆星模板就有機會靠位移去湊星系的譜線而搶走分類。
     z_exg  = np.arange(args.zmin, args.zmax + args.zstep / 2, args.zstep)
     z_star = np.arange(-args.star_dz, args.star_dz + args.zstep / 2, args.zstep)
     grids  = {"star": z_star, "galaxy": z_exg, "qso": z_exg}
@@ -290,8 +289,7 @@ def main():
     new = {k: np.array([x[k] for x in summary]) for k in KEYS}
 
     # 併入既有結果,不要覆寫。tag 已經編碼了 basis/K/s,所以同一個檔裡的列
-    # 都出自相同的設定;重跑單一個 ID 應該只更新那一列,不該把其他 36 個源
-    # 的結果毀掉(--id 14 之前就是這樣把 --id all 的產出洗掉的)。
+    # 都出自相同的設定;重跑單一個 ID 應該只更新那一列,不該把其他源的結果毀掉。
     out = STEP04 / f"best_{tag}.npz"
     if out.exists():
         old = np.load(out, allow_pickle=False)

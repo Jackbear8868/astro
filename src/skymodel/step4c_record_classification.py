@@ -4,28 +4,13 @@
 reduced chi2 低的勝出,結果連同兩組的冠軍值寫在 best_*.npz 裡。這支不重算,
 只讀那份檔案。
 
-    (歷史:step4b 原本是兩段式,第 1 段用絕對門檻 reduced chi2 < 2.0 問
-    「像不像恆星」,而沒有任何源通得過,於是 group 永遠是 galaxy;真正的判定
-    只好在這裡事後手算。2026-08-08 把那個比較搬回 step4b,本檔的重算就移除了
-    —— 同樣的判定寫兩份,改了一邊就會靜靜地不一致。)
+所以本檔只做一件事:把 step4b 的擬合結果整理成 step5 讀得到的格式。
+**檔案裡的每一個數字都來自擬合,沒有任何手動指定的值。**
 
-所以本檔現在只做一件事:**決定哪些源進清單**,並把結果定案成 step5 的輸入。
-
-**檔案裡的每一個數字都來自擬合,沒有任何手動指定的值。**唯一寫死的外部
-決定是「哪些源進清單」(FIT_IDS),那和 KEEP_IDS 一樣是取捨,不是量出來的
-東西 —— 把擬合出來的參數手動改掉,會讓下游的產物再也無法從 pipeline 重現。
-
-    FIT_IDS 的由來
-    教授 2026-08-06 從 37 個 SExtractor 偵測裡指出 11 個真源;2026-08-07 再
-    指示把 #27 和 #30 移除 —— 前者在 4700-8000 內沒有可判別的特徵(強線都在
-    8000 A 之外),後者光譜太吵,兩個的紅移都沒有被資料決定,放進源模型只會
-    把錯的形狀帶進天空的擬合。
-
-    #12 的注意事項
-    它有兩個幾乎等高的解(z = 0.1546 與 1.033,reduced chi2 差 3%),教授認為
-    後者才對、只是這份資料的 S/N 不足以排除前者。這裡照擬合結果寫 0.1546。
-    它只有 29 個 spaxel(全視場的 0.03%),對整個 cube 的天空模型影響可忽略;
-    要確認的話,用 --z-override 12=1.033 再跑一次,比較兩份天空模型即可。
+收錄範圍(--ids)
+    預設收錄 best 檔裡的全部源。step5 一律把 seg > 0 當源區域,這份清單只決定
+    「這個源有沒有模板」—— 少寫一個源,那個源在 step5 就沒有模板可扣,沒有別的
+    好處,所以預設不篩選。
 
 輸出的欄位名和 step4 的 best_*.npz 完全一致(id / group / template / z / A),
 所以 step5_fit_spaxels.py 只要換讀檔路徑就能直接吃。
@@ -42,7 +27,8 @@ import numpy as np
 from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, KEEP_IDS, N_SRC,
                                make_tag, STEP04B)
 
-# 進入源模型的源。KEEP_IDS 的 11 個扣掉教授 2026-08-07 指示移除的兩個。
+# 教授指出的真源子集,編號屬於舊的 37 源 segmentation。不是 --ids 的預設值,
+# 要拿來篩選請顯式傳 --ids。
 FIT_IDS = tuple(i for i in KEEP_IDS if i not in (27, 30))
 
 
@@ -59,13 +45,15 @@ def main():
     ap.add_argument("--s-fix", type=float, default=0.0)
     ap.add_argument("--spec-dir", default=None)
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen")
-    ap.add_argument("--ids", type=int, nargs="+", default=list(FIT_IDS),
-                    help="要放源模型的 ID,預設 FIT_IDS")
+    ap.add_argument("--ids", type=int, nargs="+", default=None,
+                    help="只收錄這些 ID。預設 None = best 檔裡的全部源")
     ap.add_argument("--z-override", nargs="*", default=[], metavar="ID=Z",
                     help="把某個源的紅移改成指定值,只用來做敏感度測試 —— "
                          "正式的記錄檔不該有手動指定的數字。振幅會在該 z 上"
                          "重新取最佳解,不會沿用原本的")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--work", default=None,
+                    help="這顆 cube 的工作區;省略 = step4b 的預設工作區")
     args = ap.parse_args()
 
     over = {int(k): float(v) for k, v in (s.split("=") for s in args.z_override)}
@@ -81,17 +69,21 @@ def main():
     # 結果連同兩組的冠軍值一起寫在 best_*.npz 裡。這裡不再重算一次:
     # 同樣的判定寫兩份,改了一邊就會靜靜地不一致,而那種錯誤從輸出看不出來。
     # 本檔剩下的工作只有一件 —— 決定哪些源進清單(args.ids)。
+    global STEP04B
+    if args.work:
+        STEP04B = Path(args.work) / "step04b"
     bpath = STEP04B / f"best_{tag}.npz"
     if not bpath.exists():
         raise SystemExit(f"找不到 {bpath.name},請先跑 step4b")
     best = np.load(bpath)
     idx  = {int(i): k for k, i in enumerate(best["id"])}
+    ids  = args.ids if args.ids else [int(i) for i in best["id"]]
 
     rows = []
     print(f"{'ID':>4}{'class':>8}{'template':>10}{'z':>10}"
           f"{'star X2':>10}{'gal X2':>10}{'margin':>9}")
     print("-" * 61)
-    for t in args.ids:
+    for t in ids:
         if t not in idx:
             print(f"{t:>4}   best 檔裡沒有這個源,跳過")
             continue
@@ -127,8 +119,8 @@ def main():
              A=np.vstack([r["A"] for r in rows]))
     ns = sum(1 for r in rows if r["group"] == "star")
     print(f"\n{len(rows)} 個源:{ns} 恆星 / {len(rows) - ns} 星系"
-          f"   (KEEP_IDS 的 {len(KEEP_IDS)} 個扣掉 "
-          f"{', '.join(f'#{i}' for i in KEEP_IDS if i not in args.ids)})")
+          + ("   (best 檔裡的全部源)" if not args.ids else
+             f"   (--ids 指定,best 檔共 {len(idx)} 個)"))
     print("margin = 兩個模型的 reduced chi2 比值,越接近 1 代表分類越沒有裕度")
     print(f"saved -> {out}")
 
