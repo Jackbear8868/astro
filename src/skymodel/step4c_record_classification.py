@@ -12,7 +12,7 @@ reduced chi2 低的勝出,結果連同兩組的冠軍值寫在 best_*.npz 裡。
     「這個源有沒有模板」—— 少寫一個源,那個源在 step5 就沒有模板可扣,沒有別的
     好處,所以預設不篩選。
 
-輸出的欄位名和 step4 的 best_*.npz 完全一致(id / group / template / z / A),
+輸出的欄位名和 step4b 的 best_*.npz 完全一致(id / group / template / z / A),
 所以 step5_fit_spaxels.py 只要換讀檔路徑就能直接吃。
 
     conda run -n astro python src/skymodel/step4c_record_classification.py \\

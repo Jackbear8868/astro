@@ -1,6 +1,6 @@
 """從 blank spaxels 學出天空模型的兩個成分:連續譜 C_sky 與 K 條天光線 basis。
 
-輸出供 step4 的聯合擬合使用。天光線 basis 的分解方法可替換。
+輸出供 step4b 的模板擬合使用。天光線 basis 的分解方法可替換。
 """
 from pathlib import Path
 import numpy as np
@@ -134,7 +134,7 @@ def learn_sky_basis(residual, K=10, method="pca"):
     Returns
     -------
     basis : ndarray, shape (K, nz)
-        K 條天光線 basis。列的順序即 step4 中係數的順序。
+        K 條天光線 basis。列的順序即下游係數的順序。
     sparse : ndarray or None
         只有 rpca 會回傳稀疏成分 S,shape (n_blank, nz);其餘方法為 None。
         呼叫端一律用 `basis, S = ...`,不需要 S 時寫 `basis, _ = ...`。

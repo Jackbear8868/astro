@@ -1,4 +1,4 @@
-"""逐 spaxel 擬合:固定 step4 定出的 (類別, 模型, z),對每個 spaxel 解線性係數。
+"""逐 spaxel 擬合:固定 step4b 定出的 (類別, 模型, z),對每個 spaxel 解線性係數。
 
     source (seg > 0)   D(p,λ) = Σⱼ aⱼ(p)·Tⱼ(λ) + s(p)·C_sky(λ) + Σₖ cₖ(p)·Lₖ(λ)
     blank  (seg = 0)   D(p,λ) =                   s(p)·C_sky(λ) + Σₖ cₖ(p)·Lₖ(λ)
@@ -8,8 +8,8 @@
 沒有模板的源區域,模型退化成 s·C_sky + Σcₖ·Lₖ,但 s 仍然鎖在 s_fix,天空長不高、
 吃不到源的光。機制見下方 rids 那一段。
 
-Tⱼ 是 step4 決定的源模型(已紅移),形狀固定;逐 spaxel 只解係數的大小。
-依 step4 定出的組別,源模型有兩種寬度:
+Tⱼ 是 step4b 決定的源模型(已紅移),形狀固定;逐 spaxel 只解係數的大小。
+依 step4b 定出的組別,源模型有兩種寬度:
 
     star        該條 SDSS 恆星模板,1 欄
     galaxy/qso  對應的本徵譜,4 欄
@@ -136,10 +136,10 @@ def run_name(args, sky_dir, n_templates, s_fix, seg_path):
 def build_templates(best, lam_vac):
     """挑出要放模型的源,並把各自的源模型紅移到 MUSE 波長格點。
 
-    step4 已對第 1 個源係數施加非負限制,A[0] = 0 代表最佳解落在邊界上,
+    step4b 已對第 1 個源係數施加非負限制,A[0] = 0 代表最佳解落在邊界上,
     也就是這個模型對該源沒有貢獻,這種源不放模型。
 
-    模型依 step4 定出的組別而不同:恆星用該條 SDSS 模板(1 欄),
+    模型依 step4b 定出的組別而不同:恆星用該條 SDSS 模板(1 欄),
     星系/QSO 用對應的本徵譜(4 欄)。
 
     Returns
@@ -251,7 +251,7 @@ def fit_source(D, var, sky, T, s_fix=None, progress=False):
     """一批共用同一條模板的 source spaxel:最小化 chi2,逐 spaxel 求解。
 
     每個 spaxel 的 sigma 不同,設計矩陣隨 spaxel 改變,無法像 fit_blank
-    那樣共用 pinv。A 與 s 受非負限制,與 step4 一致。
+    那樣共用 pinv。A 與 s 受非負限制,與 step4b 一致。
 
     s_fix 給定時,s·C_sky 先從資料扣掉,s 不再是自由參數。用意是切斷
     A·T 與 s·C_sky 的簡併 —— 兩者形狀幾乎相同,任其自由會讓模板吸走
@@ -290,7 +290,7 @@ def fit_source(D, var, sky, T, s_fix=None, progress=False):
     # 非負的參數不是「開頭連續的幾個」——順序是 [a₁…a_ncomp, (s), c₁…c_{K−1}],
     # s 自由時落在 index n_comp,前面隔著 n_comp−1 個源係數。
     # 單一模板(恆星)時 A ≥ 0 和「源光譜 ≥ 0」完全等價,保留;多成分基底則不等價,
-    # 硬壓只會扭曲擬合,與 step4 的處理一致。
+    # 硬壓只會扭曲擬合,與 step4b 的處理一致。
     lb = np.full(p, -np.inf)
     if n_comp == 1:
         lb[0] = 0.0
@@ -330,7 +330,7 @@ def main():
     ap = argparse.ArgumentParser(description="逐 spaxel 擬合天空與源模板")
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, default=25,
-                    help="天光線 basis 條數;必須和 step3/step4 用的 K 相同")
+                    help="天光線 basis 條數;必須和 step3/step4b 用的 K 相同")
     ap.add_argument("--s-fix", type=float, default=1.0,
                     help="源區域的天空連續譜係數固定值(預設 1.0)。blank 區一律保持自由。")
     ap.add_argument("--s-free", action="store_true",
@@ -357,10 +357,11 @@ def main():
     ap.add_argument("--main-dv-max", type=float, default=DV_MAX,
                     help="主源分組:相鄰成員的星系分支紅移離主源多少 km/s 之內"
                          "才算主星系的一部分")
-    ap.add_argument("--best", default=None,
-                    help="源模型的來源檔。預設是舊 step4 的 best_{tag}.npz;"
-                         "教授流程第 2 步要用 step4c 定案的分類,例如 "
-                         "results/skymodel/step04b/classification_*.npz")
+    ap.add_argument("--best", required=True,
+                    help="源模型的來源檔:step4c 定案的分類,例如 "
+                         "{work}/step04b/classification_*.npz。"
+                         "沒有預設值 —— 它決定每個源用哪個模板與紅移,"
+                         "猜錯一個目錄就會安靜地套用另一次擬合的答案")
     ap.add_argument("--seg", default=None,
                     help="用哪一份 segmentation 劃分源與 blank。預設是 SExtractor 的 "
                          "step01/seg.fits;指到 experiments/dilate_seg.py 產生的 seg_dil{r}.fits 就是"
@@ -404,7 +405,7 @@ def main():
                          "前者說 s 由空間場決定,後者說 s 自由或固定成常數。")
     work = Path(args.work)
     STEP01, STEP03 = work / "step01", work / "step03"
-    STEP04, STEP05 = work / "step04", work / "step05"
+    STEP05 = work / "step05"
     CUBE = Path(args.cube)
     print(f"工作區 {work}   cube {CUBE.name}")
     s_fix = None if args.s_free else args.s_fix
@@ -423,15 +424,11 @@ def main():
     sky    = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
                         np.load(sky_dir / f"sky_basis_{args.basis}_K{args.K}.npy")])
     print(f"天空模型來自 {sky_dir.name}")
-    # 模板必須來自「同一個模型」的 step4 —— s 的處理方式不同,選出的
+    # 模板必須來自「同一個模型」的 step4b —— s 的處理方式不同,選出的
     # (模板, z) 就不同,混用等於用錯的答案。
-    best_file = Path(args.best) if args.best else STEP04 / f"best_{tag}.npz"
+    best_file = Path(args.best)
     if not best_file.exists():
-        raise SystemExit(f"找不到 {best_file}。" + ("" if args.best else
-            f"step4 必須先以相同的 s 設定跑過:\n"
-            f"  conda run -n astro python src/skymodel/step4_find_template.py "
-            f"--id all --basis {args.basis} -K {args.K}"
-            + (" --s-free" if s_fix is None else f" --s-fix {s_fix}")))
+        raise SystemExit(f"找不到 {best_file}")
     best = np.load(best_file)
     print(f"源模型來自 {best_file.name}:{len(best['id'])} 個源")
 

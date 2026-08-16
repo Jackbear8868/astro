@@ -34,7 +34,7 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
-ROOT    = Path(__file__).resolve().parents[2]
+ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"
 STEP02B = ROOT / "results/skymodel/step02b"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
