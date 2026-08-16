@@ -35,8 +35,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP04  = ROOT / "results/skymodel/step04"
+
 FIGURES = ROOT / "results/skymodel/figures"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
@@ -74,8 +73,13 @@ def concentration(img, err, own, cy, cx):
 
 def main():
     ap = argparse.ArgumentParser(description="【實驗】seg 區域的形態判定(聚集度)")
-    ap.add_argument("--tag", default="svd_K30_s_1.0")
+    ap.add_argument("--work", default="results/skymodel/p01",
+                    help="這顆 pointing 的工作區(底下有 step01/step03/step04)")
+
     args = ap.parse_args()
+
+    W = ROOT / args.work
+    STEP01, STEP04 = W / "step01", W / "step04"
 
     seg   = fits.getdata(STEP01 / "seg.fits")
     white = fits.getdata(STEP01 / "whitelight.fits")
@@ -93,7 +97,10 @@ def main():
             cnt += m.sum(axis=0)
     err = np.where(cnt > 0, np.sqrt(acc) / np.maximum(cnt, 1), np.nan)
 
-    best = np.load(STEP04 / f"best_{args.tag}.npz")
+    bf = sorted(STEP04.glob("best_*.npz"))
+    if not bf:
+        raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑 step4_fit_source.py")
+    best = np.load(bf[0])
     info = {int(i): (str(g), float(z)) for i, g, z in
             zip(best["id"], best["group"], best["z"])}
 

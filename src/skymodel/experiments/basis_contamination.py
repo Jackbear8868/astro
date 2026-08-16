@@ -27,9 +27,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP04  = ROOT / "results/skymodel/step04"
+
 FIGURES = ROOT / "results/skymodel/figures"
 
 # Haro 11 的靜止空氣波長 (A)
@@ -60,10 +58,15 @@ def line_strength(B, c):
 
 def main():
     ap = argparse.ArgumentParser(description="basis 是否含 Haro 11 的發射線")
+    ap.add_argument("--work", default="results/skymodel/p01",
+                    help="這顆 pointing 的工作區(底下有 step01/step03/step04)")
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, default=30)
     ap.add_argument("--id", type=int, default=1, help="Haro 11 的 segmentation ID")
     args = ap.parse_args()
+
+    W = ROOT / args.work
+    STEP01, STEP03, STEP04 = W / "step01", W / "step03", W / "step04"
 
     wl = np.load(STEP03 / "wavelength.npy")
     IN = np.load(STEP03 / "iter_line_mask.npy")[0]
@@ -71,7 +74,11 @@ def main():
     B  = B / np.linalg.norm(B, axis=1, keepdims=True)
     nz = wl.size
 
-    best = np.load(STEP04 / f"best_{args.basis}_K{args.K}_s_1.0.npz")
+    # 檔名裡的 tag 由 step4 的設定組成,與這支無關 —— 直接找目錄裡的 best
+    bf = sorted(STEP04.glob("best_*.npz"))
+    if not bf:
+        raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑 step4_fit_source.py")
+    best = np.load(bf[0])
     j = int(np.flatnonzero(best["id"] == args.id)[0])
     z = float(best["z"][j])
     print(f"Haro 11 (ID {args.id}) 的紅移 z = {z:.5f}"
