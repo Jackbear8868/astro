@@ -74,11 +74,9 @@ from templates import (load_sdss_template, load_eigen_galaxy, load_eigen_qso,
 from utils import DV_MAX, build_s_field, main_source_group
 
 ROOT      = Path(__file__).resolve().parents[2]
-WORK_DEFAULT = ROOT / "results/skymodel"
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 EIGEN_QSO = ROOT / "data/qso_eigen_linear_55732.dat"
-CUBE_DEFAULT = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 MIN_COVERAGE = 0.9      # spaxel 至少要有幾成波長通道有資料才納入擬合
 N_SRC        = 4        # 源係數的固定欄數(本徵譜 4 條;恆星只用第 0 欄)
@@ -86,7 +84,7 @@ N_SRC        = 4        # 源係數的固定欄數(本徵譜 4 條;恆星只用�
 # 天空模型的訓練樣本 -> 資料夾名的第一段。命名的是「這個天空模型從哪些 spaxel
 # 學來的」,不是「哪個 step 產生的」—— step 的編號會變,而且讀的人得先知道
 # pipeline 才解得開;樣本組成則是自己解釋自己。
-SKY_SAMPLE = {"step03": "blank", "step04d": "blank+src", "step04d_fake": "blank+fake"}
+SKY_SAMPLE = {"step03": "blank"}
 
 
 def _rel(p):
@@ -376,10 +374,10 @@ def main():
                          "自由 —— blank 正是量 s 的地方,那裡沒有源可以和 C_sky "
                          "簡併,所以本來不需要固定。設 1.0 是為了讓整個視場用"
                          "同一個 s,代價是天空連續譜真實的逐 spaxel 變化無處可去")
-    ap.add_argument("--work", default=str(WORK_DEFAULT),
+    ap.add_argument("--work", required=True,
                     help="這顆 cube 的工作區(底下有 step01/step03/step04/step05)。"
                          "一個 pointing 一個工作區,結構相同、彼此不干擾")
-    ap.add_argument("--cube", default=str(CUBE_DEFAULT),
+    ap.add_argument("--cube", required=True,
                     help="要扣天空的 cube。**必須是含天空的 wsky**")
     ap.add_argument("--run", default=None,
                     help="輸出資料夾名。省略時由參數自動組出 —— "

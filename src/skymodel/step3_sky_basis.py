@@ -163,8 +163,6 @@ def learn_sky_basis(residual, K=10, method="pca"):
 ROOT = Path(__file__).resolve().parents[2]
 # 預設的工作區與 cube。--work / --cube 可以換掉,讓同一支程式跑不同的 pointing:
 # 每個 cube 一個工作區資料夾,底下的 step01/step02/... 結構完全相同。
-WORK_DEFAULT = ROOT / "results/skymodel"
-CUBE_DEFAULT = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 
 
@@ -190,10 +188,10 @@ def main():
                     help="用哪一份 segmentation 界定 blank。預設是 SExtractor 的 "
                          "step01/seg.fits;指到 experiments/dilate_seg.py 產生的 seg_dil{r}.fits 就是"
                          "「把源外圍漏出來的光排除在天空樣本外」的版本")
-    ap.add_argument("--work", default=str(WORK_DEFAULT),
+    ap.add_argument("--work", required=True,
                     help="這顆 cube 的工作區(底下有 step01/step02/...)。"
                          "一個 pointing 一個工作區,結構相同、彼此不干擾")
-    ap.add_argument("--cube", default=str(CUBE_DEFAULT),
+    ap.add_argument("--cube", required=True,
                     help="要學天空的 cube。**必須是含天空的 wsky** —— 已經被 ESO "
                          "扣過天空的 nosky 沒有天空可學,只會灌雜訊")
     ap.add_argument("--out", default=None,

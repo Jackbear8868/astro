@@ -53,14 +53,9 @@ from templates import (load_sdss_template, load_eigen_galaxy, redshift_to_grid,
 from utils import load_line_masks
 
 ROOT      = Path(__file__).resolve().parents[2]
-WORK_DEFAULT = ROOT / "results/skymodel"
-# 這四個是模組層級的預設值(對應預設工作區);main() 會依 --work 覆寫,
-# 而且必須是全域 —— multiprocessing 的 worker 重新 import 這個模組,看不到區域變數。
-# 診斷程式也 import STEP04,所以這裡不能只在 main() 裡定義。
-STEP02  = WORK_DEFAULT / "step02"
-STEP02B = WORK_DEFAULT / "step02b"
-STEP03  = WORK_DEFAULT / "step03"
-STEP04 = WORK_DEFAULT / "step04"
+# 這四個必須是模組層級的全域 —— multiprocessing 的 worker 重新 import 這個模組,
+# 看不到 main() 的區域變數。main() 依 --work 賦值,在開 Pool 之前。
+STEP02 = STEP02B = STEP03 = STEP04 = None
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
@@ -356,7 +351,7 @@ def main():
                          "正式的記錄檔不該有手動指定的數字。振幅會在該 z 上"
                          "重新取最佳解,不會沿用原本的")
     ap.add_argument("--num-workers", type=int, default=0)
-    ap.add_argument("--work", default=str(WORK_DEFAULT),
+    ap.add_argument("--work", required=True,
                     help="這顆 cube 的工作區(底下有 step02/step03/step04)")
     args = ap.parse_args()
     over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}

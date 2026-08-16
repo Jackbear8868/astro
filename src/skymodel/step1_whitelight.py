@@ -12,9 +12,11 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     ap = argparse.ArgumentParser(description="cube → 白光影像（whitelight.fits + 預覽 png）")
     ap.add_argument("cube", type=Path, help="輸入 cube（.fits）")
-    ap.add_argument("--out", type=Path, default=None, help="輸出資料夾（預設 results/skymodel/<cube檔名>/）")
+    # --out 沒有預設值。原本會用 cube 的檔名開一個新目錄 —— 那讓「餵錯一個 cube」
+    # 的代價變成「results/ 底下多一個沒人知道是什麼的資料夾」,而且不會有任何提示。
+    ap.add_argument("--out", type=Path, required=True, help="輸出資料夾")
     args = ap.parse_args()
-    out = args.out or ROOT / "results/skymodel" / args.cube.stem
+    out = args.out
     out.mkdir(parents=True, exist_ok=True)
 
     NOSKY_CUBE = args.cube
