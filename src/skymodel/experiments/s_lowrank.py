@@ -126,9 +126,9 @@ def main():
 
     tab = {}
     for hi, (hole, ctr) in enumerate(hs):
-        s_hat, train, _ = build_s_field(s, seg, blank, p["r_far"], p["r_far_haro"],
-                                        p["clip"], p["sigma"], ridge=None,
-                                        main=main, exclude=hole)
+        s_hat, train = build_s_field(s, seg, blank, p["r_far"], p["r_far_haro"],
+                                        p["clip"],
+                                main=main, exclude=hole)
         M, _, _ = rowcol_field(s, train)
         truth = s[hole]
         cur   = s_hat[hole]                       # 現行:M + 核回歸

@@ -91,9 +91,9 @@ def main():
 
     hole, ctr = pick_hole(blank, seg, valid, args.radius, args.margin)
     hole &= blank
-    s_hat, train, _ = build_s_field(s_free, seg, blank, p["r_far"],
-                                    p["r_far_haro"], p["clip"], p["sigma"],
-                                    ridge=None, main=main, exclude=hole)
+    s_hat, train = build_s_field(s_free, seg, blank, p["r_far"],
+                                    p["r_far_haro"], p["clip"],
+                                main=main, exclude=hole)
 
     best = np.load(ROOT / meta["best"])
     T_all = build_templates(best, air_to_vacuum(wl))

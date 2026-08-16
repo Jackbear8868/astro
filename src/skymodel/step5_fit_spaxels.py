@@ -358,14 +358,6 @@ def main():
                          "的像素併進亮源,一個 ID 可能包含散在遠處的小碎塊")
     ap.add_argument("--sf-clip", type=float, default=8.0,
                     help="建場:|s − 中位| > clip x 穩健散布 的格不當訓練樣本")
-    ap.add_argument("--sf-sigma", type=float, default=2.0,
-                    help="建場:殘差項的高斯核寬(px)。核越大,估計伸得越遠但越模糊")
-    ap.add_argument("--sf-ridge", type=float, default=None,
-                    help="建場:加在核回歸分母上的常數(見 utils.kernel_field)。"
-                         "省略 = 由資料推出 sigma_noise²/(S·4πσ²),那是貝氏後驗"
-                         "均值的收縮量,沒有任何人為挑的數字。它同時讓殘差項在"
-                         "核搆不到的地方**平滑地**歸零 —— 用門檻的話會在每個源"
-                         "外圍留下一圈不連續")
     ap.add_argument("--best", default=None,
                     help="源模型的來源檔。預設是舊 step4 的 best_{tag}.npz;"
                          "教授流程第 2 步要用 step4c 定案的分類,例如 "
@@ -526,10 +518,9 @@ def main():
         mg, mids, mk = main_source_group(seg, white)
         print(f"  主源(最亮像素 y={mk[0]}, x={mk[1]} 所在的整團):{len(mids)} 個 ID"
               f",共 {int(mg.sum()):,} px")
-        s_hat, sf_train, sf_ridge = build_s_field(
-            s2d, seg, ok2d, args.sf_r_far,
-            args.sf_r_far_haro or None, args.sf_clip,
-            args.sf_sigma, args.sf_ridge, args.sf_main_id, sf_box, mg)
+        s_hat, sf_train = build_s_field(
+            s2d, seg, ok2d, args.sf_r_far, args.sf_r_far_haro or None,
+            args.sf_clip, args.sf_main_id, sf_box, mg)
         if args.sf_file:
             # 用外部算好的場取代。訓練遮罩仍然照上面算,因為 meta 要記錄它,
             # 而且外部的場理應是用同一組訓練點建的 —— 形狀對不上就直接停,
@@ -546,9 +537,6 @@ def main():
               f"(離源 > {args.sf_r_far:g} px" +
               (f",Haro 11 > {args.sf_r_far_haro:g} px" if args.sf_r_far_haro else "")
               + f",clip {args.sf_clip:g} sigma)   {time.time() - t0:.1f}s")
-        print(f"  ridge = {sf_ridge:.4f}"
-              + ("(由資料推出)" if args.sf_ridge is None else "(指定)")
-              + f"   -> 完全覆蓋處保留 {1/(1+sf_ridge):.3f} 的殘差項")
         print(f"  s_hat 中位 {np.nanmedian(s_hat[valid]):.5f}   "
               f"blank 自由解的中位 {np.nanmedian(c[0]):.5f}   "
               f"NaN {int((~np.isfinite(s_hat[valid])).sum())} 格")
@@ -630,8 +618,7 @@ def main():
         s_fix=s_fix,
         s_field=bool(args.s_field),
         s_field_params=(dict(r_far=args.sf_r_far, r_far_haro=args.sf_r_far_haro,
-                             clip=args.sf_clip, sigma=args.sf_sigma,
-                             ridge=sf_ridge, ridge_auto=args.sf_ridge is None,
+                             clip=args.sf_clip,
                              exclude_box=args.sf_exclude_box,
                              n_train=int(sf_train.sum()))
                         if args.s_field else None),

@@ -65,8 +65,9 @@ def main():
     valid = white != 0
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan))
     blank = valid & (seg == 0) & np.isfinite(s_free)
-    s_hat, _, _ = build_s_field(s_free, seg, blank, p["r_far"], p["r_far_haro"],
-                                p["clip"], p["sigma"], ridge=None, main=mg)
+    s_hat, _ = build_s_field(s_free, seg, blank, p["r_far"], p["r_far_haro"],
+                                p["clip"],
+                                main=mg)
 
     best = np.load(ROOT / meta["best"])
     T_all = build_templates(best, air_to_vacuum(wl))

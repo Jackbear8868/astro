@@ -248,15 +248,11 @@ def per_spaxel_continuum(
 # 吃掉的通道。改成「只用遠離源的 spaxel 定一個場,再外插到源附近」,一格的資料
 # 撼動不了那個場,源的光在天空模型裡就無處可去,只能留在殘差裡(= 被保留)。
 #
-# 場的形式(見 rowcol_field / kernel_field):
+# 場的形式(見 rowcol_field):
 #
-#     s_hat(x, y) = mu + a(y) + b(x) + r(x, y)
+#     s_hat(x, y) = mu + a(y) + b(x)
 #
-# 前三項描述儀器造成的軸對齊條紋(沿整行/整列延伸,不是天空也不是源),
-# 第四項是剩下的局部起伏。
-
-TRUNCATE = 3.0      # 高斯核截在 3 sigma:含 99.7% 的質量。核的成本正比於截斷
-                    # 半徑,所以截得比 scipy 預設的 4 sigma 短可以省下時間
+# 描述的是儀器造成的軸對齊條紋(沿整行/整列延伸,不是天空也不是源)。
 
 
 def scale(a):
@@ -402,65 +398,6 @@ def half_field_mask(seg, valid, source_id=None, central=0.3, round_to=5,
                           f"偏心 y {off_y:+.2f} / x {off_x:+.2f};{txt}")
 
 
-def ridge_from_data(resid, train, sigma, axis=1):
-    """由資料推出 kernel_field 的 ridge —— 不是挑的,是算的。
-
-        ridge = sigma_noise^2 / (S * n)
-
-    其中 sigma_noise 是求解雜訊(相鄰格差分估),S 是殘差裡真實結構的變異數
-    (總變異數扣掉雜訊),n = 4*pi*sigma^2 是完全覆蓋時的有效樣本數。
-
-    這條式子的來歷:對「先驗 N(0, S)、觀測雜訊 sigma_noise^2、有效樣本數 m」
-    的貝氏後驗均值,收縮係數是 m*S / (m*S + sigma_noise^2)。而 kernel_field 的
-    m 正比於 den(完全覆蓋時 den=1、m=n),代入整理就得到 num / (den + ridge)。
-    也就是說 **ridge 形式本身就是貝氏後驗均值**,不是事後補的平滑手段。
-    """
-    sn = noise_floor(resid, train, axis)
-    S  = max(scale(resid[train]) ** 2 - sn ** 2, 0.0)
-    n  = 4.0 * np.pi * sigma ** 2
-    return float(sn ** 2 / (S * n)) if S > 0 else np.inf
-
-
-def kernel_field(v, w, sigma, ridge):
-    """歸一化卷積(核回歸)加上 ridge。回傳 (值, 收集到的權重 den)。
-
-                      Sum_q  w(q) * K(p - q) * v(q)
-        v_hat(p)  =  ------------------------------
-                      Sum_q  w(q) * K(p - q)  +  ridge
-
-    w 是訓練點指示函數,K 是高斯核。分子分母各自是一個卷積,所以兩次
-    gaussian_filter 就算完,不必對幾萬個點跑迴圈。
-
-    **分母是關鍵**,不是防呆。den = Sum w*K 的意義是「這個位置實際收集到了多少
-    真實的權重」,值域 0-1(高斯核的權重和為 1)。在源區域內部 w 全是 0,分子分母
-    都只拿得到外圈的貢獻 —— 洞裡的值完全由周圍的遠場決定。**外插不是另外寫的
-    一段程式,它是這條式子的自然結果。** 少了分母的話,等於把源區當成「v = 0 的
-    真實觀測」,估計值會被往 0 拉,在洞的邊緣與內部偏得最兇。
-
-    ridge 是加在分母上的常數,做兩件事:
-
-    ① **退場**。den 很小的地方,估計只由一兩個很遠的點決定,非常吵。加了 ridge
-       之後 den -> 0 時 num 也 -> 0,v_hat 平滑地歸零。呼叫端把它當殘差項相加,
-       所以歸零正好讓模型降級成沒有這一項的版本。
-
-    ② **收縮**。即使覆蓋完整,估計仍帶雜訊,貝氏上就該往先驗 0 收一點。
-       ridge_from_data 給的值讓收縮量正好等於後驗均值。
-
-    為什麼不是用門檻(den <= min_weight 就設 0):門檻會在等高線上製造不連續,
-    而那條等高線繞著每個源形成一圈。我們整個專案就在對付這種環,不該自己再造
-    一個。單純把門檻拿掉也不行 —— 高斯核有**有限支撐**(TRUNCATE x sigma),
-    離最近訓練點超過那個距離 den 恰為 0,不連續只是被推到支撐邊緣,而那裡的
-    估計更吵。
-
-    ridge 的形式**沒有任何分支、遮罩或門檻**,v_hat 處處連續。
-    """
-    num = ndimage.gaussian_filter(np.where(w, np.nan_to_num(v), 0.0), sigma,
-                                  mode="constant", cval=0.0, truncate=TRUNCATE)
-    den = ndimage.gaussian_filter(w.astype(np.float64), sigma,
-                                  mode="constant", cval=0.0, truncate=TRUNCATE)
-    return num / (den + ridge), den
-
-
 def rowcol_field(s, w, n_iter=4):
     """s ≈ mu + a(y) + b(x),交替以中位數求解(Tukey 的 median polish)。
 
@@ -498,16 +435,20 @@ def rowcol_field(s, w, n_iter=4):
     return mu + a[:, None] + b[None, :], a, b
 
 
-def build_s_field(s, seg, blank, r_far, r_far_haro, clip, sigma, ridge=None,
+def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
                   main_id=None, exclude=None, main=None):
-    """從逐 spaxel 的 s 圖建出空間場。回傳 (s_hat, 訓練遮罩, 實際用的 ridge)。
+    """從逐 spaxel 的 s 圖建出空間場。回傳 (s_hat, 訓練遮罩)。
+
+    場的形式是 mu + a(y) + b(x)(見 rowcol_field)。它只有 1 + ny + nx 個參數,
+    而且 a(y) 被整列共用、b(x) 被整行共用 —— 這正是它能伸進源區的原因:那一列
+    在遠處仍有訓練點,參數從那些格算出來、再套用到洞中央。
 
     Parameters
     ----------
     s : ndarray, shape (ny, nx)
         逐 spaxel 自由解出來的天空連續譜係數。源區的值不會被用到。
     seg : ndarray, shape (ny, nx)
-        segmentation;0 = blank,>0 = 源,1 = Haro 11。
+        segmentation;0 = blank,>0 = 源。
     blank : ndarray of bool, shape (ny, nx)
         可用的 blank spaxel(視場內、非源、光譜完整、s 有解)。
     r_far : float
@@ -516,27 +457,17 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip, sigma, ridge=None,
     r_far_haro : float or None
         主源專用的加碼半徑,只對主源生效。主源的延展暈比小源伸得遠得多,用同一個
         r_far 的話訓練點仍在暈裡,模型會把暈學成天空。None = 不加碼。
+    clip : float
+        |s − 中位| > clip x 穩健散布 的格不採用(剔掉擬合失敗的解)。
     main_id : int or None
         主源的 segmentation ID。None = 自動取面積最大的源(見 main_source_mask)。
-        距離從它的**主連通塊**算,不是整個 ID —— 理由見 main_source_mask。
     exclude : ndarray of bool or None
         額外排除在訓練樣本外的格(仍然會被扣天空,只是不參與定場)。用途:
         鑲嵌視場裡曝光數不足、雜訊遠高於外圈的區塊 —— 拿它學天空等於把雜訊
         寫進場裡。
-    clip : float
-        |s − 中位| > clip x 穩健散布 的格不採用(剔掉擬合失敗的解)。
-    sigma : float
-        殘差項的核寬(px)。條紋已經被 rowcol_field 拿走,留給這一項的是細碎的
-        局部起伏,核越大糊掉的細節越多。
-    ridge : float or None
-        見 kernel_field。None = 由資料推出(ridge_from_data),這是預設也是建議 ——
-        它沒有任何人為挑的數字。
-
-    Notes
-    -----
-    hybrid 的組合方式:先用 rowcol_field 拿走條紋,再對**殘差**做一次核回歸。
-    核伸不到的地方殘差項平滑歸零,模型自動退化成 mu + a(y) + b(x) —— 所以不論
-    洞多大都給得出值,而純核回歸在大洞中央會完全沒有值。
+    main : ndarray of bool or None
+        主源的遮罩;給定時就不再從 main_id 推。呼叫端通常已經用
+        main_source_group 算好。
     """
     train = blank & (ndimage.distance_transform_edt(seg == 0) > r_far)
     if exclude is not None:
@@ -548,8 +479,4 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip, sigma, ridge=None,
     train &= np.abs(s - med) <= clip * scale(s[train])
 
     M, _, _ = rowcol_field(s, train)
-    R = s - M
-    if ridge is None:
-        ridge = ridge_from_data(R, train, sigma)
-    r, _ = kernel_field(R, train, sigma, ridge)
-    return M + r, train, ridge
+    return M, train

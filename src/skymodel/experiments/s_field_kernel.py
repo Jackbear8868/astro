@@ -83,8 +83,73 @@ import matplotlib.pyplot as plt
 # 這些函式是 pipeline 也要用的,住在 src/skymodel/utils.py。
 # pipeline 不可以 import experiments(方向錯了),所以共用的部分放在 utils。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import (scale, nanmed, noise_floor, kernel_field, rowcol_field,
-                   ridge_from_data, TRUNCATE)  # noqa: E402
+from utils import scale, nanmed, noise_floor, rowcol_field  # noqa: E402
+
+# 核回歸只剩這支實驗在用,所以放在這裡而不是 utils —— pipeline 的 s 場已經
+# 不含殘差項(它的支撐只有 3 x sigma,源的周圍永遠拿不到)。
+TRUNCATE = 3.0      # 高斯核截在 3 sigma:含 99.7% 的質量。核的成本正比於截斷
+
+
+def ridge_from_data(resid, train, sigma, axis=1):
+    """由資料推出 kernel_field 的 ridge —— 不是挑的,是算的。
+
+        ridge = sigma_noise^2 / (S * n)
+
+    其中 sigma_noise 是求解雜訊(相鄰格差分估),S 是殘差裡真實結構的變異數
+    (總變異數扣掉雜訊),n = 4*pi*sigma^2 是完全覆蓋時的有效樣本數。
+
+    這條式子的來歷:對「先驗 N(0, S)、觀測雜訊 sigma_noise^2、有效樣本數 m」
+    的貝氏後驗均值,收縮係數是 m*S / (m*S + sigma_noise^2)。而 kernel_field 的
+    m 正比於 den(完全覆蓋時 den=1、m=n),代入整理就得到 num / (den + ridge)。
+    也就是說 **ridge 形式本身就是貝氏後驗均值**,不是事後補的平滑手段。
+    """
+    sn = noise_floor(resid, train, axis)
+    S  = max(scale(resid[train]) ** 2 - sn ** 2, 0.0)
+    n  = 4.0 * np.pi * sigma ** 2
+    return float(sn ** 2 / (S * n)) if S > 0 else np.inf
+
+
+def kernel_field(v, w, sigma, ridge):
+    """歸一化卷積(核回歸)加上 ridge。回傳 (值, 收集到的權重 den)。
+
+                      Sum_q  w(q) * K(p - q) * v(q)
+        v_hat(p)  =  ------------------------------
+                      Sum_q  w(q) * K(p - q)  +  ridge
+
+    w 是訓練點指示函數,K 是高斯核。分子分母各自是一個卷積,所以兩次
+    gaussian_filter 就算完,不必對幾萬個點跑迴圈。
+
+    **分母是關鍵**,不是防呆。den = Sum w*K 的意義是「這個位置實際收集到了多少
+    真實的權重」,值域 0-1(高斯核的權重和為 1)。在源區域內部 w 全是 0,分子分母
+    都只拿得到外圈的貢獻 —— 洞裡的值完全由周圍的遠場決定。**外插不是另外寫的
+    一段程式,它是這條式子的自然結果。** 少了分母的話,等於把源區當成「v = 0 的
+    真實觀測」,估計值會被往 0 拉,在洞的邊緣與內部偏得最兇。
+
+    ridge 是加在分母上的常數,做兩件事:
+
+    ① **退場**。den 很小的地方,估計只由一兩個很遠的點決定,非常吵。加了 ridge
+       之後 den -> 0 時 num 也 -> 0,v_hat 平滑地歸零。呼叫端把它當殘差項相加,
+       所以歸零正好讓模型降級成沒有這一項的版本。
+
+    ② **收縮**。即使覆蓋完整,估計仍帶雜訊,貝氏上就該往先驗 0 收一點。
+       ridge_from_data 給的值讓收縮量正好等於後驗均值。
+
+    為什麼不是用門檻(den <= min_weight 就設 0):門檻會在等高線上製造不連續,
+    而那條等高線繞著每個源形成一圈。我們整個專案就在對付這種環,不該自己再造
+    一個。單純把門檻拿掉也不行 —— 高斯核有**有限支撐**(TRUNCATE x sigma),
+    離最近訓練點超過那個距離 den 恰為 0,不連續只是被推到支撐邊緣,而那裡的
+    估計更吵。
+
+    ridge 的形式**沒有任何分支、遮罩或門檻**,v_hat 處處連續。
+    """
+    num = ndimage.gaussian_filter(np.where(w, np.nan_to_num(v), 0.0), sigma,
+                                  mode="constant", cval=0.0, truncate=TRUNCATE)
+    den = ndimage.gaussian_filter(w.astype(np.float64), sigma,
+                                  mode="constant", cval=0.0, truncate=TRUNCATE)
+    return num / (den + ridge), den
+
+
+
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"

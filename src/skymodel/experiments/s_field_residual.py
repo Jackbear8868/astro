@@ -125,10 +125,10 @@ def main():
           f"({100*clean.mean():.1f}%),其餘不納入本圖")
 
     # ---- 建空間場 ---------------------------------------------------------
-    s_hat_full, train, ridge = build_s_field(s_map, seg, blank2, args.r_far,
-                                             args.r_far_haro, args.clip, args.sigma)
+    s_hat_full, train = build_s_field(s_map, seg, blank2, args.r_far,
+                                             args.r_far_haro, args.clip)
     print(f"空間場:訓練 {int(train.sum()):,} 格 "
-          f"(r_far {args.r_far:g}, Haro {args.r_far_haro:g}, ridge {ridge:.4f})")
+          f"(r_far {args.r_far:g}, Haro {args.r_far_haro:g})")
     s_hat = s_hat_full.ravel()[idx]
 
     # ---- 兩個模型 ---------------------------------------------------------
@@ -329,7 +329,7 @@ def main():
 
     (fig_dir / "s_field_residual.json").write_text(json.dumps(dict(
         run=args.run, band=list(args.band), basis=args.basis, K=args.K,
-        r_far=args.r_far, r_far_haro=args.r_far_haro, sigma=args.sigma,
+        r_far=args.r_far, r_far_haro=args.r_far_haro,
         baseline_A=bA, baseline_B=bB, sigma_pixel=sg_px, n_sources=len(ids),
         ring_flux=dict(A=fA, B=fB, diff=fB - fA),
         profiles={k: [None if (isinstance(x, float) and x != x) else float(x)

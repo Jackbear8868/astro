@@ -148,11 +148,11 @@ def main():
           f"{int(hole.sum()):,} 格 = Haro 11 足跡的 {100*hole.sum()/main.sum():.0f}%")
 
     # 場與 M 都在「洞被排除」的條件下建 —— 模擬源區的處境
-    s_hat, train, ridge = build_s_field(
-        s_free, seg, blank, p["r_far"], p["r_far_haro"], p["clip"], p["sigma"],
-        ridge=None, main=main, exclude=hole)
+    s_hat, train = build_s_field(
+        s_free, seg, blank, p["r_far"], p["r_far_haro"], p["clip"],
+                                main=main, exclude=hole)
     M, _, _ = rowcol_field(s_free, train)
-    print(f"訓練點 {int(train.sum()):,} 格(洞已排除)   ridge {ridge:.4f}")
+    print(f"訓練點 {int(train.sum()):,} 格(洞已排除)")
     print(f"洞裡:真值 s 中位 {np.median(s_free[hole]):.5f}   "
           f"M 中位 {np.median(M[hole]):.5f}   場 中位 {np.median(s_hat[hole]):.5f}")
 

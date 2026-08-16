@@ -109,12 +109,12 @@ def main():
     idx = idx[clean]
     print(f"blank 且光譜完整:{idx.size:,} 個 spaxel")
 
-    s_hat_full, train, ridge = build_s_field(s_map, seg, blank.reshape(ny, nx),
+    s_hat_full, train = build_s_field(s_map, seg, blank.reshape(ny, nx),
                                              args.r_far, args.r_far_haro,
-                                             args.clip, args.sigma)
+                                             args.clip)
     s_hat = s_hat_full.ravel()[idx]
     print(f"空間場訓練 {int(train.sum()):,} 格 "
-          f"(r_far {args.r_far:g}, Haro {args.r_far_haro:g}, ridge {ridge:.4f})")
+          f"(r_far {args.r_far:g}, Haro {args.r_far_haro:g})")
 
     cA = np.linalg.pinv(sky.T) @ D
     cB = np.linalg.pinv(sky[1:].T) @ (D - s_hat[None, :].astype(np.float32)
