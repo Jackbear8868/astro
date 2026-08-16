@@ -162,7 +162,7 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
   2. **line-free 純雜訊**(如 7000–7120 Å 的逐-spaxel RMS):**不得明顯上升**(門檻經驗值 ≤ 1.5× raw)。
   3. **源 Hα 積分通量**:**保留 ≥ ~98%**(相對 raw),線形不變。
 
-  選能同時滿足三者、且成分數盡量高(天空扣最乾淨)的 N。三者的定義與門檻見 `docs/metric_spec.md`。
+  選能同時滿足三者、且成分數盡量高(天空扣最乾淨)的 N。三者的定義與門檻見 `docs/archive/metric_spec.md`(封存)。
 
 ### 4.4 ncpu 與 extSVD(多曝光)
 
@@ -191,7 +191,7 @@ zap.process(cubefits, outcubefits='DATACUBE_ZAP.fits', clean=True,
 - `CLAUDE.md` — Principle 1(sky reconstruction、雙指標)、Principle 2(參數須物理可辯護)、「Other」節點名 `SKYSEG`/`cfwidthSP` 為科學關鍵。
 - `docs/zap-conclusions.md` — 既定結論:餵對 cube(wsky)是關鍵、遮罩不足會吃源、成分數掃描救不了輸入錯誤、整張視場數字。
 - `docs/segmentation-parameters-explained.md` — `mask` 的偵測參數(threshold 2σ、matched filter 核=seeing、bw>暈、minarea、dilation)的完整物理推導。
-- `docs/metric_spec.md` — 評估指標定義。
+- `docs/archive/metric_spec.md`(封存) — 評估指標定義。
 - `src/zap/zap.py` — 實際呼叫點。
 - ZAP 論文:Soto, Lilly, Bacon, Richard & Conseil (2016), MNRAS 458, 3210。vendored 原始碼:`libs/zap/`(2.1)。
 

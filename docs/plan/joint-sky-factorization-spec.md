@@ -5,7 +5,7 @@
 >
 > 方法屬於 `CLAUDE.md` Principle 1 的 sky reconstruction 家族（策略一：預測 sky）：
 > NMF 低秩天空基底與空間建模的聯合分解，為主要研究貢獻路線（不走監督式 DL）。
-> 資料/指標框架見 `docs/plan/data-and-metrics-overview.md`；指標定義見 `docs/metric_spec.md`；
+> 資料/指標框架見 `docs/plan/data-and-metrics-overview.md`；指標定義見 `docs/archive/metric_spec.md`(封存)；
 > ZAP 對照組的參數見 `docs/zap-parameters-reference.md`。
 >
 > **方法不含任何 neural network。**所有被擬合的參數（天空基底、係數圖、源項）本身即物理量，
@@ -232,7 +232,7 @@ Hβ 4961、[O III] 5061/5110、He I 5997、[O I] 6430、[N II] 6683/6719、Hα 6
 ## 7. 驗證協定
 
 對照組：`super_sky`（Phase 1 基線）、`NMF-only`（§4.1 初始解）、`ZAP`（現行 0706 pipeline）、
-`nosky`（MUSE pipeline model 法）。指標定義沿用 `docs/metric_spec.md`。
+`nosky`（MUSE pipeline model 法）。指標定義沿用 `docs/archive/metric_spec.md`(封存)。
 
 1. **Held-out blank RMSE(λ)**（來源 A）：天空重建準度的直接量化；同表列出全部對照組。
 2. **注入測試**（來源 B；「天體底下」的唯一低成本真值）：取 wsky blank 區真實天空+雜訊，
@@ -282,7 +282,7 @@ src/skymodel/
   holdout.py           # held-out 方塊切分與 RMSE
   inject.py            # 注入測試
   diagnostics.py       # §6(4) 固定診斷圖
-  metrics.py           # 對接 docs/metric_spec.md
+  metrics.py           # 對接 docs/archive/metric_spec.md
 ```
 
 ---
@@ -291,7 +291,7 @@ src/skymodel/
 
 - `CLAUDE.md` — Principle 1（雙指標）、Principle 2（參數辯護）。
 - `docs/plan/data-and-metrics-overview.md` — 來源 A/B/C 與指標框架。
-- `docs/metric_spec.md` — 指標定義。
+- `docs/archive/metric_spec.md`(封存) — 指標定義。
 - `docs/zap-parameters-reference.md` — ZAP 對照組設定（單段、自動 nevals、遮罩）。
 - `docs/zap-conclusions.md` — wsky/nosky 輸入結論、遮罩教訓。
 - 文獻錨點：Kolganov 2023（NMF 低秩天空）、Rhea 2024（IFU 係數空間內插）、

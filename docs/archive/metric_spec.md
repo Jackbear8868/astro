@@ -1,3 +1,13 @@
+> **封存中,不是現行的規格。**
+> 這份文件定義的是評估 ZAP 扣天空的五個指標。M1 做完了,M2/M3/M5 只有規格沒有實作,
+> M4 當初就標著暫緩。目前專案的主線是 sky reconstruction(`src/skymodel/`),不是 ZAP
+> 對照;要恢復比較時再回來看這份。
+>
+> **恢復前必須知道:它依據的 ZAP 產物已經不在磁碟上了。**
+> 第 3 節指名的 `results/zap/cubes/{target}_maskfrom-{masksrc}/{zap,sky,var}.fits`
+> 四個全視場 run 已刪除。遮罩(`results/zap/masks/`)與輸入 cube 都還在,所以可以用
+> `src/zap/zap.py` 重跑,一個 run 約 65 分鐘、記憶體峰值 43.7 GB。
+
 # Metric Spec — ZAP 扣天空評估指標（Haro11 / MUSE）
 
 本檔是評估指標的**規格**。每個指標一經定案即以最終形式寫入；本檔不保留草稿、前後比較或待選項。
