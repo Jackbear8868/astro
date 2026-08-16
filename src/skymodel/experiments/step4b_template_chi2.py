@@ -23,7 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, KEEP_IDS, make_tag
+from step4b_window_fit import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP04B = ROOT / "results/skymodel/step04b"
@@ -87,7 +87,8 @@ def main():
                     help="每個 run 的檔名字尾,預設用 tag 後綴")
     ap.add_argument("--titles", nargs="+", default=None,
                     help="每個 run 印在圖上的標題,預設同 --labels")
-    ap.add_argument("--ids", type=int, nargs="+", default=list(KEEP_IDS))
+    ap.add_argument("--ids", type=int, nargs="+", default=None,
+                    help="要畫哪些源。省略 = best 檔裡的全部")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     labels = args.labels or [s.lstrip("_") for s in args.runs]
@@ -97,7 +98,15 @@ def main():
                      args.gal_window, args.sky_basis, args.iter,
                      not args.raw_mask, args.aperture, s) for s in args.runs]
 
-    ids  = [t for t in args.ids]
+    # --ids 省略時取第一個 tag 的 best 檔裡的全部源 —— 每顆 pointing 的
+    # SExtractor 編號都不同,寫死一串編號只在某一顆上成立
+    if args.ids is None:
+        bf = STEP04B / f"best_{tags[0]}.npz"
+        if not bf.exists():
+            raise SystemExit(f"找不到 {bf.name},先跑 step4b_window_fit.py")
+        args.ids = [int(i) for i in np.load(bf)["id"]]
+
+    ids  = list(args.ids)
     ncol = 3
     nrow = int(np.ceil(len(ids) / ncol))
 

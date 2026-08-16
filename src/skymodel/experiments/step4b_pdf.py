@@ -1,6 +1,6 @@
 """把源的「光譜 + 最佳模板 + 殘差 + 誤差譜」合成一份 PDF —— 寄給教授用。
 
-預設只畫 KEEP_IDS 那幾個真源(其餘的偵測是雜訊尖峰、宇宙線、探測器條紋)。
+預設畫 best 檔裡的全部源。
 `--all-ids` 才畫全部。
 
 
@@ -32,7 +32,7 @@ from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, load_eigen_galaxy, redshift_to_grid
-from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, KEEP_IDS, make_tag,
+from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, make_tag,
                                EIGEN_GAL)
 # 圖的內容必須和 step4b_stage1.py 完全同源 —— 光譜怎麼算、遮罩怎麼定義都直接
 # 進口它的函式,不另外寫一份。兩份各自實作的話,哪天改了一邊,兩種圖會悄悄不一樣。
@@ -319,7 +319,7 @@ def main():
                     help="一頁畫幾個源。一個源現在佔五列(恆星流量/殘差、"
                          "星系流量/殘差、σ),一頁放兩個的話每一列只剩 0.8 吋")
     ap.add_argument("--all-ids", action="store_true",
-                    help="畫全部的偵測。預設只畫 KEEP_IDS 那幾個真源 —— "
+                    help="保留給相容性,現在預設就是全部 —— "
                          "其餘的是雜訊尖峰/宇宙線/探測器條紋")
     ap.add_argument("--dpi", type=int, default=200, help="點陣化資料線的解析度")
     ap.add_argument("--spec-dir", default=None,
@@ -344,9 +344,6 @@ def main():
     D    = load_common(Namespace(**vars(args)))
 
     targets = best["id"].tolist()
-    if not args.all_ids:
-        targets = [t for t in targets if t in KEEP_IDS]
-        print(f"只畫 {len(targets)} 個真源:{', '.join(map(str, targets))}")
 
     rows = []
     for t in targets:

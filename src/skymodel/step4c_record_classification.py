@@ -24,12 +24,8 @@ from pathlib import Path
 
 import numpy as np
 
-from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, KEEP_IDS, N_SRC,
+from step4b_window_fit import (STAR_WINDOW, GAL_WINDOW, N_SRC,
                                make_tag, STEP04B)
-
-# 教授指出的真源子集,編號屬於舊的 37 源 segmentation。不是 --ids 的預設值,
-# 要拿來篩選請顯式傳 --ids。
-FIT_IDS = tuple(i for i in KEEP_IDS if i not in (27, 30))
 
 
 def main():
