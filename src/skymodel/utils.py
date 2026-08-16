@@ -289,26 +289,38 @@ def nanmed(a, axis):
         return np.nan_to_num(np.nanmedian(a, axis=axis))
 
 
-def main_source_group(seg, white, bridge=3):
-    """主星系的完整足跡 —— 最亮像素所在的那一**整團**源。回傳 (遮罩, ID 清單, 峰值座標)。
+def main_source_group(seg, white, min_frac=0.05):
+    """主星系的完整足跡 —— 最亮像素所在的那一團,只收夠大的成員。
+    回傳 (遮罩, ID 清單, 峰值座標)。
 
     為什麼不能用「面積最大」或「流量最大」的**單一** ID:SExtractor 的 deblender
-    會把 Haro 11 拆開。它是合併星系,本來就有數個亮結,而拆不拆、拆成幾塊,取決於
-    那一次的 seeing 與 dither,不同 exposure 並不一致。被拆開時,任何「選一個 ID」
-    的規則都只會拿到星系的一部分,而下游用它來決定「遮掉哪半邊」與「排除周圍多少
-    像素」—— 選錯一塊,兩件事都會遮錯位置。
+    會把主星系拆開。並合星系本來就有數個亮結,而拆不拆、拆成幾塊,取決於那一次的
+    seeing 與 dither,不同 exposure 並不一致。被拆開時,任何「選一個 ID」的規則
+    都只會拿到星系的一部分,而下游用它來決定「遮掉哪半邊」與「排除周圍多少像素」
+    —— 選錯一塊,兩件事都會遮錯位置。
 
-    做法:把 seg > 0 膨脹 bridge 像素讓被拆開的結重新相連,取最亮像素所在的
-    連通塊,再回傳該塊涵蓋的所有 seg ID。bridge 只是用來跨過 deblend 留下的
-    一兩個像素縫隙,不是形狀參數。
+    兩個判準,缺一不可:
+
+    ① **直接相鄰**(不做任何膨脹)。deblend 出來的兄弟是把同一塊超過門檻的連通
+       區域切開,彼此貼著;另一個天體則被低於門檻的背景隔開。膨脹會抹掉這個分野,
+       把附近不相干的源一起吸進來。
+    ② **面積 >= min_frac x 最大成員**。相鄰還不夠 —— 疊在星系上的另一個天體
+       也會被 deblend 成同一個父偵測的子代,因此同樣貼著。真正的亮結彼此大小相當,
+       而混進來的通常小一到兩個數量級。
+
+    回傳的遮罩再與連通塊取交集,不是 `isin(seg, ids)` —— SExtractor 的 CLEAN 會把
+    散落各處的假偵測併進亮源的 ID,那些像素帶著主源的編號卻不在主源身上。
     """
     k = np.unravel_index(np.nanargmax(np.where(np.isfinite(white), white, -np.inf)),
                          white.shape)
     src = seg > 0
-    lab, _ = ndimage.label(ndimage.binary_dilation(src, iterations=bridge))
-    grp = lab == lab[k]
-    ids = sorted(int(i) for i in np.unique(seg[grp & src]) if i > 0)
-    return np.isin(seg, ids), ids, k
+    lab, _ = ndimage.label(src)
+    blob = lab == lab[k]
+    ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
+    area = {i: int((seg == i).sum()) for i in ids}
+    top = max(area.values())
+    keep = sorted(i for i in ids if area[i] >= min_frac * top)
+    return np.isin(seg, keep) & blob, keep, k
 
 
 def main_source_mask(seg, source_id=None, main_blob=True):
