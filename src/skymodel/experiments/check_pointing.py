@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WINDOWS = ((5250, 5450), (5600, 5750), (6050, 6200))
 
 
-def check(work, cube):
+def check(work, cube, run=None):
     W = ROOT / "results/skymodel" / work
     seg = fits.getdata(W / "step01/seg.fits").astype(int)
     white = fits.getdata(W / "step01/whitelight.fits")
@@ -73,9 +73,16 @@ def check(work, cube):
 
     raw = band(ROOT / cube)
     subs = sorted((W / "step05").glob("*/sky_subtracted.fits"))
+    if run:
+        subs = [p for p in subs if run in p.parent.name]
     if not subs:
-        print(f"{work}: 找不到 step05 的輸出"); return
-    sub = band(subs[-1])
+        print(f"{work}: 找不到 step05 的輸出" + (f"(--run {run})" if run else "")); return
+    # 多個 run 並存時不能默默挑一個 —— 挑錯了表格看起來完全正常
+    if len(subs) > 1:
+        raise SystemExit(f"★ {work} 有 {len(subs)} 個 step05 的 run,用 --run 指定:\n  "
+                         + "\n  ".join(p.parent.name for p in subs))
+    sub = band(subs[0])
+    print(f"  run = {subs[0].parent.name}")
     far = zones["far"]
     if far.sum() < 30:
         print(f"{work}: 遠場格數不足({int(far.sum())}),無法定基線"); return
@@ -107,5 +114,11 @@ CUBES = {"p04": "data/wshy/DATACUBE_FINAL_4.fits",
          "wfm": "data/Haro11_wsky.fits"}
 
 if __name__ == "__main__":
-    for w in sys.argv[1:]:
-        check(w, CUBES.get(w, f"data/wshy/DATACUBE_FINAL_{w.lstrip('p0') or w}.fits"))
+    argv = sys.argv[1:]
+    run = None
+    if "--run" in argv:
+        i = argv.index("--run")
+        run = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+    for w in argv:
+        check(w, CUBES.get(w, f"data/wshy/DATACUBE_FINAL_{w.lstrip('p0') or w}.fits"), run)
