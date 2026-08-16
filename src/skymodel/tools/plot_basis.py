@@ -7,7 +7,7 @@
   - 不同分解法的差異:svd 的右奇異向量單位正交(每條 norm = 1),
     pca 的第 0 條是平均光譜(未正規化),其餘才是主成分
 
-輸出 results/skymodel/figures/basis_{方法}/ 底下:
+輸出 results/skymodel/evaluation/sky_basis/basis_{方法}/ 底下:
     mean_sky.png   平均天空與連續譜,對照用
     e00.png …      每條 basis 一張
 
@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 
 def main():

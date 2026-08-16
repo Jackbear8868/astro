@@ -30,7 +30,7 @@ from step4b_stage1 import load_common, source_spectrum
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 
 PROF_Z = {1: 0.021, 10: 0.99, 12: 1.033, 13: 0.422, 14: 0.336, 24: 1.055,
           27: 1.349, 28: 1.033, 30: 0.295, 34: 0.605}

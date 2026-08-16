@@ -50,7 +50,7 @@ STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
 STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 TPL_DIR = ROOT / "data/sdss_templates"
 
 # docs/sdss-templates.md 第 2 節。分組是為了上色 —— 同一族的模板長得像,

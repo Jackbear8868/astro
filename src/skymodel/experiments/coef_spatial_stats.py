@@ -30,7 +30,7 @@ STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 MIN_COVERAGE = 0.9
 MAX_LAG      = 40          # 自相關算到幾格

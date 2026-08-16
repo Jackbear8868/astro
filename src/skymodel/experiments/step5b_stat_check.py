@@ -44,7 +44,7 @@ import matplotlib.pyplot as plt
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/acceptance"
 
 BINS = (1, 2, 3, 4, 6, 8)
 LAGS = (1, 2, 3, 4)

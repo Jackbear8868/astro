@@ -33,7 +33,7 @@ STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-OUTDIR  = ROOT / "results/skymodel/figures/edge_oversub"
+OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 CLIP_SIGMA = 30   # 沿用 step3_sky_basis.py 的門檻與做法
 

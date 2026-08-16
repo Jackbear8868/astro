@@ -34,7 +34,7 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 
 GAL_TYPE = {23: "early", 24: "gal24", 25: "gal25", 26: "gal26",
             27: "late", 28: "LRG"}

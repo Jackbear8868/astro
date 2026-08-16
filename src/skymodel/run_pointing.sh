@@ -27,7 +27,7 @@ for N in "$@"; do
   [ -f "$NOSKY" ] || { echo "★ 找不到 $NOSKY"; exit 1; }
 
   # 學天光的空間範圍 —— 使用者目視判讀 pseudo-r 的等光度線之後親自定的
-  # (圖:results/skymodel/figures/prof_seg/visual_pNN.png)。這是使用者的決定,
+  # (圖:results/skymodel/evaluation/masking/prof_seg/visual_pNN.png)。這是使用者的決定,
   # 不是推導出來的值。
   #
   # 上界一律寫 9999 而不是各顆真正的 NAXIS —— --xlim/--ylim 是和像素座標比大小,

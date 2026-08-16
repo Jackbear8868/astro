@@ -33,7 +33,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
 STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 
 
 def main():

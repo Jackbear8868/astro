@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ROOT    = Path(__file__).resolve().parents[3]
 
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 # Haro 11 的靜止空氣波長 (A)
 GAL_LINES = [("Hb", 4861.3), ("[O III]4959", 4958.9), ("[O III]5007", 5006.8),

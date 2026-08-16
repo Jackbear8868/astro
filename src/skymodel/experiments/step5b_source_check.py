@@ -30,7 +30,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05B = ROOT / "results/skymodel/ne_pointing/step05b"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/acceptance"
 
 R_STAMP = 10        # 量測用的方形半邊長 [px]
 R_APER  = 8.0       # 孔徑半徑 [px] —— 約 2 個 seeing FWHM

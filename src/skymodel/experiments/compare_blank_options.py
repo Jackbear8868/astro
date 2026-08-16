@@ -33,7 +33,7 @@ from compare_blank_spectra import FIXED_SPAXELS
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 ESO     = ROOT / "data/Haro11_NEpointing_esonosky.fits"
 

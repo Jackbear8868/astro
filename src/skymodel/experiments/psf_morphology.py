@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
 
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/masking"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 R_IN, R_OUT = 2.0, 5.0      # 兩個孔徑半徑(px);PSF FWHM 約 4 px

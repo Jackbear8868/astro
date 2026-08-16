@@ -41,7 +41,7 @@ from step4b_stage1 import load_common, source_spectrum, STAR_TYPE
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"        # 白光圖 + segmentation map
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 TPL_DIR = ROOT / "data/sdss_templates"
 
 A4_LAND = (11.69, 8.27)     # A4 橫式(吋)

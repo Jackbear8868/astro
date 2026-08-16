@@ -41,7 +41,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
-FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 DEFAULT = [(0, "blank_svdK30_tpl68_s1"),
            (4, "blank_dil4_svdK30_tpl68_s1"),

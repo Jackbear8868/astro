@@ -33,7 +33,7 @@ from utils import id_map
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 EXPDIR  = ROOT / "results/skymodel/experiments/blank_geometry/seg_dilated"
-FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 
 def dilate(seg, r):

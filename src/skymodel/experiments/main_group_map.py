@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import DV_MAX, main_source_group  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-FIG  = ROOT / "results/skymodel/figures/main_group"
+FIG  = ROOT / "results/skymodel/evaluation/masking/main_group"
 
 
 def main():

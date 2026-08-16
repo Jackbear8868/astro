@@ -49,7 +49,7 @@ STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-FIGURES = ROOT / "results/skymodel/figures/s_field"
+FIGURES = ROOT / "results/skymodel/evaluation/s_field"
 
 MIN_COVERAGE = 0.9      # 與 step5 一致:排除視野邊緣的部分覆蓋 spaxel
 CLIP_SIGMA   = 30       # 與 step3 / oversub_whitelight 一致的壞 voxel 剔除門檻

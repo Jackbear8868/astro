@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import main_source_group, rowcol_field, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-FIG  = ROOT / "results/skymodel/figures/s_common"
+FIG  = ROOT / "results/skymodel/evaluation/s_field"
 
 
 def load_all(ns):

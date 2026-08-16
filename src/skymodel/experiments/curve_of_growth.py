@@ -44,7 +44,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 
 def main():

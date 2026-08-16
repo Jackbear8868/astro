@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/acceptance"
 
 
 def main():

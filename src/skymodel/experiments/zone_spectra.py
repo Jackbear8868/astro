@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import galaxy_redshifts, main_source_group, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-FIG  = ROOT / "results/skymodel/figures"
+FIG  = ROOT / "results/skymodel/evaluation/acceptance"
 
 # 主星系的強發射線,靜止空氣波長。step03/wavelength.npy 存的是空氣波長
 # (step4b 讀進去的變數就叫 wl_air),所以這裡也必須用空氣值,不能混真空值。

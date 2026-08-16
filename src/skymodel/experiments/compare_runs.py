@@ -24,7 +24,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
-FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 CLIP_SIGMA = 30      # 沿用 step3_sky_basis.py
 

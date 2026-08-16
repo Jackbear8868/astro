@@ -50,7 +50,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 WILD  = 1e3     # 原始 cube 裡有 -5e5 這種壞 voxel,見 edge_oversubtraction.py
 CHI2_1_MEDIAN = 0.4549364    # chi2 分布(自由度 1)的中位數

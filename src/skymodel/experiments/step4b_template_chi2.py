@@ -27,7 +27,7 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 
 STAR_TYPE = {0: "O", 1: "O/B", 2: "B", 3: "A", 4: "A", 5: "F/A", 6: "F", 7: "F",
              8: "G", 9: "G", 10: "K", 11: "M1", 12: "M3", 13: "M5", 14: "M8",

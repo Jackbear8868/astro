@@ -8,7 +8,7 @@
 需要 step3 存下的 iter_*.npy。若還沒有,重跑一次 step3 即可:
     python src/skymodel/step3_sky_basis.py --methods svd
 
-輸出 results/skymodel/figures/linemask_iters/ 底下,每一輪兩張:
+輸出 results/skymodel/evaluation/sky_basis/ 底下,每一輪兩張:
     iter{N}.png          被判成線的通道(橘)
     iter{N}_nonline.png  沒被判成線的通道(綠)—— 連續譜就是在這些通道上擬的
 
@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 THRESHOLDS = (1, 2)      # (正, 負);與 step3_sky_basis.py 一致
 

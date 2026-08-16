@@ -32,7 +32,7 @@ from utils import id_map  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 SEGDIR  = ROOT / "data/wsky_seg"
-FIGURES = ROOT / "results/skymodel/figures/prof_seg"
+FIGURES = ROOT / "results/skymodel/evaluation/masking/prof_seg"
 
 
 def load(n):

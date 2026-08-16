@@ -32,7 +32,7 @@ STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
 STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
-FIGURES = ROOT / "results/skymodel/figures"
+FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 TPL_DIR = ROOT / "data/sdss_templates"
 
 STAR_TYPE = {

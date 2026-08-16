@@ -33,7 +33,7 @@ ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
-OUTDIR  = ROOT / "results/skymodel/figures/edge_oversub"
+OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 # 環的分界(px)。內圈窄、外圈寬 —— 效應如果存在,一定集中在貼著足跡的頭幾個像素,
 # 外面只是拿來當「已經回到正常」的對照,不需要解析度。

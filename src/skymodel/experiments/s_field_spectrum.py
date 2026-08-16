@@ -56,7 +56,7 @@ STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-FIGURES = ROOT / "results/skymodel/figures/s_field"
+FIGURES = ROOT / "results/skymodel/evaluation/s_field"
 
 Z_HARO = 0.0204
 LINES  = [("[O II] 3727",  3727.0), ("H-beta 4861", 4861.3),
