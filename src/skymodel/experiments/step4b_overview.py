@@ -25,9 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP02  = ROOT / "results/skymodel/step02"
-STEP02B = ROOT / "results/skymodel/step02b"
-STEP04 = ROOT / "results/skymodel/step04"
+STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
+STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
+STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
 
 STAR_TYPE = {
     0: "O", 1: "O/B", 2: "B", 3: "A", 4: "A", 5: "F/A", 6: "F", 7: "F",

@@ -24,7 +24,7 @@ step5b 的 --compare 只印一個全域中位數。那不夠 —— 偏差如果
 不是它的絕對大小。
 
     conda run -n astro python src/skymodel/experiments/step5b_bias_check.py \\
-        --ours results/skymodel/step05b/merged_EXP123_wsky.fits \\
+        --ours results/skymodel/ne_pointing/step05b/merged_EXP123_wsky.fits \\
         --ref  data/Haro11_NEpointing_wsky.fits
 """
 import argparse
@@ -37,7 +37,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP03  = ROOT / "results/skymodel/step03"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/figures"
 
 

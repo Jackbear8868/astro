@@ -39,8 +39,8 @@ from step4_fit_source import (STAR_WINDOW, GAL_WINDOW, make_tag,
 from step4b_stage1 import load_common, source_spectrum, STAR_TYPE
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"        # 白光圖 + segmentation map
-STEP04 = ROOT / "results/skymodel/step04"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"        # 白光圖 + segmentation map
+STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 TPL_DIR = ROOT / "data/sdss_templates"
 
@@ -324,7 +324,7 @@ def main():
     ap.add_argument("--dpi", type=int, default=200, help="點陣化資料線的解析度")
     ap.add_argument("--spec-dir", default=None,
                     help="源光譜的目錄,要和 step4_fit_source.py 跑時用的一致,"
-                         "例如 results/skymodel/step02_eso")
+                         "例如 results/skymodel/ne_pointing/step02_eso")
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
                     help="要和 step4_fit_source.py 跑時用的一致")
     ap.add_argument("--out", default=None, help="輸出檔名,預設由 tag 決定")

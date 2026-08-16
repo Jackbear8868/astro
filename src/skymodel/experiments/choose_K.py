@@ -35,8 +35,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step3_sky_basis import zap_k
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/figures"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 

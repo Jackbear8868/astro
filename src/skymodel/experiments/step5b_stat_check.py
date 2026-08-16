@@ -42,8 +42,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/figures"
 
 BINS = (1, 2, 3, 4, 6, 8)
@@ -157,7 +157,7 @@ def main():
     g = (yy >= 0) & (yy < blank.shape[0]) & (xx >= 0) & (xx < blank.shape[1])
     b1[g] = blank[yy[g], xx[g]]
 
-    S5B = ROOT / "results/skymodel/step05b"
+    S5B = ROOT / "results/skymodel/ne_pointing/step05b"
     if args.cubes:
         cubes = []
         for c in args.cubes:

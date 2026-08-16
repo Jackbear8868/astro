@@ -39,9 +39,9 @@ from utils import estimate_continuum
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP02  = ROOT / "results/skymodel/step02"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/figures"
 TPL_DIR = ROOT / "data/sdss_templates"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"

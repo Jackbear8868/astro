@@ -25,9 +25,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP05  = ROOT / "results/skymodel/step05"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 FIGURES = ROOT / "results/skymodel/figures"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 ESO     = ROOT / "data/Haro11_NEpointing_esonosky.fits"

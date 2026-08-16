@@ -249,7 +249,7 @@ def smooth(a, w):
 
 def main():
     ap = argparse.ArgumentParser(description="方框裡的平均光譜(新 basis + s 場)")
-    ap.add_argument("--work", default="results/skymodel")
+    ap.add_argument("--work", default="results/skymodel/ne_pointing")
     ap.add_argument("--run", default="step03_half_svdK30_tpl68_sfield",
                     help="要看的 step05 輸出目錄名(新 basis + s 空間場)")
     ap.add_argument("--ref-run", default="blank_svdK30_tpl68_s1",

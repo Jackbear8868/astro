@@ -52,9 +52,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import scale, build_s_field  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP05  = ROOT / "results/skymodel/step05"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 FIGURES = ROOT / "results/skymodel/figures/s_field"
 

@@ -30,9 +30,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import load_line_masks
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP02  = ROOT / "results/skymodel/step02"
-STEP02B = ROOT / "results/skymodel/step02b"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
+STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/figures"
 
 

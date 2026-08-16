@@ -29,8 +29,8 @@ from scipy.optimize import least_squares
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ROOT   = Path(__file__).resolve().parents[3]
-STEP01 = ROOT / "results/skymodel/step01"
-STEP03 = ROOT / "results/skymodel/step03"
+STEP01 = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03 = ROOT / "results/skymodel/ne_pointing/step03"
 EXPS   = ROOT / "data/NEpointing_exps"
 
 R_FIT = 7          # 擬合窗半邊長 [px] —— 約 3 個 seeing FWHM 的一半

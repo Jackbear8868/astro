@@ -21,7 +21,7 @@
     ③ 整數圓心的代價是最多 0.71 px(= √2 / 2)的捨入誤差;換到的是每個源
        完全相同的孔徑形狀與像素數,源之間直接可比。
 
-輸出 results/skymodel/step02b/,格式和 step02 相同,step4b 只要換讀檔路徑:
+輸出 results/skymodel/ne_pointing/step02b/,格式和 step02 相同,step4b 只要換讀檔路徑:
     object_ids.npy / object_flux.npy / object_var.npy / object_nspax.npy
     aperture.npz    圓心、像素數、視場覆蓋率、是否有效
     aperture.txt    同一份表的純文字版
@@ -35,8 +35,8 @@ import numpy as np
 from astropy.io import fits
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP02B = ROOT / "results/skymodel/step02b"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 APERTURE_R = 6.0        # px。1 px = 0.2 arcsec,所以 6 px = 1.2 arcsec 半徑

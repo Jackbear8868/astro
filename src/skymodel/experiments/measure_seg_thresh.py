@@ -98,7 +98,7 @@ def main():
     args = ap.parse_args()
 
     print("=== 驗證:我們自己的 seg(已知 DETECT_THRESH = 2.0)===")
-    ours = [("NE", ROOT / "results/skymodel/step01")]
+    ours = [("NE", ROOT / "results/skymodel/ne_pointing/step01")]
     ours += [(f"p{k:02d}", ROOT / f"results/skymodel/p{k:02d}/step01") for k in (4, 8, 12)]
     for tag, d in ours:
         if not (d / "seg.fits").exists():

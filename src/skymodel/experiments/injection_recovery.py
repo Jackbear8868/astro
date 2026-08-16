@@ -34,9 +34,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP05  = ROOT / "results/skymodel/step05"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 TPL_DIR = ROOT / "data/sdss_templates"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 

@@ -10,7 +10,7 @@
 不足,不是紅移錯。
 
     conda run -n astro python src/skymodel/experiments/step4b_mismatch.py \\
-        --spec-dir results/skymodel/step02_eso --s-fix 0 \\
+        --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --iter 1 --ids 12 27 30
 """
 import argparse
@@ -29,7 +29,7 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, make_tag, EIGEN_GAL, TPL_D
 from step4b_stage1 import load_common, source_spectrum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP04 = ROOT / "results/skymodel/step04"
+STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 
 PROF_Z = {1: 0.021, 10: 0.99, 12: 1.033, 13: 0.422, 14: 0.336, 24: 1.055,

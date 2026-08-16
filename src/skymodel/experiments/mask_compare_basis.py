@@ -47,8 +47,8 @@ from utils import estimate_continuum
 from step3_sky_basis import learn_sky_basis, CLIP_SIGMA, WINDOW, THRESHOLDS, MAX_ITER
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 ESO     = ROOT / "data/Haro11_NEpointing_esonosky.fits"
 FIGURES = ROOT / "results/skymodel/figures/s_field"

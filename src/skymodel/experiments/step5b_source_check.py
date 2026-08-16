@@ -27,9 +27,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP05B = ROOT / "results/skymodel/step05b"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP05B = ROOT / "results/skymodel/ne_pointing/step05b"
 FIGURES = ROOT / "results/skymodel/figures"
 
 R_STAMP = 10        # 量測用的方形半邊長 [px]

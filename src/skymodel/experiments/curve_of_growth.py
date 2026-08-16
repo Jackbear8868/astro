@@ -41,8 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ring_consistency import label_aware, region_mean, nested_fit
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 FIGURES = ROOT / "results/skymodel/figures/edge_oversub"
 

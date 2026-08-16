@@ -46,10 +46,10 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, FULL_RANGE, make_tag
 from utils import load_line_masks
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP02  = ROOT / "results/skymodel/step02"
-STEP02B = ROOT / "results/skymodel/step02b"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP04 = ROOT / "results/skymodel/step04"
+STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
+STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
 FIGURES = ROOT / "results/skymodel/figures"
 TPL_DIR = ROOT / "data/sdss_templates"
 
@@ -73,7 +73,7 @@ def load_common(args):
                              cumulative=not args.raw_mask)[args.iter - 1]
     win    = (wl_air >= args.star_window[0]) & (wl_air < args.star_window[1])
     # --spec-dir 讓診斷程式可以讀「扣過天空的 cube 萃取出來的」源光譜
-    # (results/skymodel/step02_ours、step02_eso),而不只是原始的 step02/。
+    # (results/skymodel/ne_pointing/step02_ours、step02_eso),而不只是原始的 step02/。
     src    = (Path(args.spec_dir) if getattr(args, "spec_dir", None)
               else (STEP02B if args.aperture else STEP02))
     return dict(wl_air=wl_air, wl_vac=air_to_vacuum(wl_air), line=line, win=win,

@@ -28,8 +28,8 @@ import numpy as np
 from astropy.io import fits
 
 ROOT   = Path(__file__).resolve().parents[3]
-STEP01 = ROOT / "results/skymodel/step01"
-STEP03 = ROOT / "results/skymodel/step03"
+STEP01 = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03 = ROOT / "results/skymodel/ne_pointing/step03"
 CUBE   = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 MIN_COVERAGE = 0.9        # 與 step5 一致:排除視野邊緣的部分覆蓋 spaxel

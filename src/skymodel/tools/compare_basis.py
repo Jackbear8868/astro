@@ -32,8 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import fit_chi2_coefficients, plot_compare, spectrum_stats
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 COMPARE = STEP03 / "compare"
 WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 NOSKY   = ROOT / "data/Haro11_NEpointing_esonosky.fits"

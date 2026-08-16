@@ -193,7 +193,7 @@ def evaluate(W, A, spectra, var_all, continuum_shared, chunk=CHUNK):
 
 # ---------------------------------------------------------------- 路徑與資料
 ROOT   = Path(__file__).resolve().parents[3]  # experiments → skymodel → src → repo root
-STEP01 = ROOT / "results/skymodel/step01"
+STEP01 = ROOT / "results/skymodel/ne_pointing/step01"
 WSKY   = ROOT / "data/Haro11_NEpointing_wsky.fits"
 NOSKY  = ROOT / "data/Haro11_NEpointing_esonosky.fits"
 OUT    = STEP01 / "zap_style"

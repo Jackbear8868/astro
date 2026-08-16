@@ -30,9 +30,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/step01"
-STEP03  = ROOT / "results/skymodel/step03"
-STEP05  = ROOT / "results/skymodel/step05"
+STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
+STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
+STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 OUTDIR  = ROOT / "results/skymodel/figures/edge_oversub"
 
 # 環的分界(px)。內圈窄、外圈寬 —— 效應如果存在,一定集中在貼著足跡的頭幾個像素,

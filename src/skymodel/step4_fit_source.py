@@ -32,7 +32,7 @@ n_good 由通道集合決定。視窗不同就不是同一個統計量,比大小
 main() 會擋下不一致的設定。
 
     conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
-        --spec-dir results/skymodel/step02_eso --s-fix 0.0 \\
+        --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
 """
 import os
@@ -335,7 +335,7 @@ def main():
                          "而且可以施加 A >= 0)")
     ap.add_argument("--spec-dir", default=None,
                     help="源光譜的目錄,覆蓋 --aperture。分類要用扣過天空的版本,"
-                         "例如 results/skymodel/step02_ours(我們自己扣的)或 "
+                         "例如 results/skymodel/ne_pointing/step02_ours(我們自己扣的)或 "
                          "step02_eso(ESO 扣的)。目錄名會編進輸出的 tag,"
                          "不同來源的結果各存各的")
     ap.add_argument("--raw-mask", action="store_true",
