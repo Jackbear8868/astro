@@ -22,7 +22,7 @@ C_sky 是用 running median + spline 從平均天空譜估的,而迭代到最後
     3. 平滑成 delta_C(λ),外推到全部通道
     4. C_sky <- C_sky + delta_C
 
-**和 step4d_refine_sky 的關鍵差別:樣本完全沒變,還是只有 blank。**那一版把源
+**關鍵:樣本完全沒變,還是只有 blank。**另一種做法是把源
 扣掉、拿源區當天空樣本,源就有機會漏進天空模型;這裡不碰源區一根寒毛,只修
 「C_sky 的形狀和 blank 格實際需要的不一致」。
 

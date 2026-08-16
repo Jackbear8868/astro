@@ -46,7 +46,7 @@ ZAP 把天空線從 ~250–460 壓到 ~0–1.3,基本還原 MUSE 的扣天空,�
 
 ## 3. faint CGM:MUSE `nosky` 比 ZAP 乾淨
 
-(CGM Hα 分析,`src/cgm_halpha.py`,`fig6`/`fig7`)
+(CGM Hα 分析,`fig6`/`fig7`)
 
 - 兩種扣天空法都還原出星系 + 到 ~20–30″ 的 Hα halo。
 - 外圍每-spaxel 雜訊:`nosky` **1σ≈13.8** vs `wsky`+ZAP **≈35.5**(ZAP 約 2.5× 噪)。

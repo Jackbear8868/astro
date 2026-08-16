@@ -1,19 +1,12 @@
-"""低秩補全 vs 現行的「row+col + 局部核回歸」—— 多洞、配對的挖洞測試。
+"""低秩補全 vs 現行的 row+col 場 —— 多洞、配對的挖洞測試。
 
-為什麼要換掉核回歸
-------------------
-核回歸是**訓練值的加權平均**,不是模型:
+為什麼要找一個比 row+col 更強的模型
+----------------------------------
+任何「拿鄰近訓練點做加權平均」的補法都只能在有樣本的地方作用,被源遮住的
+大洞裡無值可用。a(y) 之所以伸得進洞裡,是因為它是**被整列共用的一個參數**,
+不是鄰域的平均。
 
-              Sum_q w(q)·K(p−q)·R(q)
-    r(p)  =  ────────────────────────
-              Sum_q w(q)·K(p−q) + ridge
-
-平均只能在有樣本的地方做。高斯核的支撐是 3 x sigma = 6 px,所以離訓練點超過
-6 px 的地方 r 恰為 0。核放大不會生出資訊,只是把遠處的值抹進來。
-
-對比之下 a(y) 為什麼伸得進洞裡:它是**被整列共用的一個參數**。
-
-所以方向是讓殘差也變成參數共用的模型:
+所以方向是讓剩下的結構也變成參數共用的模型:
 
     s(y, x)  ≈  Sum_{k=1..R}  u_k(y) · v_k(x)
 
@@ -127,13 +120,14 @@ def main():
 
     tab = {}
     for hi, (hole, ctr) in enumerate(hs):
-        s_hat, train = build_s_field(s, seg, blank, p["r_far"], p["r_far_haro"],
+        _, train = build_s_field(s, seg, blank, p["r_far"], p["r_far_haro"],
                                         p["clip"],
                                 main=main, exclude=hole)
         M, _, _ = rowcol_field(s, train)
         truth = s[hole]
-        cur   = s_hat[hole]                       # 現行:M + 核回歸
-        preds = {"M only": M[hole], "current": cur}
+        # build_s_field 回傳的就是 rowcol_field 的結果,所以這裡只留一條:
+        # 兩者分開畫會看起來像兩個方法,實際上是同一個陣列
+        preds = {"current (row+col)": M[hole]}
         for R in args.ranks:
             Xr = lowrank_complete(s, train, R, M)
             preds[f"rank {R}"] = Xr[hole]

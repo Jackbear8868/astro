@@ -1,11 +1,11 @@
-"""任一份 segmentation 的 source ID map —— 沿用 step4_catalog 的畫法。
+"""任一份 segmentation 的 source ID map —— 沿用 utils.id_map 的畫法。
 
-step4_catalog.id_map() 需要 step4 的擬合目錄才跑得起來(rows 帶著 group、
+utils.id_map() 的 rows 需要帶著 group、
 紅移那些欄位)。但有時候我們只想看「這份遮罩把哪些東西圈成源」,和擬合無關 ——
 例如比較教授給的 1 sigma 與 2 sigma 兩份 segmentation。
 
 這支只做一件事:從一張 seg 圖組出 id_map() 要的 rows(id 與形心),
-其餘的繪製完全交給 step4_catalog.id_map,不另外寫一套。同一張圖在專案裡
+其餘的繪製完全交給 utils.id_map,不另外寫一套。同一張圖在專案裡
 只能有一種畫法,否則兩份圖擺在一起會因為拉伸、配色、標號規則不同而看起來
 像不同的資料。
 
@@ -20,7 +20,8 @@ import numpy as np
 from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from step4_catalog import id_map
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import id_map
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"
@@ -54,7 +55,7 @@ def main():
             continue
         y, x = np.nonzero(seg == i)
         # group 欄位 id_map 只在 by_group=True 時用到,這裡一律 by_group=False,
-        # 但 rows 的欄位要齊全,否則 step4_catalog 那邊的 GROUP_COLOR 會 KeyError。
+        # 但 rows 的欄位要齊全,否則 utils 那邊的 GROUP_COLOR 會 KeyError。
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 

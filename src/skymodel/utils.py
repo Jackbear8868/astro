@@ -15,6 +15,7 @@ from scipy import ndimage
 import matplotlib
 matplotlib.use("Agg")              # 必須在 import pyplot 之前
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 from scipy.stats import skew, kurtosis
 
 
@@ -460,3 +461,53 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
 
     M, _, _ = rowcol_field(s, train)
     return M, train
+
+
+# 源定位圖用的顏色。GROUP_COLOR 只在 by_group=True 時用得到。
+GROUP_COLOR = {"star": "#2ca02c", "galaxy": "#1f77b4", "qso": "#d62728"}
+PLAIN_COLOR = "#ff7b7b"     # 不分組時的統一顏色,淡紅在灰階底圖上夠明顯
+
+
+def id_map(seg, white, rows, out, by_group=False):
+    """白光底圖 + 源的範圍 + 編號。
+
+    底圖用 asinh 拉伸:白光的動態範圍跨好幾個量級(Haro 11 本體 vs 暗源),
+    線性顯示會讓除了本體以外的東西全黑。asinh 在亮處是對數、暗處是線性,
+    是影像顯示的標準做法。
+
+    by_group=False(預設)只畫「範圍 + 編號」,不上組別顏色。分類是 step4b 的
+    「結論」,把結論畫進定位圖裡,看圖的人會不自覺地把它當成既定事實;
+    定位圖的職責只是回答「哪個點是哪個源」。
+    """
+    fig, ax = plt.subplots(figsize=(13, 12.5))
+    v = np.nanpercentile(white[np.isfinite(white) & (white != 0)], 99.5)
+    ax.imshow(np.arcsinh(white / (0.02 * v)), origin="lower", cmap="gray",
+              vmin=0, vmax=np.arcsinh(1 / 0.02))
+
+    # 每個源填一層半透明的顏色,再描一圈輪廓 —— 填色看得出範圍,
+    # 輪廓在小源上仍然看得見。
+    for r in rows:
+        m = seg == r["id"]
+        c = GROUP_COLOR[r["group"]] if by_group else PLAIN_COLOR
+        rgba = np.zeros(seg.shape + (4,))
+        rgba[m] = list(matplotlib.colors.to_rgb(c)) + [0.45]
+        ax.imshow(rgba, origin="lower")
+        ax.contour(m, levels=[0.5], colors=c, linewidths=0.9)
+        ax.text(r["x"], r["y"], str(r["id"]), color="white", fontsize=11,
+                fontweight="bold", ha="center", va="center",
+                path_effects=[pe.withStroke(linewidth=2.6, foreground="black")])
+
+    ax.set_title("source ID map" + ("\nwhitelight (asinh) + SExtractor "
+                 "segmentation, colour = the group step4b assigned"
+                 if by_group else ""), fontsize=14)
+    ax.set_xlabel("x [px]")
+    ax.set_ylabel("y [px]")
+    if by_group:
+        # 圖例放在座標軸外面 —— 右上角有源時,放在軸內會把它們蓋掉。
+        ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
+                           for g, c in GROUP_COLOR.items()],
+                  loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,
+                  frameon=False)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)

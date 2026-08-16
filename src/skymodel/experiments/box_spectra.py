@@ -1,11 +1,9 @@
 """方框裡的平均光譜 —— 天空扣乾淨了嗎、源有沒有被扣掉。
 
-和舊的 step4d_boxes 是同一種看法(一個方框一格、右邊放統計),但**量的東西不同**:
+一個方框一格、右邊放統計。畫的是 step5 實際輸出的 sky_subtracted
+(= 資料 − 天空),**源留在裡面**,不是 資料 − 天空 − 源模型。
 
-    舊圖   殘差 = 資料 − 天空 − 源模型,源區的理想值也是 0
-    這張   step5 實際輸出的 sky_subtracted = 資料 − 天空,**源留在裡面**
-
-換掉的理由是原則 1:只看殘差判斷不了好壞 —— 把源一起扣光,殘差同樣會變小。
+理由是原則 1:只看殘差判斷不了好壞 —— 把源一起扣光,殘差同樣會變小。
 留著源,兩件事才在同一張圖上分得開:
 
     blank 的格   線壓在 0 上   -> 天空扣乾淨了
@@ -154,9 +152,9 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
                       vmax=float(np.nanpercentile(d, 99.7)))
     axes[0][0].set_title("whitelight", fontsize=10)
     if s_hat is not None:
-        # 色階和 s_field_kernel.py 的 01_s_field 完全一致:**以 1.0 為中心、
-        # 半寬 3 x 穩健散布**。改用分位數的話上下不對稱、範圍又更窄,同一張 s 場
-        # 會看起來條紋強得多 —— 那是色階的差別,不是資料變了。
+        # 色階以 1.0 為中心、半寬 3 x 穩健散布。改用分位數的話上下不對稱、
+        # 範圍又更窄,同一張 s 場會看起來條紋強得多 —— 那是色階的差別,
+        # 不是資料變了。
         v = 3 * scale(s_hat[np.isfinite(s_hat)])
         im = axes[0][1].imshow(s_hat, origin="lower", cmap="RdBu_r",
                                vmin=1 - v, vmax=1 + v)

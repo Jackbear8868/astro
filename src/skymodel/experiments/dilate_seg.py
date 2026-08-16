@@ -27,7 +27,8 @@ from astropy.io import fits
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from step4_catalog import id_map
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import id_map
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/step01"

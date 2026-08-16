@@ -9,7 +9,7 @@
 這支只做一件事:把兩者疊起來畫。底圖用**教授自己的 pseudo_r**,不用我們的
 whitelight —— 遮罩是在 pseudo_r 上長出來的,配另一張底圖會看到對不齊的錯覺。
 
-繪製本身完全交給 step4_catalog.id_map,不另外寫一套:同一種圖在專案裡只能有
+繪製本身完全交給 utils.id_map,不另外寫一套:同一種圖在專案裡只能有
 一種畫法,否則兩份圖擺在一起會因為拉伸、配色、標號規則不同而看起來像不同的資料。
 
     conda run -n astro python src/skymodel/experiments/prof_seg_maps.py
@@ -27,7 +27,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from step4_catalog import id_map  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import id_map  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 SEGDIR  = ROOT / "data/wsky_seg"
@@ -49,7 +50,7 @@ def rows_from(seg, min_area):
             continue
         y, x = np.nonzero(seg == i)
         # group 欄位 id_map 只在 by_group=True 時用得到,但 rows 的欄位要齊全,
-        # 否則 step4_catalog 的 GROUP_COLOR 會 KeyError。
+        # 否則 utils 的 GROUP_COLOR 會 KeyError。
         out.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                         group="galaxy"))
     return out, len(ids)

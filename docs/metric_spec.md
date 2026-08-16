@@ -185,7 +185,7 @@
 - 檔案：`results/zap/cubes/{target}_maskfrom-{masksrc}/fig_radial-halpha.png`。
 - 標題（兩行）：主 `Extended Hα surface-brightness profile`；副（小字）`target = {target} · mask from {masksrc}`。
 
-**範圍**：先做單一 run。對到既有 `cgm_halpha.py` fig7（此為其正式規格版）。
+**範圍**：先做單一 run。對到既有 CGM Hα 分析的 fig7（此為其正式規格版）。
 
 **依據**：Wisotzki 2016 Fig 4（arXiv:1509.05143）、Leclercq 2017（1710.10271）；PSF：Bacon+2017（1710.03002, β=2.8）、Bacon+2015（1411.7667, β=2.6）；Hα CGM 先例 Dutta 2024（2410.05392）、Chung/Dey 2019（1904.07874）。
 
