@@ -81,7 +81,9 @@ def main():
     ax.set_title(f"{W.name}   {cube.name} (with sky)   "
                  f"{args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=13)
     fig.tight_layout()
-    o = pointing_dir(W.name) / "whitelight_wsky.png"
+    band = ("" if tuple(args.band) == (4600.0, 9350.0)
+            else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
+    o = pointing_dir(W.name, "whitelight") / f"wsky{band}.png"
     fig.savefig(o, dpi=150, bbox_inches="tight")
     print(f"saved -> {o}")
 

@@ -23,16 +23,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from common import EVAL, ROOT
-
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = EVAL / "sky_basis"
+from common import ROOT, pointing_dir
 
 
 def main():
     ap = argparse.ArgumentParser(description="畫 step3 學到的天空 basis")
-    ap.add_argument("--basis", default="svd", help="pca / svd / nmf / rpca")
-    ap.add_argument("-K", type=int, default=25, help="basis 條數;要和 step3 相同")
+    # 工作區必須指定。原本寫死在 ne_pointing,那個目錄已經刪掉,而且更重要的是:
+    # 寫死之後圖上畫的永遠是同一顆,和「這一顆的 basis 長什麼樣」對不起來。
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--basis", default="svd", help="pca / svd")
+    ap.add_argument("-K", type=int, default=30, help="basis 條數;要和 step3 相同")
     ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
                     help="basis 圖的 y 軸範圍;不給則每張自動縮放")
     ap.add_argument("--ylim-sky", type=float, nargs=2, metavar=("LO", "HI"), default=None,
@@ -40,6 +41,8 @@ def main():
     ap.add_argument("--dpi", type=int, default=140)
     args = ap.parse_args()
 
+    W = ROOT / args.work
+    STEP03 = W / "step03"
     wl = np.load(STEP03 / "wavelength.npy")
     B  = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
     C  = np.load(STEP03 / "sky_continuum.npy")
@@ -63,7 +66,7 @@ def main():
 
     # ---------------- 圖:一條 basis 一張,全部進同一個資料夾 ----------------
     ms  = np.load(STEP03 / "mean_sky.npy")
-    out = FIGURES / f"basis_{args.basis}_K{args.K}"
+    out = pointing_dir(W.name, "basis")
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):

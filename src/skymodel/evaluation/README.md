@@ -18,7 +18,10 @@ results/skymodel/evaluation/
     segmentation_map.png    這顆的 segmentation
     box/                    一個方框一張圖 + map.png 標出位置
     point/                  一個取樣點一張圖(單一 spaxel)+ map.png
-    zone/                   一個環一張圖
+    zone/                   一個環一張圖 + map.png
+    whitelight/             wsky.png(輸入)、compare.png(ESO vs 我們)
+                            非預設波段編進檔名,例如 compare_5000-6000.png
+    basis/                  step3 學到的 K 條天空 basis,一條一張
   p02/  …
   subtraction_check/        跨 pointing、或不屬於任何一顆的驗收圖
   masking/  sky_basis/  template_fit/  talk/  attic/

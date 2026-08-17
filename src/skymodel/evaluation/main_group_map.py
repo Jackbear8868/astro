@@ -82,11 +82,10 @@ def main():
         rgba[m] = [1.0, 0.5, 0.05, 0.5]
         ax[1].imshow(rgba, origin="lower")
         ax[1].contour(m, levels=[0.5], colors="#ff7f0e", linewidths=1.6)
-        # 相鄰判準用的連通塊 —— 紅移篩掉的成員也在這一塊裡。和合併後的輪廓
-        # 同色,用虛線分:兩者是同一件事的前後,換顏色會讓它看起來像另一種東西。
+        # 相鄰判準用的連通塊 —— 紅移篩掉的成員也在這一塊裡
         lab, _ = ndimage.label(seg > 0)
         ax[1].contour((lab == lab[pk])[sub], levels=[0.5],
-                      colors="#ff7f0e", linewidths=0.9, linestyles="--")
+                      colors="#00e5ff", linewidths=0.9, linestyles="--")
         ax[1].plot(pk[1] - x0, pk[0] - y0, "w+", ms=14, mew=2)
         ax[1].set_title(f"after ({len(ids)} sources in total)", fontsize=12)
 

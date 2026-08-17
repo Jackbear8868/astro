@@ -74,7 +74,7 @@ def learn(D, train, K, method, verbose=""):
                                             window=WINDOW, max_iter=MAX_ITER)
     resid = np.where(keep, X - C[:, None], (med - C)[:, None])
     t0 = time.time()
-    basis, _ = learn_sky_basis(resid, K=K, method=method)
+    basis = learn_sky_basis(resid, K=K, method=method)
     print(f"    {verbose} basis {basis.shape}  {time.time()-t0:.0f}s  "
           f"line_mask {100*lm.mean():.1f}%", flush=True)
     return np.vstack([C, basis]), C, lm

@@ -89,14 +89,16 @@ def main():
                   -3.0, float(np.nanmax(imgs["ours"][valid]) / sig))
 
     for a in ax:
+        # 只畫 segmentation。主源不另外描一條 —— 它和其他源一樣是 seg 裡的源,
+        # 額外強調會讓人以為那條線代表別的東西。
         a.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.5,
                   alpha=.75)
-        # 主源的輪廓和 seg 同色,只用線寬分 —— 兩者本來就是同一件事的粗細層級
-        a.contour(main, levels=[0.5], colors=SEG_COLOR, linewidths=1.4)
         a.set_xticks([]); a.set_yticks([])
     fig.suptitle(f"{W.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    o = pointing_dir(W.name) / "whitelight_compare.png"
+    band = ("" if tuple(args.band) == (4600.0, 9350.0)
+            else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
+    o = pointing_dir(W.name, "whitelight") / f"compare{band}.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")
 

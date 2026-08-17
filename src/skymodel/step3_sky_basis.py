@@ -5,7 +5,7 @@
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
-from sklearn.decomposition import PCA, NMF, TruncatedSVD
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.utils.extmath import randomized_svd
 
 
@@ -21,7 +21,7 @@ MAX_ITER   = 5           # estimate_continuum 迭代上限
 CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻,單位是穩健散布 sg。
                          # 目標只是擋掉壞像素等級的離群值,不是修剪跨 spaxel 的
                          # 真實變化,所以門檻要遠高於後者的自然幅度
-METHODS    = ["pca", "svd", "nmf", "rpca"]
+METHODS    = ["pca", "svd"]
 
 def soft_threshold(X, tau):
     """逐元素軟閾值:sign(x) · max(|x| − tau, 0)。"""
@@ -129,34 +129,24 @@ def learn_sky_basis(residual, K=10, method="pca"):
     ----------
     residual : ndarray, shape (nz, n_blank)
     K : int
-    method : {"pca", "svd", "nmf", "rpca"}
+    method : {"pca", "svd"}
 
     Returns
     -------
     basis : ndarray, shape (K, nz)
         K 條天光線 basis。列的順序即下游係數的順序。
-    sparse : ndarray or None
-        只有 rpca 會回傳稀疏成分 S,shape (n_blank, nz);其餘方法為 None。
-        呼叫端一律用 `basis, S = ...`,不需要 S 時寫 `basis, _ = ...`。
     """
     X = np.nan_to_num(residual.T).astype(np.float32)     # (n_blank, nz)
 
-    # random_state=SEED 是必要的,不是保險:三者的預設演算法都是隨機化的
-    # (TruncatedSVD/PCA 走 randomized SVD,NMF 的 cd solver 也有隨機成分),
-    # 不指定的話每次跑出來的 basis 都不同,下游結果無法追溯。
+    # random_state=SEED 是必要的,不是保險:兩者的預設演算法都是隨機化的
+    # (TruncatedSVD/PCA 走 randomized SVD),不指定的話每次跑出來的 basis
+    # 都不同,下游結果無法追溯。
     if method == "pca":
         p = PCA(n_components=K - 1, random_state=SEED).fit(X)
-        return np.vstack([p.mean_[None, :], p.components_]), None
+        return np.vstack([p.mean_[None, :], p.components_])
 
     if method == "svd":
-        return TruncatedSVD(n_components=K, random_state=SEED).fit(X).components_, None
-
-    if method == "nmf":
-        return NMF(n_components=K, init="nndsvda", max_iter=300,
-                   random_state=SEED).fit(np.clip(X, 0, None)).components_, None
-
-    if method == "rpca":
-        return robust_pca(X, K=K, seed=SEED)            # (basis, S)
+        return TruncatedSVD(n_components=K, random_state=SEED).fit(X).components_
 
     raise ValueError(f"unknown method: {method}")
 
@@ -168,7 +158,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     ap = argparse.ArgumentParser(description="從 blank spaxels 學天空連續譜與天光線 basis")
-    ap.add_argument("--methods", nargs="+", default=["pca", "svd", "nmf"],
+    ap.add_argument("--methods", nargs="+", default=["pca", "svd"],
                     choices=METHODS, help="要跑哪些分解方法")
     ap.add_argument("-K", type=int, default=K, help="basis 條數")
     ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
@@ -297,18 +287,9 @@ def main():
 
     for method in args.methods:
         t0 = time.time()
-        basis, S = learn_sky_basis(residual, K=args.K, method=method)
+        basis = learn_sky_basis(residual, K=args.K, method=method)
         np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
-
-        if S is not None:
-            energy = (S ** 2).sum(axis=1)                       # (n_blank,) 每個 spaxel
-            top    = np.argsort(energy)[::-1][:50]
-            np.save(out_dir / f"{method}_sparse_energy_K{args.K}.npy",  energy)
-            np.save(out_dir / f"{method}_sparse_top_K{args.K}.npy",     S[top])
-            np.save(out_dir / f"{method}_sparse_meanabs_K{args.K}.npy", np.abs(S).mean(axis=0))
-            print(f"              S: 非零 {100*np.mean(S != 0):.2f}%,"
-                  f" 已存前 50 個最強 spaxel 的稀疏成分")
 
 
 if __name__ == "__main__":
