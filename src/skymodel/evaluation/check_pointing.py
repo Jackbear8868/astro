@@ -101,6 +101,12 @@ def check(work, cube, run=None):
                          + "\n  ".join(p.parent.name for p in subs))
     sub = band(subs[0])
     print(f"  run = {subs[0].parent.name}")
+    # 環的地圖和環的光譜放同一個目錄 —— 看 zone/main_3_10.png 的時候,要知道
+    # 那一圈在哪,不必再回去找另一支腳本的輸出。先畫,因為它不需要遠場基線,
+    # 遠場不夠用的時候表格出不來,地圖仍然該有。
+    draw(work, white, {nm: m for nm, m in Z.items() if m.any()},
+         pointing_dir(work, "zone") / "map.png")
+
     far = Z["far"]
     if far.sum() < 30:
         print(f"{work}: 遠場格數不足({int(far.sum())}),無法定基線"); return
@@ -112,14 +118,14 @@ def check(work, cube, run=None):
           f"{'保留率':>9}{'校正後':>9}")
     print("-" * 61)
     far_res = float(np.nanmedian(np.nanmean(sub[:, far], axis=1)))
-    drawn = {}
+
     for nm, m in Z.items():
         if m.sum() < 30:
             print(f"{nm:>12}{int(m.sum()):>8}   格數不足")
             continue
         P = float(np.nanmedian(np.nanmean(raw[:, m], axis=1) - rf))
         v = float(np.nanmedian(np.nanmean(sub[:, m], axis=1)))
-        drawn[nm] = m
+
         if nm == "far" or abs(P) <= 1e-6:
             print(f"{nm:>12}{int(m.sum()):>8}{P:>11.4f}{v:>10.4f}"
                   f"{'—':>9}{'—':>9}")
@@ -127,14 +133,11 @@ def check(work, cube, run=None):
             print(f"{nm:>12}{int(m.sum()):>8}{P:>11.4f}{v:>10.4f}"
                   f"{v / P:>9.2f}{(v - far_res) / P:>9.2f}")
 
-    # 環的地圖和環的光譜放同一個目錄 —— 看 zone/main_3_10.png 的時候,要知道
-    # 那一圈在哪,不必再回去找另一支腳本的輸出。
-    draw(work, white, drawn, pointing_dir(work, "zone") / "map.png")
-
 
 CUBES = {"p04": "data/wshy/DATACUBE_FINAL_4.fits",
          "p08": "data/wshy/DATACUBE_FINAL_8.fits",
          "p12": "data/wshy/DATACUBE_FINAL_12.fits"}
+
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
