@@ -14,7 +14,8 @@ K 變大在 blank 區是好事(天光線描述得更好),但在源區域是風�
 
 擬合設定與現行 step5 的 source 區一致:chi2 加權、A >= 0、s 固定。
 
-    conda run -n astro python src/skymodel/experiments/injection_K.py
+    conda run -n astro python src/skymodel/experiments/injection_K.py \\
+        --work results/skymodel/p01
 """
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -34,10 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 TPL_DIR = ROOT / "data/sdss_templates"
-CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 SEED       = 0
 CLIP_SIGMA = 30         # 與 step3_sky_basis.CLIP_SIGMA 相同
@@ -93,10 +91,19 @@ def fit_patch(d, v, design, lb, cover):
 
 def main():
     ap = argparse.ArgumentParser(description="注入-回收:K 對源的影響")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="含天空的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits")
     ap.add_argument("-K", type=int, nargs="+", default=[10, 25],
                     help="要比較的 basis 條數")
     ap.add_argument("--n-site", type=int, default=25)
     args = ap.parse_args()
+
+    W = ROOT / args.work
+    STEP01, STEP03 = W / "step01", W / "step03"
+    CUBE = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
 
     seg   = fits.getdata(STEP01 / "seg.fits")
     white = fits.getdata(STEP01 / "whitelight.fits")

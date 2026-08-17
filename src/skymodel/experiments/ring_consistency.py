@@ -32,7 +32,8 @@
    這一步會自動把低估的倍率量出來(f = median(Δchi2_null) / 0.455,
    0.455 是 chi2_1 的中位數),門檻取 f × 3.84(chi2_1 的 95%)。
 
-    conda run -n astro python src/skymodel/experiments/ring_consistency.py
+    conda run -n astro python src/skymodel/experiments/ring_consistency.py \\
+        --work results/skymodel/p01
 """
 import argparse
 import json
@@ -47,9 +48,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 WILD  = 1e3     # 原始 cube 裡有 -5e5 這種壞 voxel,見 edge_oversubtraction.py
@@ -122,9 +120,15 @@ def stamp_of(seg, dist, owner, i, rmax):
 
 def main():
     ap = argparse.ArgumentParser(description="逐圈問「還是不是同一個天體」")
-    ap.add_argument("--seg", default=str(STEP01 / "seg.fits"))
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="含天空的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits")
+    ap.add_argument("--seg", default=None,
+                    help="segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, default=54)
+    ap.add_argument("-K", type=int, default=30)
     ap.add_argument("--rmax", type=int, default=12)
     ap.add_argument("--min-area", type=int, default=30, help="只看夠大的源")
     ap.add_argument("--n-null", type=int, default=30, help="每個源平移幾次當對照")
@@ -138,8 +142,13 @@ def main():
     ap.add_argument("--figdir", default=str(FIGURES))
     args = ap.parse_args()
 
+    W = ROOT / args.work
+    STEP01, STEP03 = W / "step01", W / "step03"
+    CUBE = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
+    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+
     fig_dir = Path(args.figdir); fig_dir.mkdir(parents=True, exist_ok=True)
-    seg   = fits.getdata(args.seg).astype(int)
+    seg   = fits.getdata(seg_path).astype(int)
     white = fits.getdata(STEP01 / "whitelight.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
     # 固定用現有的 step03 basis,**不重學** —— 重學的話遮罩會透過 basis 影響自己
@@ -301,11 +310,11 @@ def main():
                  f"threshold from translating each stamp into blank sky "
                  f"({nn.size:,} null samples)", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
-    p = fig_dir / "16_ring_consistency.png"
+    p = fig_dir / f"16_ring_consistency_{W.name}.png"
     fig.savefig(p, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
-    (fig_dir / "ring_consistency.json").write_text(json.dumps(dict(
+    (fig_dir / f"ring_consistency_{W.name}.json").write_text(json.dumps(dict(
         basis=f"{args.basis}_K{args.K}", rmax=args.rmax, min_area=args.min_area,
         n_null=args.n_null, far=args.far, null_margin=args.null_margin,
         stat_underestimate=f, threshold=thr,

@@ -27,7 +27,8 @@
     id{NN}/spectrum.png      單一源:全波段光譜 + 最佳模板 + 進 chi2 的通道,
                              下面附一列誤差譜 σ(λ) —— 就是 chi2 的分母
 
-    conda run -n astro python src/skymodel/experiments/step4b_stage1.py
+    conda run -n astro python src/skymodel/experiments/step4b_stage1.py \\
+        --work results/skymodel/p01
 """
 import argparse
 import sys
@@ -46,12 +47,22 @@ from step4_fit_source import STAR_WINDOW, GAL_WINDOW, FULL_RANGE, make_tag
 from utils import load_line_masks
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP02  = ROOT / "results/skymodel/ne_pointing/step02"
-STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
 FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 TPL_DIR = ROOT / "data/sdss_templates"
+
+# 工作區底下的四個 step 目錄,由 --work 經 set_work() 填進來 —— 和
+# step4_fit_source.py 用同一套 global 慣例。load_common() 會被 step4b_pdf
+# 進口去用,改成傳參數的話兩邊的簽名就得各自維護。
+STEP02 = STEP02B = STEP03 = STEP04 = None
+
+
+def set_work(work):
+    """把 --work 指到的工作區展開成模組層級的 step 路徑。"""
+    global STEP02, STEP02B, STEP03, STEP04
+    W = ROOT / work
+    STEP02, STEP02B = W / "step02", W / "step02b"
+    STEP03, STEP04  = W / "step03", W / "step04"
+    return W
 
 # docs/sdss-templates.md 第 2 節。分組是為了上色 —— 同一族的模板長得像,
 # 分開上色才看得出「贏的是哪一族」,而不是「贏的是第幾號」。
@@ -73,7 +84,7 @@ def load_common(args):
                              cumulative=not args.raw_mask)[args.iter - 1]
     win    = (wl_air >= args.star_window[0]) & (wl_air < args.star_window[1])
     # --spec-dir 讓診斷程式可以讀「扣過天空的 cube 萃取出來的」源光譜
-    # (results/skymodel/ne_pointing/step02_ours、step02_eso),而不只是原始的 step02/。
+    # (工作區底下的 step02_eso 之類),而不只是原始的 step02/。
     src    = (Path(args.spec_dir) if getattr(args, "spec_dir", None)
               else (STEP02B if args.aperture else STEP02))
     return dict(wl_air=wl_air, wl_vac=air_to_vacuum(wl_air), line=line, win=win,
@@ -477,10 +488,13 @@ def main():
                     help="只重畫總覽圖(stage1_all_sources / chi2_vs_z / 跨輪比較),"
                          "跳過逐源的三張 —— 只改總覽的版面時快很多")
     ap.add_argument("--spec-dir", default=None,
-                    help="源光譜的目錄。分類用的是扣過天空的版本(step02_eso),"
+                    help="源光譜的目錄。分類用的是扣過天空的版本(工作區的 step02_eso),"
                          "和 step4b 保持一致才比得上")
     ap.add_argument("--id", default="all")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
     args = ap.parse_args()
+    W = set_work(args.work)
     if args.full_range:
         args.star_window = args.gal_window = FULL_RANGE
 
@@ -500,7 +514,9 @@ def main():
             continue
         D    = load_common(args)
         best = np.load(bf)
-        out  = FIGURES / f"step4b_{tag}"
+        # 目錄名帶 pointing:tag 只編了 step4 的設定,14 顆的 tag 完全一樣,
+        # 不帶 pNN 的話後跑的那顆會蓋掉前一顆的整批圖。
+        out  = FIGURES / f"step4b_{W.name}_{tag}"
         out.mkdir(parents=True, exist_ok=True)
         root = root or out.parent
 

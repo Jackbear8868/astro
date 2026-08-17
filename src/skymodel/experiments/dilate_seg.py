@@ -15,7 +15,8 @@ blank 樣本裡拿掉。
 
 這支只產生遮罩與 source id map,不跑任何擬合。
 
-    conda run -n astro python src/skymodel/experiments/dilate_seg.py --radii 2 4 8
+    conda run -n astro python src/skymodel/experiments/dilate_seg.py \\
+        --work results/skymodel/p01 --radii 2 4 8
 """
 import argparse
 import json
@@ -31,7 +32,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils import id_map
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 EXPDIR  = ROOT / "results/skymodel/experiments/blank_geometry/seg_dilated"
 FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
@@ -59,23 +59,34 @@ def dilate(seg, r):
 
 def main():
     ap = argparse.ArgumentParser(description="認標籤的遮罩膨脹")
-    ap.add_argument("--seg", default=str(STEP01 / "seg.fits"))
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--seg", default=None,
+                    help="要膨脹的 segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--radii", type=int, nargs="+", default=[2, 4, 8])
     ap.add_argument("--rstop-json", default=None,
                     help="改用 ring_consistency.py 量出來的逐源 r_stop。"
                          "給了就忽略 --radii")
-    ap.add_argument("--outdir", default=str(EXPDIR))
+    ap.add_argument("--outdir", default=None,
+                    help=f"預設 {EXPDIR.relative_to(ROOT)}/{{pNN}}")
     ap.add_argument("--figdir", default=str(FIGURES))
     args = ap.parse_args()
 
-    out = Path(args.outdir); out.mkdir(parents=True, exist_ok=True)
+    W = ROOT / args.work
+    STEP01 = W / "step01"
+    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+
+    # 輸出目錄預設分 pointing:seg_dil4.fits 這個名字只說得出半徑,說不出是哪一顆
+    # 的遮罩,14 顆寫進同一層會互相覆蓋,而下游 step3/step5 是照路徑讀的。
+    out = Path(args.outdir) if args.outdir else EXPDIR / W.name
+    out.mkdir(parents=True, exist_ok=True)
     fig = Path(args.figdir); fig.mkdir(parents=True, exist_ok=True)
-    hdr   = fits.getheader(args.seg)
-    seg   = fits.getdata(args.seg).astype(np.int32)
+    hdr   = fits.getheader(seg_path)
+    seg   = fits.getdata(seg_path).astype(np.int32)
     white = fits.getdata(STEP01 / "whitelight.fits")
     valid = white != 0
     n_src0, n_blank0 = int((seg > 0).sum()), int(((seg == 0) & valid).sum())
-    print(f"原始 {Path(args.seg).name}:源 {n_src0:,} spaxel,"
+    print(f"{W.name} 原始 {seg_path.name}:源 {n_src0:,} spaxel,"
           f"blank {n_blank0:,}(有效視野內)")
     print(f"\n{'r':>3}{'新增':>10}{'源 spaxel':>12}{'佔視場':>9}"
           f"{'blank 剩':>11}{'blank 少了':>11}{'消失的源':>10}{'貼在一起':>10}")
@@ -117,8 +128,8 @@ def main():
             y, x = np.nonzero(new == i)
             rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                              group="galaxy"))
-        p = fig / (f"11_id_map_dil{r}.png" if not isinstance(r, dict)
-                   else "17_id_map_rstop.png")
+        p = fig / (f"11_id_map_{W.name}_dil{r}.png" if not isinstance(r, dict)
+                   else f"17_id_map_{W.name}_rstop.png")
         id_map(new, white, rows, p, by_group=False)
         print(f"     -> {f.name}   {p.name}")
 

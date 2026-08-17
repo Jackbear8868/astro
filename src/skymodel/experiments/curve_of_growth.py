@@ -23,7 +23,8 @@ ring_consistency.py 算的是**逐圈獨立**的 Δchi2:第 r 圈自己一塊區
     cum shell    第 1 到第 r 圈的聯集,不含足跡
     cum total    足跡 + 第 1 到第 r 圈的聯集   <- 峰值取這條
 
-    conda run -n astro python src/skymodel/experiments/curve_of_growth.py
+    conda run -n astro python src/skymodel/experiments/curve_of_growth.py \\
+        --work results/skymodel/p01
 """
 import argparse
 import json
@@ -41,25 +42,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ring_consistency import label_aware, region_mean, nested_fit
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 
 def main():
     ap = argparse.ArgumentParser(description="累積 Δchi2 的成長曲線")
-    ap.add_argument("--seg", default=str(STEP01 / "seg.fits"))
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="含天空的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits")
+    ap.add_argument("--seg", default=None,
+                    help="segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, default=54)
+    ap.add_argument("-K", type=int, default=30)
     ap.add_argument("--rmax", type=int, default=12)
     ap.add_argument("--min-area", type=int, default=60)
     ap.add_argument("--far", type=float, default=40.0)
     ap.add_argument("--figdir", default=str(FIGURES))
     args = ap.parse_args()
 
+    W = ROOT / args.work
+    STEP01, STEP03 = W / "step01", W / "step03"
+    CUBE = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
+    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+
     fig_dir = Path(args.figdir); fig_dir.mkdir(parents=True, exist_ok=True)
-    seg   = fits.getdata(args.seg).astype(int)
+    seg   = fits.getdata(seg_path).astype(int)
     white = fits.getdata(STEP01 / "whitelight.fits")
     L = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
 
@@ -141,10 +150,10 @@ def main():
                  "circular)\ndashed line = the maximum, i.e. where adding more area "
                  "starts to dilute more than it adds", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
-    p = fig_dir / "21_curve_of_growth.png"
+    p = fig_dir / f"21_curve_of_growth_{W.name}.png"
     fig.savefig(p, dpi=140, bbox_inches="tight")
     plt.close(fig)
-    (fig_dir / "curve_of_growth.json").write_text(
+    (fig_dir / f"curve_of_growth_{W.name}.json").write_text(
         json.dumps(dict(rmax=args.rmax, basis=f"{args.basis}_K{args.K}",
                         sources={str(k): v for k, v in res.items()}),
                    ensure_ascii=False, indent=2))

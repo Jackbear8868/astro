@@ -16,7 +16,7 @@
     (Marchenko-Pastur);特徵值掉到平台上就代表那條成分和雜訊分不出來。
     lambda_k / lambda_noise 就是「這條成分帶的訊號是雜訊的幾倍」。
 
-    conda run -n astro python src/skymodel/experiments/choose_K.py
+    conda run -n astro python src/skymodel/experiments/choose_K.py --work results/skymodel/p01
 """
 import argparse
 import sys
@@ -35,18 +35,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from step3_sky_basis import zap_k
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
-WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 SEED = 0
 
 
 def main():
     ap = argparse.ArgumentParser(description="選 K 的三個判準")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="含天空的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits")
     ap.add_argument("--kmax", type=int, default=120, help="交叉驗證掃到多少")
     args = ap.parse_args()
+
+    W = ROOT / args.work
+    STEP01, STEP03 = W / "step01", W / "step03"
+    WSKY = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
 
     seg   = fits.getdata(STEP01 / "seg.fits")
     white = fits.getdata(STEP01 / "whitelight.fits")
@@ -147,9 +153,12 @@ def main():
     ax[2].set_xlabel("K"); ax[2].set_ylabel("test-set residual")
     ax[2].set_title("cross-validation (held-out spaxels)", fontsize=10)
     ax[2].legend(fontsize=9); ax[2].grid(alpha=0.3)
-    fig.suptitle("how many sky basis components?  three criteria", fontsize=12)
+    fig.suptitle(f"{W.name}: how many sky basis components?  three criteria",
+                 fontsize=12)
     fig.tight_layout()
-    out = FIGURES / "choose_K.png"
+    # 檔名帶 pointing:每顆的 blank 樣本不同,K 的判準本來就可能給出不同答案,
+    # 寫成同一個檔會讓後跑的那顆蓋掉前一顆。
+    out = FIGURES / f"choose_K_{W.name}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     print(f"\nsaved -> {out}")
 

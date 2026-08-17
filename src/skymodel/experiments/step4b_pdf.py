@@ -15,6 +15,7 @@ step4b_stage1.py 產的 id{NN}/spectrum.png 又寬又大,整批沒辦法寄也�
 線數千個通道,全部走向量的話 PDF 會很大、開啟很慢;文字仍是向量,放大不會糊。
 
     conda run -n astro python src/skymodel/experiments/step4b_pdf.py \\
+        --work results/skymodel/p01 \\
         --star-window 4600 5800 --iter 1
 """
 import argparse
@@ -36,11 +37,11 @@ from step4_fit_source import (STAR_WINDOW, GAL_WINDOW, make_tag,
                                EIGEN_GAL)
 # 圖的內容必須和 step4b_stage1.py 完全同源 —— 光譜怎麼算、遮罩怎麼定義都直接
 # 進口它的函式,不另外寫一份。兩份各自實作的話,哪天改了一邊,兩種圖會悄悄不一樣。
-from step4b_stage1 import load_common, source_spectrum, STAR_TYPE
+from step4b_stage1 import load_common, source_spectrum, set_work, STAR_TYPE
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"        # 白光圖 + segmentation map
-STEP04 = ROOT / "results/skymodel/ne_pointing/step04"
+# STEP01(白光圖 + segmentation map)與 STEP04 由 --work 決定,見 main()。
+STEP01 = STEP04 = None
 FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
 TPL_DIR = ROOT / "data/sdss_templates"
 
@@ -324,11 +325,19 @@ def main():
     ap.add_argument("--dpi", type=int, default=200, help="點陣化資料線的解析度")
     ap.add_argument("--spec-dir", default=None,
                     help="源光譜的目錄,要和 step4_fit_source.py 跑時用的一致,"
-                         "例如 results/skymodel/ne_pointing/step02_eso")
+                         "例如工作區底下的 step02_eso")
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
                     help="要和 step4_fit_source.py 跑時用的一致")
     ap.add_argument("--out", default=None, help="輸出檔名,預設由 tag 決定")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
     args = ap.parse_args()
+
+    # step4b_stage1 的 load_common/source_spectrum 讀的是它自己的模組層級路徑,
+    # 所以工作區要同時設進那邊(set_work)和這邊(STEP01/STEP04)。
+    global STEP01, STEP04
+    W = set_work(args.work)
+    STEP01, STEP04 = W / "step01", W / "step04"
 
     # tag 的組法必須和 step4_fit_source.py 逐字相同,否則會讀到別的檔案。
     suffix = (f"_{Path(args.spec_dir).name.replace('step02', '')}"
@@ -358,7 +367,7 @@ def main():
     # 檔名要能分辨「只畫真源」和「全偵測」兩版 —— 兩份的頁數和結論都不同,
     # 同名互相覆蓋的話,看不出手上這份是哪一種。
     out = (Path(args.out) if args.out else
-           FIGURES / f"step4b_{tag}{'' if args.all_ids else '_keep11'}.pdf")
+           FIGURES / f"step4b_{W.name}_{tag}{'' if args.all_ids else '_keep11'}.pdf")
     out.parent.mkdir(parents=True, exist_ok=True)
 
     # 兩節,每節都把所有源走完再換下一節:先只畫擬合視窗,再畫全波段。

@@ -17,7 +17,8 @@
 就把它們黏成一塊。這裡用最近標籤(Voronoi)來長:每個 blank 像素只歸給離它最近的
 那一個源,兩個源之間自然在中線停住,永遠不會合併。
 
-    conda run -n astro python src/skymodel/experiments/edge_oversubtraction.py
+    conda run -n astro python src/skymodel/experiments/edge_oversubtraction.py \\
+        --work results/skymodel/p01
 """
 import argparse
 from pathlib import Path
@@ -30,9 +31,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
 # 環的分界(px)。內圈窄、外圈寬 —— 效應如果存在,一定集中在貼著足跡的頭幾個像素,
@@ -41,10 +39,6 @@ RINGS = [(0, 1), (1, 2), (2, 3), (3, 5), (5, 8), (8, 12), (12, 20), (20, 40)]
 
 # 報表用的波段。
 BANDS = [(4700, 5000), (5000, 6000), (6000, 7000), (7000, 8000), (8000, 9300)]
-
-DEFAULT_RUNS = ["blank_svdK54_tpl68_s1_bs1",              # s 固定 = 1
-                "blank_svdK54_src9_s1_seg2s68",           # blank 的 s 自由
-                "blankx0-170_svdK54_src68_s1_bs1_seg2s68"]  # s 固定 + 限制學習範圍
 
 # 原始 cube 裡有極端壞 voxel,數量極少,但一個就足以主宰一整格波段的平均。
 # 剔的是 voxel 不是通道 —— 壞的是那幾個 spaxel 在那個波長,不是整個通道。
@@ -110,8 +104,12 @@ def ring_spectra(D, dist, groups, far):
 
 def main():
     ap = argparse.ArgumentParser(description="源邊界 over-subtraction 診斷")
-    ap.add_argument("--run", nargs="+", default=DEFAULT_RUNS)
-    ap.add_argument("--seg", default=str(STEP01 / "seg.fits"))
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--run", nargs="+", default=None,
+                    help="step05 底下要比的 run 目錄名;預設取全部 *_sfield")
+    ap.add_argument("--seg", default=None,
+                    help="segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--main-id", type=int, default=1, help="單獨拿出來看的源")
     ap.add_argument("--band", type=float, nargs=2, default=(5000, 6000),
                     help="甜甜圈影像用哪個波段")
@@ -120,9 +118,18 @@ def main():
     ap.add_argument("--outdir", default=str(OUTDIR))
     args = ap.parse_args()
 
+    W = ROOT / args.work
+    STEP01, STEP03, STEP05 = W / "step01", W / "step03", W / "step05"
+    # run 名字編了 basis/K/模板數/s 的處理方式,每次改設定就換一個名字,寫死必過期。
+    # 直接看工作區裡實際有哪些 run。
+    runs = args.run or sorted(p.name for p in STEP05.glob("*_sfield"))
+    if not runs:
+        raise SystemExit(f"★ {STEP05} 底下沒有 *_sfield,先跑 step5_fit_spaxels.py")
+    args.run = runs
+
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
-    seg   = fits.getdata(args.seg).astype(int)
+    seg   = fits.getdata(Path(args.seg) if args.seg else STEP01 / "seg.fits").astype(int)
     white = fits.getdata(STEP01 / "whitelight.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
     dist, owner = rings_by_label(seg, args.far)
@@ -194,7 +201,7 @@ def main():
         np.atleast_1d(ax)[-1].set_xlabel("wavelength [$\\AA$]")
         fig.suptitle(f"residual just outside the source footprint — {run}", fontsize=12)
         fig.tight_layout(rect=(0, 0, 1, 0.97))
-        fig.savefig(out / f"01_rings_{run}.png", dpi=135, bbox_inches="tight")
+        fig.savefig(out / f"01_rings_{W.name}_{run}.png", dpi=135, bbox_inches="tight")
         plt.close(fig)
 
         # ---- 02 甜甜圈影像 ----------------------------------------------
@@ -214,7 +221,7 @@ def main():
             plt.colorbar(im, ax=a, fraction=0.046, pad=0.02)
         fig.suptitle(run, fontsize=11)
         fig.tight_layout(rect=(0, 0, 1, 0.95))
-        fig.savefig(out / f"02_donut_{run}.png", dpi=135, bbox_inches="tight")
+        fig.savefig(out / f"02_donut_{W.name}_{run}.png", dpi=135, bbox_inches="tight")
         plt.close(fig)
         del D
 
@@ -251,7 +258,7 @@ def main():
     fig.suptitle("radial profile of the residual outside the source footprint "
                  "(same y-scale within each row)", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(out / "03_radial_profile.png", dpi=135, bbox_inches="tight")
+    fig.savefig(out / f"03_radial_profile_{W.name}.png", dpi=135, bbox_inches="tight")
     plt.close(fig)
 
     # ---- 04 天空模型的超出量 ----------------------------------------------
@@ -285,7 +292,7 @@ def main():
     fig.suptitle("how much the SKY MODEL itself is raised near sources "
                  "(same y-scale within each row)", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(out / "04_skymodel_excess.png", dpi=135, bbox_inches="tight")
+    fig.savefig(out / f"04_skymodel_excess_{W.name}.png", dpi=135, bbox_inches="tight")
     plt.close(fig)
 
     # ---- 膨脹餘裕 ---------------------------------------------------------

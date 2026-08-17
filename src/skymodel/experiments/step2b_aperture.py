@@ -21,12 +21,13 @@
     ③ 整數圓心的代價是最多 0.71 px(= √2 / 2)的捨入誤差;換到的是每個源
        完全相同的孔徑形狀與像素數,源之間直接可比。
 
-輸出 results/skymodel/ne_pointing/step02b/,格式和 step02 相同,step4b 只要換讀檔路徑:
+輸出 <工作區>/step02b/,格式和 step02 相同,step4 加 --aperture 就會改讀它:
     object_ids.npy / object_flux.npy / object_var.npy / object_nspax.npy
     aperture.npz    圓心、像素數、視場覆蓋率、是否有效
     aperture.txt    同一份表的純文字版
 
-    conda run -n astro python src/skymodel/step2b_aperture.py
+    conda run -n astro python src/skymodel/experiments/step2b_aperture.py \\
+        --work results/skymodel/p01
 """
 import argparse
 from pathlib import Path
@@ -35,9 +36,6 @@ import numpy as np
 from astropy.io import fits
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP02B = ROOT / "results/skymodel/ne_pointing/step02b"
-WSKY    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 APERTURE_R = 6.0        # px。1 px = 0.2 arcsec,所以 6 px = 1.2 arcsec 半徑
 
@@ -119,9 +117,18 @@ def sum_spectra_by_mask(cube_path, masks, chunk=200):
 
 def main():
     ap = argparse.ArgumentParser(description="圓形孔徑的源光譜抽取")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="抽光譜的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits(含天空,與原本相同)")
     ap.add_argument("-r", "--radius", type=float, default=APERTURE_R,
                     help="孔徑半徑 (px)。0.2 arcsec/px")
     args = ap.parse_args()
+
+    W = ROOT / args.work
+    STEP01, STEP02B = W / "step01", W / "step02b"
+    WSKY = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
     STEP02B.mkdir(parents=True, exist_ok=True)
 
     seg   = fits.getdata(STEP01 / "seg.fits")

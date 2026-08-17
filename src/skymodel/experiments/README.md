@@ -1,42 +1,117 @@
-# skymodel 實驗封存
+# skymodel 實驗
 
-> 已完成、不再繼續開發的比較實驗。留存目的是保留**對照組數據**：
-> 現行 pipeline 選了某個做法，這裡記錄「其他做法差多少」，供論文與後續討論引用。
-> 現役開發檔在上一層 `src/skymodel/`。
+> 問「**該不該改成另一種做法**」的一次性實驗。隔壁 `evaluation/` 問的是另一種問句
+> ——「現行 pipeline 跑出來的結果如何」。一支程式如果比較的是兩個候選方案,它屬於
+> 這裡;如果它只是把現行結果畫出來驗收,它屬於 `evaluation/`。
+
+---
+
+## 工作區的指定方式
+
+所有讀 pipeline 產物的程式都吃 `--work`,指到一顆 pointing 的工作區
+(`results/skymodel/pNN/`,底下是 `step01`…`step05`):
+
+```bash
+conda run -n astro python src/skymodel/experiments/choose_K.py --work results/skymodel/p01
+```
+
+需要 cube 的另外吃 `--cube`,省略時由 `pNN` 的編號推出
+`data/wshy/DATACUBE_FINAL_N.fits`。
+
+輸出一律寫到 `results/skymodel/evaluation/` 底下,**檔名或目錄名帶 `pNN`**。
+14 顆的 step4 tag 與 step5 run 名字完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉
+前一顆。唯一的例外是 `step2b_aperture.py`:它產的是**源光譜**而不是圖,而
+`step4_fit_source.py --aperture` 是去 `{work}/step02b/` 讀的,所以必須寫進工作區。
 
 ---
 
 ## 檔案
 
-| 檔案 | 原名 | 狀態 |
-|---|---|---|
-| `exp02_basis_solver_matrix.py` | `test_zap_style.py` | 已跑完（2026-07-24），結果保留 |
+### 遮罩與學天光的範圍
+
+| 檔案 | 問什麼 |
+|---|---|
+| `prof_seg_range.py` | 教授的遮罩之外還剩多少 Haro 11 的光 —— 學天光的範圍該切在哪 |
+| `sky_region_visual.py` | 把星系的暈畫到眼睛能判讀,由人自己讀出界線 |
+| `sky_region_bound.py` | 用殘留星系光自動定一條界線 |
+| `dilate_seg.py` | 認標籤地把源遮罩長胖,產生 `seg_dil{r}.fits` |
+| `edge_oversubtraction.py` | 遮罩外面那一圈被扣掉多少(甜甜圈與徑向剖面) |
+| `ring_consistency.py` | 逐圈問「這一圈還是不是同一個天體」,定逐源的 `r_stop` |
+| `curve_of_growth.py` | 累積 Δchi2 的成長曲線 —— 峰值就是最佳半徑,不需要門檻 |
+
+`run_pointing.sh` 的 `REGION` 是使用者看著 `sky_region_visual.py` 的輸出
+(`evaluation/masking/prof_seg/visual_pNN.png`)親自定的,不是推導出來的值。
+
+`dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg` 與
+`step5_fit_spaxels.py --seg`,兩支的 `--help` 都指名它。
+
+### 天空 basis
+
+| 檔案 | 問什麼 |
+|---|---|
+| `choose_K.py` | K 該取多少 —— ZAP 判準 / 交叉驗證 / 雜訊平台,三個一起看 |
+| `basis_contamination.py` | basis 裡有沒有混進 Haro 11 自己的發射線 |
+| `plot_sky_basis.py` | K 條成分一次看完(影像 + 前幾條的線形) |
+| `plot_linemask_iters.py` | `estimate_continuum` 每一輪的連續譜、門檻與線遮罩 |
+| `ccorr_continuum.py` | 自我一致地修正 `C_sky` 的形狀,再端到端驗收 |
+| `exp02_basis_solver_matrix.py` | ZAP 邏輯的參考版本(見下) |
+
+### 天空連續譜係數 s 的空間場
+
+| 檔案 | 問什麼 |
+|---|---|
+| `s_prior_holetest.py` | 把 s 的先驗放進擬合,能不能贏過現行的事後平滑 |
+| `s_lowrank.py` | 低秩補全 vs 現行的 row+col 場 |
+| `s_common_map.py` | 14 顆的 s 殘差疊成共同圖 —— 並先確認那不是星系的暈 |
+| `s_flux_bias.py` | 源流量的加法偏差是誰造成的(競爭 vs 殘差本身) |
+| `flux_bias_map.py` | 那個偏差在全場是不是常數 |
+
+### 源與模板
+
+| 檔案 | 問什麼 |
+|---|---|
+| `injection_K.py` | 注入-回收:K 對「源保不保得住」的影響 |
+| `injection_compare.py` | 現行 / 教授的兩階段 / 固定 s,用同一把尺比 |
+| `step2b_aperture.py` | 用固定圓形孔徑抽源光譜,取代 segmentation footprint |
+| `step4b_stage1.py` | 第 1 段(是不是恆星)的視覺化 —— 訂門檻用 |
+| `step4b_pdf.py` | 把每個源的光譜 + 最佳模板 + 殘差合成一份 PDF,寄給教授 |
+| `step4b_mismatch.py` | 紅移對不上的源:我們的解 vs 教授給的 z |
+
+注入-回收是**唯一能造出真值的方法** —— 源區域沒有真值,blank 區的殘差只說得了
+天空扣得乾不乾淨,說不了源有沒有被吃掉(CLAUDE.md 原則 1 的第二半)。
+
+`step4b_mismatch.py` 裡的 `PROF_Z` 是**教授給的紅移**,而且它現在是這組數字在
+repo 裡僅存的紀錄;鍵是 NE pointing 的 source ID,和教授新的 14 份 segmentation
+對不起來,所以這支不能只換路徑就搬到 `pNN`。
 
 ---
 
 ## exp02 — basis × solver 全因子矩陣
 
-在 **blank region** 上比較天光線模型的所有組合。不碰 source 區，所有 blank spaxel 全數納入，
-不做訓練／評測切分。
+在 **blank region** 上比較天光線模型的所有組合。不碰 source 區,所有 blank spaxel
+全數納入,不做訓練／評測切分。
 
-### 實驗設計：2 × 3 × 4 = 24 組
+**它跑過的工作區(單 pointing 時代的 `ne_pointing/`)已經刪除**,所以這支不能直接
+重跑;要重跑得先另建一個工作區並把 `STEP01` 指過去。下面這一節就是它的結果紀錄。
 
-**連續譜處理（2）** — 決定「量天光線振幅時，用哪一種殘差去擬合」
+### 實驗設計:2 × 3 × 4 = 24 組
+
+**連續譜處理(2)** — 決定「量天光線振幅時,用哪一種殘差去擬合」
 
 | | 說明 |
 |---|---|
 | `shared` | 所有 spaxel 共用一條 mean sky 連續譜 |
-| `own` | 每條 spaxel 自己的連續譜（ZAP 的做法） |
+| `own` | 每條 spaxel 自己的連續譜(ZAP 的做法) |
 
-**basis 分解方法（3）**
+**basis 分解方法(3)**
 
 | | 非負限制 | 是否需要 clip |
 |---|---|---|
-| `NMF` | 兩個矩陣都非負 | 需要（負值 clip 成 0 → 系統性正偏移） |
+| `NMF` | 兩個矩陣都非負 | 需要(負值 clip 成 0 → 系統性正偏移) |
 | `semiNMF` | 只有 basis 非負 | 不需要 |
-| `PCA` | 都可正可負（ZAP 用的） | 不需要 |
+| `PCA` | 都可正可負(ZAP 用的) | 不需要 |
 
-**振幅解法（4）** — 每條 spaxel 各自解
+**振幅解法(4)** — 每條 spaxel 各自解
 
 | | 加權 | 非負 |
 |---|---|---|
@@ -47,38 +122,38 @@
 
 ### 記帳原則
 
-最後扣除的一律是「共用天光連續譜 + 重建的天光線」：
+最後扣除的一律是「共用天光連續譜 + 重建的天光線」:
 
     resid = spectra − continuum_shared − A @ W
 
-`own` 連續譜**只作為擬合工具，不永久扣除**。理由：逐 spaxel 連續譜搬到 source 區時，
+`own` 連續譜**只作為擬合工具,不永久扣除**。理由:逐 spaxel 連續譜搬到 source 區時,
 會把 source 自己的連續譜一起吃掉。因此 `shared`/`own` 這一軸比較的是
-**擬合殘差的來源**，不是**最終扣除的對象**。
+**擬合殘差的來源**,不是**最終扣除的對象**。
 
 ### 評測指標
 
-- blank region 平均殘差光譜的 mean / rms，並拆成「全波長 / 天光線通道 / 無線通道」三段
-- 每條 spaxel 的 **reduced χ²**（理想值 = 1；> 1 擬合不足，< 1 過度擬合即吃掉訊號）
-- 對照基準：ESO `nosky` cube 的同一組數字
+- blank region 平均殘差光譜的 mean / rms,並拆成「全波長 / 天光線通道 / 無線通道」三段
+- 每條 spaxel 的 **reduced χ²**(理想值 = 1;> 1 擬合不足,< 1 過度擬合即吃掉訊號)
+- 對照基準:ESO `nosky` cube 的同一組數字
 
-### 輸出
+### 參數
 
-`results/skymodel/step01/zap_style/`
+定義在 `exp02_basis_solver_matrix.py` 檔頭:
 
-| 檔名樣式 | 內容 |
-|---|---|
-| `cmp_basis_{cont}_{solver}.png` | 固定連續譜與解法，比三種 basis |
-| `cmp_solver_{cont}_{basis}.png` | 固定連續譜與 basis，比四種解法 |
-| `basis_compare_{cont}.png` | K=10 條 basis 模板的長相對照 |
-| `reduced_chi2_hist.png` | 24 組的 reduced χ² 分布 |
-| `current_{basis}.png` | 當時 `test.py` 兩條路徑與 nosky 的對照 |
+| 參數 | 值 | 意義 |
+|---|---|---|
+| `K` | 10 | 天光線基底條數 |
+| `WINDOW` | 300 | 連續譜 running median 視窗(spectral pixels) |
+| `THRESHOLDS` | (1, 2) | 線偵測門檻(正, 負) |
+| `MAX_ITER` | 20 | `estimate_continuum` 迭代上限(只作用在 mean sky 上) |
+| `SEMI_ITER` | 300 | semi-NMF 乘法更新次數 |
+| `CHUNK` | 8000 | 分塊大小,只控制記憶體與速度 |
 
-**彙整表只輸出到 stdout，未存檔。** 重跑時需自行導向檔案：
+### 已知重複
 
-```bash
-conda run -n astro python src/skymodel/experiments/exp02_basis_solver_matrix.py \
-    2>&1 | tee results/skymodel/step01/zap_style/summary.txt
-```
+`exp02_basis_solver_matrix.py` 內含 `semi_NMF`、`spectrum_stats`、`plot_compare`、
+`per_spaxel_continuum` 的本地副本。這些函式已收納進 `src/skymodel/utils.py`;
+封存檔保留自己的副本,以確保重跑時得到與 2026-07-24 完全相同的結果。
 
 ---
 
@@ -86,36 +161,17 @@ conda run -n astro python src/skymodel/experiments/exp02_basis_solver_matrix.py 
 
 | 項目 | 決定 | 依據 |
 |---|---|---|
-| 線偵測的 σ 估計 | **mean-spectrum σ**：先把所有 blank spaxel 平均成一條 mean sky，再在其上量 σ | 教授指示（2026-07-21） |
+| 線偵測的 σ 估計 | **mean-spectrum σ**:先把所有 blank spaxel 平均成一條 mean sky,再在其上量 σ | 教授指示(2026-07-21) |
 | 線偵測門檻 | 雙向 `(1σ, 2σ)` | 教授指定 |
-| 天空連續譜 | **shared 形狀**（由大量 blank spaxel 合併內插取得），**振幅逐 spaxel 自由縮放** | 教授指示（2026-07-26） |
+| 天空連續譜 | **shared 形狀**(由大量 blank spaxel 合併內插取得),**振幅逐 spaxel 自由縮放** | 教授指示(2026-07-26) |
+| segmentation | 用教授交付的那一份,不自己跑 SExtractor | `run_pointing.sh` |
+| 分解方法 | 只留 `pca` / `svd`;NMF 與 RPCA 已退役 | `step3_sky_basis.METHODS` |
 
-天空連續譜的形式：
+天空連續譜的形式:
 
     SkyC(p, λ) = s(p) · C_sky(λ)
 
-形狀共用以抵抗單 spaxel 噪聲；只有振幅 `s(p)` 逐 spaxel 自由，用以吸收 throughput
-與照明的空間變化。exp02 中的 `shared` 相當於把 `s(p)` 固定為 1，尚未含這個自由參數。
+形狀共用以抵抗單 spaxel 噪聲;只有振幅 `s(p)` 逐 spaxel 自由,用以吸收 throughput
+與照明的空間變化。exp02 中的 `shared` 相當於把 `s(p)` 固定為 1,尚未含這個自由參數。
 
----
-
-## 參數
-
-定義在 `exp02_basis_solver_matrix.py` 檔頭：
-
-| 參數 | 值 | 意義 |
-|---|---|---|
-| `K` | 10 | 天光線基底條數 |
-| `WINDOW` | 300 | 連續譜 running median 視窗（spectral pixels） |
-| `THRESHOLDS` | (1, 2) | 線偵測門檻（正, 負） |
-| `MAX_ITER` | 20 | `estimate_continuum` 迭代上限（只作用在 mean sky 上） |
-| `SEMI_ITER` | 300 | semi-NMF 乘法更新次數 |
-| `CHUNK` | 8000 | 分塊大小，只控制記憶體與速度 |
-
----
-
-## 已知重複
-
-`exp02_basis_solver_matrix.py` 內含 `semi_NMF`、`spectrum_stats`、`plot_compare`、
-`per_spaxel_continuum` 的本地副本。這些函式已收納進 `src/skymodel/utils.py`；
-封存檔保留自己的副本，以確保重跑時得到與 2026-07-24 完全相同的結果。
+已經測過並否決的做法記在 `docs/rejected-approaches.md`。

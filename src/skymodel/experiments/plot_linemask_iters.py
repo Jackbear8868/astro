@@ -6,15 +6,15 @@
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
 需要 step3 存下的 iter_*.npy。若還沒有,重跑一次 step3 即可:
-    python src/skymodel/step3_sky_basis.py --methods svd
+    python src/skymodel/step3_sky_basis.py --methods svd --work <工作區>
 
-輸出 results/skymodel/evaluation/sky_basis/ 底下,每一輪兩張:
+輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
     iter{N}.png          被判成線的通道(橘)
     iter{N}_nonline.png  沒被判成線的通道(綠)—— 連續譜就是在這些通道上擬的
 
 用法:
-    python src/skymodel/experiments/plot_linemask_iters.py
-    python src/skymodel/experiments/plot_linemask_iters.py --ylim 0 120
+    python src/skymodel/experiments/plot_linemask_iters.py --work results/skymodel/p01
+    python src/skymodel/experiments/plot_linemask_iters.py --work results/skymodel/p01 --ylim 0 120
 """
 import argparse
 from pathlib import Path
@@ -25,7 +25,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 THRESHOLDS = (1, 2)      # (正, 負);與 step3_sky_basis.py 一致
@@ -33,17 +32,23 @@ THRESHOLDS = (1, 2)      # (正, 負);與 step3_sky_basis.py 一致
 
 def main():
     ap = argparse.ArgumentParser(description="畫 line_mask 每一輪的演變")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
     ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=(0, 120),
                     help="光譜圖的 y 軸範圍")
     ap.add_argument("--dpi", type=int, default=140)
     args = ap.parse_args()
 
+    W = ROOT / args.work
+    STEP03 = W / "step03"
+
     need = ["iter_continuum.npy", "iter_sigma.npy", "iter_line_mask.npy"]
     missing = [f for f in need if not (STEP03 / f).exists()]
     if missing:
         raise SystemExit(
-            f"缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
-            f"  conda run -n astro python src/skymodel/step3_sky_basis.py --methods svd")
+            f"{STEP03} 缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
+            f"  conda run -n astro python src/skymodel/step3_sky_basis.py "
+            f"--methods svd --work {args.work}")
 
     wl = np.load(STEP03 / "wavelength.npy")
     ms = np.load(STEP03 / "mean_sky.npy")
@@ -72,7 +77,9 @@ def main():
     print("→ 不相等代表遮罩不是逐輪累加,每輪都用原始 mean_sky 重新判定。")
 
     # ---------------- 每一輪一張圖 ----------------
-    out = FIGURES / "linemask_iters"
+    # 目錄名帶上工作區名稱:每顆 pointing 的 mean_sky 不同,遮罩也不同,
+    # 寫進同一個目錄的話後跑的那顆會無聲蓋掉前一顆。
+    out = FIGURES / f"linemask_iters_{W.name}"
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):

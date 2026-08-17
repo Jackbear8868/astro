@@ -12,8 +12,10 @@
 教授的遮罩強度以「遮掉最亮的百分之幾通道」掃描,因為原話是
 「mask the brightest sky lines」而非全部天光線。
 
-    conda run -n astro python src/skymodel/experiments/injection_compare.py
+    conda run -n astro python src/skymodel/experiments/injection_compare.py \\
+        --work results/skymodel/p01
 """
+import argparse
 import os
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
@@ -30,10 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 TPL_DIR = ROOT / "data/sdss_templates"
-CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
 
 BASIS    = "svd"
 TEMPLATE = "027"
@@ -120,12 +119,26 @@ def fit_prof_joint(f, sig, sky, T, ok, keep):
 
 
 def main():
+    ap = argparse.ArgumentParser(description="三種做法的注入-回收對照")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--cube", default=None,
+                    help="含天空的 cube;預設由 pNN 的編號推出 "
+                         "data/wshy/DATACUBE_FINAL_N.fits")
+    ap.add_argument("-K", type=int, default=30, help="天空 basis 條數,要和 step3 相同")
+    args = ap.parse_args()
+
+    # 變數名不能叫 W —— 底下的報表用 W 當欄寬。
+    W_dir  = ROOT / args.work
+    STEP01, STEP03 = W_dir / "step01", W_dir / "step03"
+    CUBE = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W_dir.name[1:])}.fits")
+
     seg    = fits.getdata(STEP01 / "seg.fits")
     white  = fits.getdata(STEP01 / "whitelight.fits")
     lam    = np.load(STEP03 / "wavelength.npy")
     wl_vac = air_to_vacuum(lam)
     sky    = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
-                        np.load(STEP03 / f"sky_basis_{BASIS}.npy")])
+                        np.load(STEP03 / f"sky_basis_{BASIS}_K{args.K}.npy")])
     mean_sky = np.load(STEP03 / "mean_sky.npy")
     K = sky.shape[0]
 

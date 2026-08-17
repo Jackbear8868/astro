@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from sklearn.decomposition import PCA, TruncatedSVD
-from sklearn.utils.extmath import randomized_svd
 
 
 from utils import estimate_continuum
@@ -22,69 +21,6 @@ CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻,單位是穩健散布 
                          # 目標只是擋掉壞像素等級的離群值,不是修剪跨 spaxel 的
                          # 真實變化,所以門檻要遠高於後者的自然幅度
 METHODS    = ["pca", "svd"]
-
-def soft_threshold(X, tau):
-    """逐元素軟閾值:sign(x) · max(|x| − tau, 0)。"""
-    return np.sign(X) * np.maximum(np.abs(X) - tau, 0.0)
-
-
-def robust_pca(X, K=10, n_iter=100, tol=1e-7, rho=1.5, rank_buffer=5, seed=0):
-    """Principal Component Pursuit (Candes, Li, Ma & Wright 2011)。
-
-    把矩陣分解成 X = L + S:
-      L  低秩,所有 blank spaxel 共有的天光線結構     ← 我們要的
-      S  稀疏,宇宙射線、壞像素、blank 區裡未偵測到的暗源
-
-    以 inexact ALM 求解;每步的 SVD 用 randomized_svd 只取前 K+rank_buffer
-    個奇異值,因為最後只需要前 K 條。
-
-    Returns
-    -------
-    basis : ndarray, shape (K, n_features)
-        L 的前 K 個右奇異向量。
-    S : ndarray, shape (m, n)
-        稀疏成分。用來診斷 RPCA 到底分離出了什麼:
-        S 裡若出現源光譜(連續譜 + 紅移發射線),代表它成功抓出未偵測的暗源;
-        若在天光線波長暴衝,代表 lambda 太小、天光線被誤判成 outlier。
-    """
-    m, n = X.shape
-    lam = 1.0 / np.sqrt(max(m, n))                 # 論文的理論值,不是調參
-
-    norm_F = np.linalg.norm(X)
-    norm_2 = randomized_svd(X, n_components=1, random_state=seed)[1][0]
-
-    Y  = X / float(max(norm_2, np.abs(X).max() / lam))    # 對偶變數初值(論文建議)
-    mu = 1.25 / norm_2
-    mu_max = mu * 1e7
-
-    S = np.zeros_like(X)
-    r = K + rank_buffer
-
-    for it in range(n_iter):
-        # --- L 步:對「奇異值」做軟閾值 ---
-        U, sv, Vt = randomized_svd(X - S + Y / mu, n_components=r, random_state=seed)
-        sv_t = np.maximum(sv - 1.0 / mu, 0.0)
-        keep = sv_t > 0
-        L = (U[:, keep] * sv_t[keep]) @ Vt[keep]
-
-        # --- S 步:對「元素」做軟閾值 ---
-        S = soft_threshold(X - L + Y / mu, lam / mu)
-
-        # --- 對偶變數與懲罰係數 ---
-        R   = X - L - S
-        Y  += mu * R
-        mu  = min(mu * rho, mu_max)
-
-        err = np.linalg.norm(R) / norm_F
-        if (it + 1) % 10 == 0:
-            print(f"    PCP {it+1:3d}  rank(L)={int(keep.sum()):2d}  "
-                  f"S非零={100*np.mean(S != 0):5.2f}%  err={err:.2e}", flush=True)
-        if err < tol:
-            print(f"    PCP converged at iter {it+1}", flush=True)
-            break
-
-    basis = randomized_svd(L, n_components=K, random_state=seed)[2]
-    return basis, S
 
 def zap_k(var, nsigma=5):
     """ZAP 的成分數判準。照抄 libs/zap/zap/zap.py:926 的 `_compute_deriv`。

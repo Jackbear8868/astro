@@ -10,7 +10,9 @@ utils.id_map() 的 rows 需要帶著 group、
 像不同的資料。
 
     conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
-        --seg data/Haro11_NEpointing_seg1sigma.fits
+        --work results/skymodel/p01
+    conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
+        --work results/skymodel/p01 --seg data/wsky_seg/DATACUBE_FINAL_1_seg.fits
 """
 import argparse
 import sys
@@ -24,17 +26,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT
 from utils import id_map
 
-STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 FIGURES = EVAL / "masking"
 
 
 def main():
     ap = argparse.ArgumentParser(description="任一份 segmentation 的 source ID map")
-    ap.add_argument("--seg", default=str(ROOT / "data/Haro11_NEpointing_seg1sigma.fits"),
-                    help="要畫的 segmentation 圖")
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01。"
+                         "seg 與底圖預設都取自它的 step01/")
+    ap.add_argument("--seg", default=None,
+                    help="要畫的 segmentation 圖;預設為工作區的 step01/seg.fits")
     ap.add_argument("--white", default=None,
-                    help="底圖。預設是 NE 工作區的 step01/whitelight.fits;"
-                         "畫別的 pointing 時要指到**那一顆自己的**白光 —— "
+                    help="底圖;預設為工作區的 step01/whitelight.fits。"
+                         "指到別份 seg 時底圖仍要是**那一顆自己的**白光 —— "
                          "配錯底圖會看到對不齊的錯覺,而那不是資料的問題")
     ap.add_argument("--min-area", type=int, default=1,
                     help="只畫面積 >= 這個值的源;"
@@ -42,9 +46,11 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
+    STEP01 = ROOT / args.work / "step01"
     white = fits.getdata(Path(args.white) if args.white
                          else STEP01 / "whitelight.fits")
-    seg   = fits.getdata(args.seg)
+    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+    seg   = fits.getdata(seg_path)
     if seg.shape != white.shape:
         raise SystemExit(f"seg {seg.shape} 與白光圖 {white.shape} 尺寸不同")
 
@@ -59,7 +65,8 @@ def main():
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 
-    name = Path(args.seg).stem
+    # 檔名帶工作區名稱:14 顆的 step01/seg.fits 同名,只用 seg 的檔名會互相覆蓋。
+    name = f"{Path(args.work).name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     id_map(seg, white, rows, out, by_group=False)

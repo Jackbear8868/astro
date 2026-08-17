@@ -11,6 +11,7 @@
 色階用百分位而不是最大值:第一條成分的振幅比後面大一個量級,用最大值當上限
 會讓其餘的成分全部變成同一個顏色。
 
+    conda run -n astro python src/skymodel/experiments/plot_sky_basis.py --work results/skymodel/p01
     conda run -n astro python src/skymodel/experiments/plot_sky_basis.py \\
         --basis results/skymodel/experiments/seg_threshold/prof2sigma/step03/sky_basis_svd_K54.npy
 """
@@ -23,13 +24,21 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
-STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 
 def main():
     ap = argparse.ArgumentParser(description="畫出天光線 basis")
-    ap.add_argument("--basis", default=str(STEP03 / "sky_basis_svd_K54.npy"))
+    # --work 給「某顆 pointing 的 step03」,--basis 給任意一個 basis 檔 ——
+    # 後者是為了畫 experiments/ 底下那些不屬於任何 pNN 的 basis(例如
+    # seg_threshold/ 的門檻掃描產物),兩者擇一。
+    ap.add_argument("--work", default=None,
+                    help="pointing 的工作區,例如 results/skymodel/p01;"
+                         "會去讀它的 step03/sky_basis_{method}_K{K}.npy")
+    ap.add_argument("--method", default="svd", help="--work 模式下的分解方法")
+    ap.add_argument("-K", type=int, default=30, help="--work 模式下的 basis 條數")
+    ap.add_argument("--basis", default=None,
+                    help="直接指定 basis 檔路徑,不經過 --work")
     ap.add_argument("--wavelength", default=None,
                     help="預設用 basis 同一個資料夾裡的 wavelength.npy")
     ap.add_argument("--n-trace", type=int, default=6, help="下方單獨畫幾條")
@@ -39,25 +48,29 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    bp = Path(args.basis)
+    if bool(args.work) == bool(args.basis):
+        raise SystemExit("★ --work 與 --basis 請擇一指定")
+    bp = (Path(args.basis) if args.basis else
+          ROOT / args.work / "step03" / f"sky_basis_{args.method}_K{args.K}.npy")
     B  = np.load(bp)
     wl = np.load(Path(args.wavelength) if args.wavelength else bp.parent / "wavelength.npy")
     K  = B.shape[0]
     print(f"{bp}  {B.shape}   波長 {wl[0]:.1f}-{wl[-1]:.1f} A")
+
+    # 來源標籤 = basis 檔的上兩層目錄。sky_basis_svd_K30.npy 這個檔名只說得出
+    # 方法與 K,說不出「從哪些 spaxel 學的」,而那正是不同版本之間唯一的差別
+    # (p01 / p02 / 膨脹遮罩 / 門檻掃描 ...)。只用檔名的話,不同來源的同 K 會
+    # 寫成同一個檔互相覆蓋,而且從檔名完全看不出來被蓋掉了。
+    src = f"{bp.parent.parent.name}_{bp.parent.name}"
 
     # SVD 的正負號不具意義(分解本身的自由度)。統一成「最大絕對值為正」,
     # 不然同一條成分在不同 run 之間可能整條翻轉,看起來像變了。
     B = B * np.sign(B[np.arange(K), np.abs(B).argmax(axis=1)])[:, None]
 
     if args.per_component:
-        # 輸出目錄必須帶上**來源目錄**,不能只用 basis 的檔名。
-        # sky_basis_svd_K30.npy 這個名字只說得出方法與 K,說不出「從哪些 spaxel
-        # 學的」—— 而那正是不同版本之間唯一的差別(全場 blank / x0-170 / 膨脹遮罩
-        # /...)。只用檔名的話,不同來源的同 K 會寫進同一個資料夾互相覆蓋,而且
-        # **覆蓋掉的是別人的科學產物,從檔名完全看不出來**。
         d = (Path(args.out) if args.out
              else FIGURES / "step3_basis" /
-                  f"{bp.parent.name}__{bp.stem.replace('sky_basis_', 'basis_')}")
+                  f"{src}__{bp.stem.replace('sky_basis_', 'basis_')}")
         d.mkdir(parents=True, exist_ok=True)
         # y 範圍全部成分共用 —— 各自 autoscale 的話,一條只有雜訊的成分會被
         # 放大到和真正的天光線成分看起來一樣強,逐張翻閱時完全誤導。
@@ -103,7 +116,7 @@ def main():
     fig.suptitle(f"sky-line basis: {bp.parent.parent.name}/{bp.parent.name}/{bp.name}",
                  fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
-    out = Path(args.out) if args.out else FIGURES / f"sky_basis_{bp.stem}.png"
+    out = Path(args.out) if args.out else FIGURES / f"{src}__{bp.stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=135, bbox_inches="tight")
     print(f"saved -> {out}")
