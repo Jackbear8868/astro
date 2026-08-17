@@ -26,7 +26,7 @@ minimum_filter 檢查),否則標籤和內容會不符。
 
 兩種輸出,都寫進 results/skymodel/evaluation/pNN/box/
 --------------------------------------------------
-    預設(PNG)  一個方框一張圖,三條線疊在一起比。`_layout.png` 標出方框在
+    預設(PNG)  一個方框一張圖,三條線疊在一起比。`map.png` 標出方框在
                視場的哪裡。缺 ESO 或舊 run 時用 --eso none / --ref-run none。
     --pdf      一頁一個方框,上格 raw vs sky model、下格殘差。**只用這個 run
                自己的三份資料**(原始 cube / sky_model.fits / sky_subtracted.fits),
@@ -230,7 +230,7 @@ def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
             st = spectrum_stats(res)
             fig.suptitle(
                 f"{title}\n{nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
-                f"{(b[1]-b[0]+1)*(b[3]-b[2]+1)} spaxel   |   residual: "
+                f"{(b[1]-b[0]+1)*(b[3]-b[2]+1)} spaxels   |   residual: "
                 f"mean {st['mean']:+.3f}  sigma {st['sigma']:.3f}  "
                 f"rms {st['rms_from_zero']:.3f}", fontsize=11)
             fig.tight_layout(rect=(0, 0, 1, 0.94))
@@ -325,9 +325,16 @@ def main():
     outdir = Path(args.out) if args.out else pointing_dir(W.name, "box")
     outdir.mkdir(parents=True, exist_ok=True)
     keys = ("mean", "sigma", "rms_from_zero")
+    # 統計欄的版面用**字元數**算,不用寫死的座標:欄數會隨 --eso / --ref-run
+    # 開不開而變,寫死的位置只在某一種組合下不重疊。
+    NW, VW = len(max(keys, key=len)) + 2, 10        # 標籤欄寬、每個數值欄寬
+    ncol   = len(srcs)
+    span   = NW + VW * ncol
     for nm, b in boxes.items():
         fig = plt.figure(figsize=(15, 4.2))
-        gs  = fig.add_gridspec(1, 2, width_ratios=[6, 1.5], wspace=0.02,
+        # 0.04 是「一個字元佔多少寬度比例」,由 fontsize 8.5 的等寬字元量出來的:
+        # 欄位靠 span 換算成軸內比例,軸本身太窄會截斷、太寬會把數字推到天邊。
+        gs  = fig.add_gridspec(1, 2, width_ratios=[6, 0.04 * span], wspace=0.02,
                                left=0.055, right=0.985, top=0.86, bottom=0.13)
         ax = fig.add_subplot(gs[0, 0])
         ax.axhline(0, color="0.5", lw=0.6)
@@ -351,25 +358,24 @@ def main():
         ax.legend(fontsize=9, loc="upper left", ncol=3, framealpha=0.85)
 
         sax = fig.add_subplot(gs[0, 1]); sax.axis("off")
-        sax.text(0.02, 0.98, "\n".join([""] + [f"{k:<13}" for k in keys]),
-                 va="top", family="monospace", fontsize=8.5,
+        sax.text(0.0, 0.98, "\n".join([""] + list(keys)),
+                 va="top", ha="left", family="monospace", fontsize=8.5,
                  transform=sax.transAxes)
         for j, (lab, y) in enumerate(curves[nm].items()):
             st = spectrum_stats(y)
-            sax.text(0.30 + 0.235 * j, 0.98,
-                     "\n".join([f"{SHORT[lab]:>9}"]
-                               + [f"{st[k]:>9.3f}" for k in keys]),
-                     va="top", ha="left", family="monospace", fontsize=8.5,
+            sax.text((NW + VW * (j + 1)) / span, 0.98,
+                     "\n".join([SHORT[lab]] + [f"{st[k]:.3f}" for k in keys]),
+                     va="top", ha="right", family="monospace", fontsize=8.5,
                      color=COL[lab], transform=sax.transAxes)
         fig.suptitle(f"{W.name}  {nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
-                     f"{(b[1] - b[0] + 1) * (b[3] - b[2] + 1)} spaxel   "
-                     f"[{args.run}]", fontsize=12)
+                     f"{(b[1] - b[0] + 1) * (b[3] - b[2] + 1)} spaxels",
+                     fontsize=12)
         o = outdir / f"{slug(nm)}.png"
         fig.savefig(o, dpi=135, bbox_inches="tight")
         plt.close(fig)
         print(f"saved -> {o}")
 
-    draw_map(white, seg, s_hat, boxes, outdir / "_layout.png",
+    draw_map(white, seg, s_hat, boxes, outdir / "map.png",
              f"box locations   {args.work}")
 
 

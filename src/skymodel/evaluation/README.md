@@ -16,7 +16,7 @@ results/skymodel/evaluation/
     s_shape.png             s 的空間形狀
     main_group.png          主源分組
     prof_seg.png            這顆的 segmentation
-    box/                    一個方框一張圖 + _layout.png 標出位置
+    box/                    一個方框一張圖 + map.png 標出位置
     zone/                   一個環一張圖
   p02/  …
   subtraction_check/        跨 pointing、或不屬於任何一顆的驗收圖

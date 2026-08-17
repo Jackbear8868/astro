@@ -19,7 +19,6 @@ step5 另外寫了一個 s_map(每格實際用掉的值),這裡不畫 —— 它
     conda run -n astro python src/skymodel/evaluation/s_shape_map.py --work results/skymodel/p01
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -59,8 +58,8 @@ def main():
 
     fig, ax = plt.subplots(1, 2, figsize=(13.5, 6.2))
     for a, arr, ttl in zip(ax, (s_free, s_hat),
-                           ("s_free   (blank, solved per spaxel)",
-                            "s_hat   (fitted field  mu + a(y) + b(x))")):
+                           ("s solved per spaxel",
+                            "s fitted = mu + a(y) + b(x)")):
         im = a.imshow(arr, origin="lower", cmap=S_CMAP, vmin=lo, vmax=hi)
         a.contour(seg > 0, levels=[0.5], colors="k", linewidths=0.4, alpha=.45)
         a.contour(main,    levels=[0.5], colors="k", linewidths=1.6)
@@ -68,12 +67,8 @@ def main():
         fig.colorbar(im, ax=a, fraction=0.046)
 
     d = (s_free - s_hat)[np.isfinite(s_free) & np.isfinite(s_hat)]
-    p = json.loads((run / "meta.json").read_text())["s_field_params"]
-    fig.suptitle(f"{W.name}   {run.name}    colour centred on {c:.4f}\n"
-                 f"s_hat trained on spaxels > {p['r_far']:.0f} px from any source, "
-                 f"> {p['r_far_haro']:.0f} px from Haro 11   "
-                 f"(black outline = main source group, ids {ids})", fontsize=11)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.suptitle(W.name, fontsize=14)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
     o = pointing_dir(W.name) / "s_shape.png"
     fig.savefig(o, dpi=125, bbox_inches="tight")
     print(f"{W.name}  s_hat 中位 {np.nanmedian(s_hat[valid]):.4f}   "

@@ -72,7 +72,13 @@ def main():
         seg, white, valid = load_field(W)
         wl  = np.load(W / "step03/wavelength.npy")
         main, _, pk = main_source_group(seg, np.where(valid, white, np.nan))
-        Z   = zones(seg, white, main)
+        # 遮罩夠大的時候,可能一格都沒有滿足 far 的條件(離所有源都遠)。空的環
+        # 平均起來是 NaN,畫不出來 —— 直接跳過並講清楚少了哪個,不要讓下游炸掉
+        # 或畫出一張空圖。
+        Z = {}
+        for nm, m in zones(seg, white, main).items():
+            (Z.__setitem__(nm, m) if m.any()
+             else print(f"  p{n:02d}: 環「{nm}」沒有任何 spaxel,跳過"))
 
         # 紅移取自這顆自己的擬合,不是寫死的常數 —— 逐顆略有差異,
         # 用別顆的值會讓標線和鼓包對不上而看不出來是對不上
@@ -99,7 +105,8 @@ def main():
         # **自己的**遠場零點才可比:ESO 整體高 0.39,不扣掉的話它每個環都虛高
         spec = {nm: {lbl: zone_mean(path, m) for lbl, path, _, _ in runs}
                 for nm, m in Z.items()}
-        off = {lbl: float(np.nanmean(spec["far"][lbl])) for lbl, *_ in runs}
+        off = ({lbl: float(np.nanmean(spec["far"][lbl])) for lbl, *_ in runs}
+               if "far" in Z else None)
 
         zdir = pointing_dir(f"p{n:02d}", "zone")
         for nm, m in Z.items():
@@ -117,7 +124,7 @@ def main():
                 ax.plot(wl, y, lw=0.5, color=col, alpha=0.30, ls=ls, zorder=2)
                 ax.plot(wl, sm, lw=1.8, color=col, ls=ls, zorder=3,
                         label=f"{lbl}    mean {np.nanmean(y):+.4f}"
-                              + ("" if nm == "far" else
+                              + ("" if nm == "far" or off is None else
                                  f"  (−far = {np.nanmean(y) - off[lbl]:+.4f})")
                               + f"    scatter {scale(y):.4f}")
                 lo.append(np.nanpercentile(sm, 1)); hi.append(np.nanpercentile(sm, 99))
