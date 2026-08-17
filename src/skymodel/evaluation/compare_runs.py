@@ -7,7 +7,7 @@ autoscale 的話,扣得越乾淨的那版拉伸越緊、看起來反而雜訊越
 (同一通道、跨 spaxel,穩健散布,30 sigma),但**只剪 blank**:源只在少數 spaxel
 亮,跨 spaxel 看它本來就是離群值,用同一把尺會把源的核心剪掉。
 
-    conda run -n astro python src/skymodel/experiments/compare_runs.py \\
+    conda run -n astro python src/skymodel/evaluation/compare_runs.py \\
         --band 4700 9300 --cmap inferno
 """
 import argparse

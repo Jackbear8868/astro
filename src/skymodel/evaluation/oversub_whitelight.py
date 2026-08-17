@@ -16,7 +16,7 @@
 差異圖用 x0-170 那個 run 當基準:「基準 − 某個 run」就是那個 run 比基準多吃掉
 的光。
 
-    conda run -n astro python src/skymodel/experiments/oversub_whitelight.py
+    conda run -n astro python src/skymodel/evaluation/oversub_whitelight.py
 """
 import argparse
 from pathlib import Path

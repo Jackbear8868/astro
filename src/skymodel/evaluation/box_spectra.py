@@ -32,8 +32,8 @@ minimum_filter 檢查),否則標籤和內容會不符。
                自己的三份資料**(原始 cube / sky_model.fits / sky_subtracted.fits),
                不需要任何外部對照,所以 14 顆 pointing 都畫得出來。
 
-    conda run -n astro python src/skymodel/experiments/box_spectra.py
-    conda run -n astro python src/skymodel/experiments/box_spectra.py \\
+    conda run -n astro python src/skymodel/evaluation/box_spectra.py
+    conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
         --work results/skymodel/p01 --run blank_svdK30_tpl68_sfield --pdf
 """
 import argparse

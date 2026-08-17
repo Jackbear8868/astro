@@ -15,8 +15,8 @@
                      這是紅移被釘得多緊 —— 數字大代表紅移沒被約束住。
   forced             把這個成員強迫放在主源的紅移上,rchi2 會變差幾 %。
 
-    conda run -n astro python src/skymodel/experiments/main_group_spec.py
-    conda run -n astro python src/skymodel/experiments/main_group_spec.py -n 1 4 10
+    conda run -n astro python src/skymodel/evaluation/main_group_spec.py
+    conda run -n astro python src/skymodel/evaluation/main_group_spec.py -n 1 4 10
 """
 import argparse
 import sys

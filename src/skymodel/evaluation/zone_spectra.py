@@ -16,7 +16,7 @@ check_pointing 的四個環各自回答一個問題,這支腳本把那四個數�
 每個環畫兩層:細線是逐通道的平均光譜,粗線是移動平均。雜訊被壓成 1/sqrt(N) 之後,
 零點的偏移才浮得出來。
 
-    conda run -n astro python src/skymodel/experiments/zone_spectra.py -n 1 4 8
+    conda run -n astro python src/skymodel/evaluation/zone_spectra.py -n 1 4 8
 """
 import argparse
 import sys

@@ -18,7 +18,7 @@ step5 對每個 spaxel 解 D(λ) = s·C_sky(λ) + Σₖ cₖ·Lₖ(λ)。s 是�
 下排的兩條剖面是場的兩個成分:a(y) 沿 y、b(x) 沿 x。s_free 的逐列/逐行中位數
 疊在上面,看場有沒有跟上資料。
 
-    conda run -n astro python src/skymodel/experiments/s_shape_map.py --work results/skymodel/p01
+    conda run -n astro python src/skymodel/evaluation/s_shape_map.py --work results/skymodel/p01
 """
 import argparse
 import json

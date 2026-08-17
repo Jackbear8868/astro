@@ -1,6 +1,6 @@
 """一個 pointing 的驗收 —— 天空扣乾淨了嗎、源保住了嗎。
 
-    conda run -n astro python src/skymodel/experiments/check_pointing.py p04 p08 p12
+    conda run -n astro python src/skymodel/evaluation/check_pointing.py p04 p08 p12
 
 兩個條件必須同時成立,缺一不可(CLAUDE.md 原則 1):
 

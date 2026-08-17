@@ -11,7 +11,7 @@ utils.main_source_group 的做法:取最亮像素所在的連通塊(不做膨脹
     左  處理前:相鄰的整團裡每個 seg ID 各給一個顏色,標上編號
     右  處理後:通過紅移判準、留下來的那些
 
-    conda run -n astro python src/skymodel/experiments/main_group_map.py -n 12 5 1
+    conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 12 5 1
 """
 import argparse
 import sys

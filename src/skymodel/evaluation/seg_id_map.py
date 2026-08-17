@@ -9,7 +9,7 @@ utils.id_map() 的 rows 需要帶著 group、
 只能有一種畫法,否則兩份圖擺在一起會因為拉伸、配色、標號規則不同而看起來
 像不同的資料。
 
-    conda run -n astro python src/skymodel/experiments/seg_id_map.py \\
+    conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
         --seg data/Haro11_NEpointing_seg1sigma.fits
 """
 import argparse

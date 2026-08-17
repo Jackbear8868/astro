@@ -12,8 +12,8 @@ whitelight —— 遮罩是在 pseudo_r 上長出來的,配另一張底圖會看
 繪製本身完全交給 utils.id_map,不另外寫一套:同一種圖在專案裡只能有
 一種畫法,否則兩份圖擺在一起會因為拉伸、配色、標號規則不同而看起來像不同的資料。
 
-    conda run -n astro python src/skymodel/experiments/prof_seg_maps.py
-    conda run -n astro python src/skymodel/experiments/prof_seg_maps.py -n 4 8 12
+    conda run -n astro python src/skymodel/evaluation/prof_seg_maps.py
+    conda run -n astro python src/skymodel/evaluation/prof_seg_maps.py -n 4 8 12
 """
 import argparse
 import sys
