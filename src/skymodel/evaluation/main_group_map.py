@@ -74,8 +74,7 @@ def main():
                            path_effects=[pe.withStroke(linewidth=2.5,
                                                        foreground="k")])
         # 圖上一律英文 —— matplotlib 預設字型沒有中文字符
-        ax[0].set_title(f"before — {len(all_ids)} seg IDs touch each other   "
-                        f"({seg.max()} sources in total)", fontsize=11)
+        ax[0].set_title(f"before ({len(all_ids)} sources in total)", fontsize=12)
 
         # 右:合併之後
         m = mg[sub]
@@ -88,18 +87,13 @@ def main():
         ax[1].contour((lab == lab[pk])[sub], levels=[0.5],
                       colors="#00e5ff", linewidths=0.9, linestyles="--")
         ax[1].plot(pk[1] - x0, pk[0] - y0, "w+", ms=14, mew=2)
-        ax[1].set_title(f"after — {len(ids)} kept by redshift, {int(mg.sum()):,} px\n"
-                        f"cyan dashed = the touching blob (before the redshift cut), "
-                        f"white cross = brightest pixel", fontsize=11)
+        ax[1].set_title(f"after ({len(ids)} sources in total)", fontsize=12)
 
         f = {int(i): float(np.nansum(np.where(seg == i, white, 0)))
              for i in np.unique(seg) if i > 0}
         tot = sum(f.values()); mf = sum(f[i] for i in ids)
         rest = sorted((v_ for k_, v_ in f.items() if k_ not in ids), reverse=True)
-        fig.suptitle(f"p{n:02d}   dv_max = {args.dv_max:g} km/s   —   "
-                     f"main source = {len(ids)} seg IDs merged,   "
-                     f"{100*mf/tot:.1f}% of all source flux   "
-                     f"(runner-up: {100*rest[0]/tot:.1f}%)", fontsize=13)
+        fig.suptitle(f"p{n:02d}", fontsize=14)
         fig.tight_layout()
         out = pointing_dir(f"p{n:02d}") / f"main_group{args.out_suffix}.png"
         fig.savefig(out, dpi=140, bbox_inches="tight")

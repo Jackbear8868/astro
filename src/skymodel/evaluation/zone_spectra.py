@@ -36,6 +36,9 @@ from utils import galaxy_redshifts, main_source_group, scale  # noqa: E402
 # 主星系的強發射線,靜止空氣波長。step03/wavelength.npy 存的是空氣波長
 # (step4b 讀進去的變數就叫 wl_air),所以這裡也必須用空氣值,不能混真空值。
 # 標在圖上是為了看出「源環上多出來的東西是不是真的來自這個星系」。
+# 統計欄的表頭。放不下完整標籤,而顏色已經對得起來了。
+SHORT = {"ESO nosky": "ESO", "ours method": "ours"}
+
 LINES = [(4861.33, "Hb"), (4958.91, "[O III]"), (5006.84, "[O III]"),
          (5875.6, "He I"), (6300.30, "[O I]"), (6548.05, "[N II]"),
          (6562.82, "Ha"), (6583.45, "[N II]"), (6716.44, "[S II]"),
@@ -92,13 +95,19 @@ def main():
         # 整條蓋掉,圖上看起來像少了一條線
         palette = ["#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]
         styles  = ["-", "--", "-.", ":"]
-        for k, pat in enumerate(args.runs):
+        hits = []
+        for pat in args.runs:
             hit = sorted((W / "step05").glob(pat + "/sky_subtracted.fits"))
             if not hit:
                 print(f"  p{n:02d}: 沒有符合 {pat} 的 run,略過")
                 continue
-            runs.append((hit[0].parent.name, hit[0],
-                         palette[k % len(palette)], styles[k % len(styles)]))
+            hits.append(hit[0])
+        # 只有一個 run 時標籤就叫 ours method;有好幾個才需要用目錄名分辨,
+        # 而目錄名是 lbl 的鍵,重複的話 spec/off 會互相蓋掉。
+        for k, h in enumerate(hits):
+            lbl = "ours method" if len(hits) == 1 else h.parent.name
+            runs.append((lbl, h, palette[k % len(palette)],
+                         styles[k % len(styles)]))
 
         kern = np.ones(args.smooth) / args.smooth
         # 每個 run 在每個環的平均光譜先全部算好 —— 源環的數字要減掉該 run
@@ -109,8 +118,17 @@ def main():
                if "far" in Z else None)
 
         zdir = pointing_dir(f"p{n:02d}", "zone")
+        # 統計不放圖例裡:圖例壓在曲線上,而且行長隨數字位數變。放右邊的獨立
+        # 面板,版面用字元數算,欄數變了也不會重疊。
+        keys = ("mean", "-far", "scatter")
+        NW, VW = len(max(keys, key=len)) + 2, 11
+        span   = NW + VW * len(runs)
         for nm, m in Z.items():
-            fig, ax = plt.subplots(figsize=(19, 4.6))
+            fig = plt.figure(figsize=(19, 4.6))
+            gs  = fig.add_gridspec(1, 2, width_ratios=[6, 0.04 * span],
+                                   wspace=0.02, left=0.045, right=0.99,
+                                   top=0.86, bottom=0.13)
+            ax = fig.add_subplot(gs[0, 0])
             ax.axhline(0, color="0.5", lw=0.8, zorder=1)
             for rest, nm_l in LINES:
                 obs = rest * (1 + z)
@@ -122,11 +140,7 @@ def main():
                 y = spec[nm][lbl]
                 sm = np.convolve(y, kern, "same")
                 ax.plot(wl, y, lw=0.5, color=col, alpha=0.30, ls=ls, zorder=2)
-                ax.plot(wl, sm, lw=1.8, color=col, ls=ls, zorder=3,
-                        label=f"{lbl}    mean {np.nanmean(y):+.4f}"
-                              + ("" if nm == "far" or off is None else
-                                 f"  (−far = {np.nanmean(y) - off[lbl]:+.4f})")
-                              + f"    scatter {scale(y):.4f}")
+                ax.plot(wl, sm, lw=1.8, color=col, ls=ls, zorder=3, label=lbl)
                 lo.append(np.nanpercentile(sm, 1)); hi.append(np.nanpercentile(sm, 99))
             # y 範圍照**平滑後**的曲線定,細線的尖峰不該決定看得到什麼
             a, b = min(lo), max(hi)
@@ -148,10 +162,23 @@ def main():
             if args.ylim:
                 ax.set_ylim(*args.ylim)
             ax.set_xlabel("wavelength [$\\AA$]", fontsize=10)
-            fig.suptitle(f"p{n:02d}   zone «{nm}»   "
-                         f"(thin = per channel, thick = {args.smooth}-channel mean)"
-                         f"   —   dotted violet = Haro 11 emission lines at "
-                         f"z = {z:.4f}", fontsize=13)
+
+            sax = fig.add_subplot(gs[0, 1]); sax.axis("off")
+            sax.text(0.0, 0.98, "\n".join([""] + list(keys)), va="top", ha="left",
+                     family="monospace", fontsize=8.5, transform=sax.transAxes)
+            for j, (lbl, _p, col, _ls) in enumerate(runs):
+                y = spec[nm][lbl]
+                val = {"mean": np.nanmean(y), "scatter": scale(y),
+                       "-far": (np.nan if nm == "far" or off is None
+                                else np.nanmean(y) - off[lbl])}
+                sax.text((NW + VW * (j + 1)) / span, 0.98,
+                         "\n".join([SHORT.get(lbl, lbl)]
+                                   + ["—" if not np.isfinite(val[k])
+                                      else f"{val[k]:+.4f}" for k in keys]),
+                         va="top", ha="right", family="monospace", fontsize=8.5,
+                         color=col, transform=sax.transAxes)
+
+            fig.suptitle(f"p{n:02d}   zone «{nm}»", fontsize=13)
             fig.tight_layout()
             out = zdir / f"{slug(nm)}.png"
             fig.savefig(out, dpi=120, bbox_inches="tight")

@@ -34,13 +34,45 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, zones  # noqa: E402
+from common import ROOT, arcsinh_stretch, load_field, pointing_dir, zones  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
 # 乾淨窗口:沒有強天光線、也沒有 Haro 11 的強發射線,量連續譜用
 WINDOWS = ((5250, 5450), (5600, 5750), (6050, 6200))
+
+# 環的顏色,圖上兩邊共用 —— 左邊的地圖和右邊的長條要靠顏色對起來
+ZCOL = {"far": "#7f7f7f", "small 1-3": "#2ca02c",
+        "main 1-3": "#1f77b4", "main 3-10": "#ff7f0e"}
+
+
+def draw(work, white, Z, out):
+    """四個環在視場的哪裡 —— 數字在表格裡,這張只回答「那是天上的哪一塊」。
+
+    和 box/map.png 同一個角色:光譜圖只有名稱和座標,看不出那塊區域長什麼樣、
+    離星系多遠。
+    """
+    fig, ax = plt.subplots(figsize=(9, 9))
+    img, vmax = arcsinh_stretch(white, white != 0)
+    ax.imshow(img, origin="lower", cmap="gray", vmin=0, vmax=vmax)
+    for nm, m in Z.items():
+        rgba = np.zeros(m.shape + (4,))
+        rgba[m] = list(matplotlib.colors.to_rgb(ZCOL[nm])) + [0.75]
+        ax.imshow(rgba, origin="lower")
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.legend(handles=[plt.Line2D([], [], color=ZCOL[nm], lw=6,
+                                  label=f"{nm}   {int(Z[nm].sum()):,} spaxels")
+                       for nm in Z], fontsize=10, loc="lower left",
+              framealpha=0.85)
+    ax.set_title(work, fontsize=14)
+    fig.tight_layout()
+    fig.savefig(out, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved -> {out}")
 
 
 def check(work, cube, run=None):
@@ -80,18 +112,24 @@ def check(work, cube, run=None):
           f"{'保留率':>9}{'校正後':>9}")
     print("-" * 61)
     far_res = float(np.nanmedian(np.nanmean(sub[:, far], axis=1)))
+    drawn = {}
     for nm, m in Z.items():
         if m.sum() < 30:
             print(f"{nm:>12}{int(m.sum()):>8}   格數不足")
             continue
         P = float(np.nanmedian(np.nanmean(raw[:, m], axis=1) - rf))
         v = float(np.nanmedian(np.nanmean(sub[:, m], axis=1)))
+        drawn[nm] = m
         if nm == "far" or abs(P) <= 1e-6:
             print(f"{nm:>12}{int(m.sum()):>8}{P:>11.4f}{v:>10.4f}"
                   f"{'—':>9}{'—':>9}")
         else:
             print(f"{nm:>12}{int(m.sum()):>8}{P:>11.4f}{v:>10.4f}"
                   f"{v / P:>9.2f}{(v - far_res) / P:>9.2f}")
+
+    # 環的地圖和環的光譜放同一個目錄 —— 看 zone/main_3_10.png 的時候,要知道
+    # 那一圈在哪,不必再回去找另一支腳本的輸出。
+    draw(work, white, drawn, pointing_dir(work, "zone") / "map.png")
 
 
 CUBES = {"p04": "data/wshy/DATACUBE_FINAL_4.fits",
