@@ -11,6 +11,8 @@
 #
 # 白光仍然從 nosky 算:它不再用於偵測,但下游要靠它找主源(最亮像素所在的那一團),
 # wsky 的天空連續譜會把整張圖墊高,最亮像素的位置就不可靠了。
+# 每一步的完整輸出寫進 $W/stepN.log。step3 的空間限制統計、step4 的逐源分類表
+# (含 margin 欄 —— 那是分類穩不穩的唯一指標)只印在終端機的話,跑完就永久消失。
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
@@ -58,7 +60,8 @@ for N in "$@"; do
   T0=$(date +%s)
 
   echo "--- [1/6] step1 白光（從 nosky）"
-  $RUN src/skymodel/step1_whitelight.py "$NOSKY" --out "$W/step01" >/dev/null
+  $RUN src/skymodel/step1_whitelight.py "$NOSKY" --out "$W/step01" \
+       > "$W/step1.log" 2>&1
 
   echo "--- [2/6] 教授的 segmentation"
   PROF_SEG=$ROOT/data/wsky_seg/DATACUBE_FINAL_${N}_seg.fits
@@ -76,12 +79,12 @@ print(f'    {len(np.unique(s))-1} 個源,遮罩 {100*(s>0).mean():.1f}%')"
 
   echo "--- [3/6] step2 源光譜（nosky,分類用）"
   $RUN src/skymodel/step2_object_spectra.py --work "$W" --cube "$NOSKY" \
-       --out "$W/step02" >/dev/null
+       --out "$W/step02" > "$W/step2.log" 2>&1
 
   echo "--- [4/6] step3 sky basis（學天光的範圍：${REGION[*]}）"
   $RUN src/skymodel/step3_sky_basis.py --methods svd -K 30 \
        --work "$W" --cube "$WSKY" "${REGION[@]}" 2>&1 \
-       | grep -E "空間限制|exclude-box|blank spaxels|svd "
+       | tee "$W/step3.log" | grep -E "空間限制|exclude-box|blank spaxels|svd "
 
   echo "--- [5/6] step4 模板擬合與分類"
   # step4 的可變參數集中在這裡,底下的 BEST 用同一組變數組出檔名 —— 改了參數
@@ -91,15 +94,15 @@ print(f'    {len(np.unique(s))-1} 個源,遮罩 {100*(s>0).mean():.1f}%')"
   LITER=1
   $RUN src/skymodel/step4_fit_source.py --id all --basis svd -K 30 --s-fix "$SFIX" \
        --star-window "${WIN[@]}" --gal-window "${WIN[@]}" --line-mask-iter "$LITER" \
-       --spec-dir "$W/step02" --work "$W" --num-workers 16 2>&1 | tail -3
+       --spec-dir "$W/step02" --work "$W" 2>&1 | tee "$W/step4.log" | tail -3
 
   echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
   # 檔名的組法是 step4_fit_source.py 的 make_tag();這裡是它的第二份實作,
   # 所以組成的每一段都必須來自上面那組變數,不能手抄。
   BEST=$W/step04/classification_nobasis_s${SFIX}_${WIN[0]}-${WIN[1]}_${WIN[0]}-${WIN[1]}_L${LITER}cum.npz
   $RUN src/skymodel/step5_fit_spaxels.py --basis svd -K 30 --s-field \
-       --work "$W" --cube "$WSKY" --sky-dir "$W/step03" --best "$BEST" 2>&1 \
-       | grep -E "s 空間場|ridge|blank 以場|源區域|saved"
+       --work "$W" --cube "$WSKY" --best "$BEST" 2>&1 \
+       | tee "$W/step5.log" | grep -E "s 空間場|ridge|blank 以場|源區域|saved"
 
   echo "*** pointing #$N 完成，耗時 $(( $(date +%s) - T0 )) 秒"
   df -h "$ROOT" | tail -1

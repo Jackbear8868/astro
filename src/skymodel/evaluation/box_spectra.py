@@ -276,13 +276,15 @@ def smooth(a, w):
 
 def main():
     ap = argparse.ArgumentParser(description="方框裡的平均光譜(新 basis + s 場)")
-    ap.add_argument("--work", default="results/skymodel/ne_pointing")
-    ap.add_argument("--run", default="step03_half_svdK30_tpl68_sfield",
-                    help="要看的 step05 輸出目錄名(新 basis + s 空間場)")
-    ap.add_argument("--ref-run", default="blank_svdK30_tpl68_s1",
+    ap.add_argument("--work", required=True,
+                    help="pointing 的工作區,例如 results/skymodel/p01")
+    ap.add_argument("--run", default=None,
+                    help="要看的 step05 輸出目錄名;預設取唯一的 *_sfield")
+    ap.add_argument("--ref-run", default="none",
                     help="對照的舊 run;none = 不畫")
-    ap.add_argument("--eso", default="data/Haro11_NEpointing_esonosky.fits",
-                    help="外部基準;none = 不畫")
+    ap.add_argument("--eso", default=None,
+                    help="外部基準;預設由 pNN 的編號推出該顆自己的 ESO nosky。"
+                         "none = 不畫")
     ap.add_argument("--half", type=int, default=6, help="方框半寬,框寬 = 2*half+1")
     ap.add_argument("--n-blank", type=int, default=4)
     ap.add_argument("--edge", type=float, nargs="+", default=[7, 20],
@@ -302,6 +304,14 @@ def main():
     args = ap.parse_args()
 
     W    = ROOT / args.work
+    # 預設值一律由工作區推出來 —— 寫死的話換一顆 pointing 就會拿另一顆的 cube
+    # 當基準,而圖看起來完全正常。
+    runs = sorted((W / "step05").glob("*_sfield"))
+    if not args.run and len(runs) != 1:
+        raise SystemExit(f"★ {W/'step05'} 底下有 {len(runs)} 個 *_sfield,請用 --run 指定")
+    args.run = args.run or runs[0].name
+    if args.eso is None:
+        args.eso = f"data/nosky/DATACUBE_FINAL_ESOSKY_{int(W.name[1:])}.fits"
     seg, white, _ = load_field(W)
     run   = W / "step05" / args.run
     wl    = np.load(W / "step03/wavelength.npy")

@@ -142,6 +142,9 @@ def build_templates(best, lam_vac):
     dict
         {segmentation ID: 已紅移到 lam_vac 的模型, shape (nz, n_comp)}
     """
+    # qso 這一支目前到不了 —— step4_fit_source 的候選只有 23 條恆星模板與星系
+    # 本徵譜,不會產生 group == "qso"。留著是因為模板讀得進來、加回候選只要改
+    # step4;拿掉的話下次要用得重寫。
     eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
     out   = {}
     # 不能只看 A[:, 0] —— 本徵譜沒有非負約束,主導成分的係數可以是 0 或負的,
@@ -324,8 +327,8 @@ def fit_source(D, var, sky, T, s_fix=None, progress=False):
 def main():
     ap = argparse.ArgumentParser(description="逐 spaxel 擬合天空與源模板")
     ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, default=25,
-                    help="天光線 basis 條數;必須和 step3/step4b 用的 K 相同")
+    ap.add_argument("-K", type=int, required=True,
+                    help="天光線 basis 條數。必填 —— 三個 step 必須用同一個 K,而各自帶一個預設值時,漏給的那一步會安靜地讀到另一組 basis")
     ap.add_argument("--s-fix", type=float, default=None,
                     help="源區域的天空連續譜係數固定值(不給時為 1.0)。"
                          "blank 區一律保持自由。與 --s-field 互斥 —— 開了空間場之後 "

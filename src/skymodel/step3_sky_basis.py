@@ -10,6 +10,9 @@ from sklearn.decomposition import PCA, TruncatedSVD
 
 from utils import estimate_continuum
 import argparse
+import json
+import sys
+import subprocess
 import time
 
 SEED       = 0           # 所有分解共用的亂數種子,確保 basis 可重現
@@ -96,7 +99,8 @@ def main():
     ap = argparse.ArgumentParser(description="從 blank spaxels 學天空連續譜與天光線 basis")
     ap.add_argument("--methods", nargs="+", default=["pca", "svd"],
                     choices=METHODS, help="要跑哪些分解方法")
-    ap.add_argument("-K", type=int, default=K, help="basis 條數")
+    ap.add_argument("-K", type=int, required=True,
+                    help="天光線 basis 條數。必填 —— 三個 step 必須用同一個 K,而各自帶一個預設值時,漏給的那一步會安靜地讀到另一組 basis")
     ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
                     help="只用這個 x 範圍(像素,含 LO 不含 HI)的 blank spaxel 學天空。"
                          "用途:主源的延展暈會滲進附近的 blank 樣本,限制在遠離它的"
@@ -226,6 +230,29 @@ def main():
         basis = learn_sky_basis(residual, K=args.K, method=method)
         np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
+
+    # 產物的 provenance。檔名只帶 method 與 K,學天空的範圍、用了哪份 seg、
+    # 哪顆 cube 都不在檔名裡 —— 換一組 REGION 重跑會靜默覆蓋,而下游只記得
+    # 「sky_dir = .../step03」,看不出換過。這一份就是那個唯一的紀錄。
+    def rel(q):
+        q = Path(q)
+        try:
+            return str(q.resolve().relative_to(ROOT))
+        except ValueError:
+            return str(q)
+
+    (out_dir / "meta.json").write_text(json.dumps(dict(
+        created=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                                  capture_output=True, text=True,
+                                  cwd=ROOT).stdout.strip(),
+        cube=rel(args.cube), seg=rel(seg_f), work=rel(work),
+        methods=list(args.methods), K=args.K,
+        xlim=args.xlim, ylim=args.ylim, exclude_box=args.exclude_box,
+        n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
+        argv=sys.argv[1:],
+    ), indent=2, ensure_ascii=False) + "\n")
+    print(f"meta -> {out_dir / 'meta.json'}")
 
 
 if __name__ == "__main__":

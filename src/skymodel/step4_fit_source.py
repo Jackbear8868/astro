@@ -53,8 +53,9 @@ from templates import (load_sdss_template, load_eigen_galaxy, redshift_to_grid,
 from utils import load_line_masks
 
 ROOT      = Path(__file__).resolve().parents[2]
-# 這四個必須是模組層級的全域 —— multiprocessing 的 worker 重新 import 這個模組,
-# 看不到 main() 的區域變數。main() 依 --work 賦值,在開 Pool 之前。
+# 這三個必須是模組層級的全域 —— multiprocessing 的 worker 由 fork 產生,
+# 只看得到 fork 當下的模組全域,看不到 main() 的區域變數。
+# main() 依 --work 賦值,在開 Pool 之前。
 STEP02B = STEP03 = STEP04 = None
 TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
@@ -66,8 +67,10 @@ N_SRC    = 4                # A 欄位固定寬度:本徵譜 4 條,恆星只用�
 # 兩段各自的波長視窗 (A, 空氣波長)。改這裡就等於改預設值;
 # 也可以在命令列用 --star-window / --gal-window 覆蓋,不必動程式。
 # 視窗會編進輸出的 tag,所以不同視窗的結果各存各的,不互相覆蓋。
-# 下限三者取同一個值 —— MUSE 的第一個通道在 4599.7 A,所以 4600 就是「從頭開始」;
-# 起點一致,三個視窗的差別才單純是「右邊延伸到哪」。
+# 下限三者取同一個值,三個視窗的差別才單純是「右邊延伸到哪」。
+# 4600 不等於「從頭開始」—— 13 顆的第一個通道在 4599.6-4600.3 A,但 p14 是
+# 4749.83 A(只有 3681 個通道)。實際起點以各 cube 的第一個通道為準;同一顆
+# 內部的 reduced chi2 比較不受影響,因為兩條分支用同一組通道。
 # 兩個視窗必須相同(見上面「兩個視窗必須相同」那一段),所以 reminder.txt 那組
 # 4600-6000 / 4600-7000 不能照字面用 —— 分母的 n_good 會不同,reduced chi2 之間
 # 就不可比。取兩者的聯集上界 8000,下界維持 reminder.txt 的 4600。
@@ -300,7 +303,8 @@ def main():
     ap = argparse.ArgumentParser(description="單階段源模板擬合(固定視窗 + 天光線遮罩)")
     ap.add_argument("--id",    default="all",           help="segmentation ID,或 all")
     ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, default=30, help="天光線 basis 條數,須與 step3 相同")
+    ap.add_argument("-K", type=int, required=True,
+                    help="天光線 basis 條數。必填 —— 三個 step 必須用同一個 K,而各自帶一個預設值時,漏給的那一步會安靜地讀到另一組 basis")
     ap.add_argument("--star-window", type=float, nargs=2, default=STAR_WINDOW,
                     metavar=("LO", "HI"), help="恆星模板的擬合視窗 (A, air);須與 --gal-window 相同")
     ap.add_argument("--gal-window", type=float, nargs=2, default=GAL_WINDOW,
@@ -359,8 +363,8 @@ def main():
     args = ap.parse_args()
     over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
     work    = Path(args.work)
-    # 這四個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
-    # 行程裡執行,看不到 main() 的區域變數(worker 是重新 import 這個模組的)。
+    # 這三個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
+    # 行程裡執行,看不到 main() 的區域變數(worker 由 fork 產生,看得到的是 fork 當下的模組全域)。
     global STEP02B, STEP03, STEP04
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
@@ -470,7 +474,7 @@ def main():
 
         _SHARED.update(ids=ids, flux=flux, var=var, nspax=nspax, sky=sky,
                        star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
-                       fit_star=fit_star, fit_gal=fit_gal, z_exg=z_exg,
+                       fit_star=fit_star, fit_gal=fit_gal,
                        tag=tag, s_fix=s_fix,
                        allow_partial=args.allow_partial)
 
@@ -494,6 +498,10 @@ def main():
         out = STEP04 / f"best_{tag}.npz"
         if out.exists():
             old = np.load(out, allow_pickle=False)
+            if set(old.files) != set(KEYS):
+                print(f"  ★ {out.name} 的欄位和現行格式不同,整份捨棄不併入。"
+                      f"\n    舊 {sorted(set(old.files) - set(KEYS))}"
+                      f"  缺 {sorted(set(KEYS) - set(old.files))}")
             if set(old.files) == set(KEYS):
                 keep = ~np.isin(old["id"], new["id"])
                 if keep.any():
