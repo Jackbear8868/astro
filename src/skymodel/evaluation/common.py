@@ -42,10 +42,9 @@ def pointing_dir(name, *sub):
 
 
 # 疊在 magma 底圖上的輪廓顏色。magma 走「黑 -> 紫 -> 橘 -> 淡黃」,所以輪廓不能
-# 用黑、橘、黃 —— 那些是色帶本身的顏色,線和暗處/亮處的資料分不開。青與亮綠都
-# 落在色帶之外,疊上去一定看得見。
-SEG_COLOR  = "#39ff14"      # segmentation 的邊界
-MAIN_COLOR = "#00e5ff"      # 主源分組(紅移判準認定屬於同一個星系的那幾塊)
+# 用黑、橘、黃 —— 那些是色帶本身的顏色,線和暗處/亮處的資料分不開。亮綠落在色帶
+# 之外,疊上去一定看得見。
+SEG_COLOR = "#39ff14"
 
 
 def asinh_bar(fig, im, ax, label, lo, hi):

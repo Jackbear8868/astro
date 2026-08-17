@@ -33,8 +33,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (MAIN_COLOR, ROOT, SEG_COLOR, asinh_bar, collapse,
-                    load_field, pointing_dir)  # noqa: E402
+from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
+                    pointing_dir)  # noqa: E402
 from utils import main_source_group, scale  # noqa: E402
 
 
@@ -91,15 +91,9 @@ def main():
     for a in ax:
         a.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.5,
                   alpha=.75)
-        a.contour(main, levels=[0.5], colors=MAIN_COLOR, linewidths=1.4)
+        # 主源的輪廓和 seg 同色,只用線寬分 —— 兩者本來就是同一件事的粗細層級
+        a.contour(main, levels=[0.5], colors=SEG_COLOR, linewidths=1.4)
         a.set_xticks([]); a.set_yticks([])
-    # 輪廓要有圖例,否則讀圖的人分不出哪條線是什麼 —— 兩條都是我們畫上去的
-    # 標註,不是資料。
-    ax[0].legend(handles=[plt.Line2D([], [], color=SEG_COLOR, lw=2,
-                                     label="segmentation"),
-                          plt.Line2D([], [], color=MAIN_COLOR, lw=2,
-                                     label=f"main source group ({len(ids)} seg IDs)")],
-                 fontsize=9, loc="lower left", framealpha=0.8)
     fig.suptitle(f"{W.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     o = pointing_dir(W.name) / "whitelight_compare.png"

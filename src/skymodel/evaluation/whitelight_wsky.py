@@ -75,9 +75,6 @@ def main():
                    vmin=np.arcsinh(args.vmin_sigma),
                    vmax=np.arcsinh(np.nanmax(z)))
     ax.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.6, alpha=.8)
-    ax.legend(handles=[plt.Line2D([], [], color=SEG_COLOR, lw=2,
-                                  label="segmentation")],
-              fontsize=9, loc="lower left", framealpha=0.8)
     ax.set_xticks([]); ax.set_yticks([])
     asinh_bar(fig, im, ax, "signal above sky   [$\\sigma$ of blank]",
               args.vmin_sigma, float(np.nanmax(z)))
