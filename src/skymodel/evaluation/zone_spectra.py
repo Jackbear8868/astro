@@ -10,8 +10,8 @@ check_pointing 的四個環各自回答一個問題,這支腳本把那四個數�
     main 3-10    Haro 11 外圍 3-10 px,延展的暈。
                  後兩者是我們要保住的東西,線壓得越低代表源被吃掉越多。
 
-環的定義和 check_pointing 完全相同,一律取 seg == 0 的格 —— 偵測不到的地方不代表
-沒有源的光,而那正是最容易被過度扣除的位置。
+環的定義來自 common.zones,和 check_pointing 是同一份 —— 一律取 seg == 0 的格,
+偵測不到的地方不代表沒有源的光,而那正是最容易被過度扣除的位置。
 
 每個環畫兩層:細線是逐通道的平均光譜,粗線是移動平均。雜訊被壓成 1/sqrt(N) 之後,
 零點的偏移才浮得出來。
@@ -24,16 +24,15 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
-from scipy import ndimage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT, load_field, zones  # noqa: E402
 from utils import galaxy_redshifts, main_source_group, scale  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
-FIG  = ROOT / "results/skymodel/evaluation/acceptance"
+FIG = EVAL / "acceptance"
 
 # 主星系的強發射線,靜止空氣波長。step03/wavelength.npy 存的是空氣波長
 # (step4b 讀進去的變數就叫 wl_air),所以這裡也必須用空氣值,不能混真空值。
@@ -42,22 +41,6 @@ LINES = [(4861.33, "Hb"), (4958.91, "[O III]"), (5006.84, "[O III]"),
          (5875.6, "He I"), (6300.30, "[O I]"), (6548.05, "[N II]"),
          (6562.82, "Ha"), (6583.45, "[N II]"), (6716.44, "[S II]"),
          (6730.81, "[S II]"), (7135.8, "[Ar III]"), (9068.6, "[S III]")]
-
-
-def zones(seg, white):
-    """和 check_pointing 相同的四個環。"""
-    main, _, _ = main_source_group(seg, np.where(white != 0, white, np.nan))
-    edge   = ndimage.distance_transform_edt(white != 0)
-    d_all  = ndimage.distance_transform_edt(seg == 0)
-    d_main = ndimage.distance_transform_edt(~main)
-    others = (seg > 0) & ~main
-    d_oth  = (ndimage.distance_transform_edt(~others) if others.any()
-              else np.full(seg.shape, 1e9))
-    base = (seg == 0) & (white != 0) & (edge > 15)
-    return {"far":       base & (d_all > 30) & (d_main > 110),
-            "small 1-3": base & (d_oth > 1) & (d_oth <= 3) & (d_main > 30),
-            "main 1-3":  base & (d_main > 1) & (d_main <= 3) & (d_oth > 6),
-            "main 3-10": base & (d_main > 3) & (d_main <= 10) & (d_oth > 6)}
 
 
 def zone_mean(path, mask, hdu=None):
@@ -88,14 +71,13 @@ def main():
     FIG.mkdir(parents=True, exist_ok=True)
     for n in args.n:
         W   = ROOT / f"results/skymodel/p{n:02d}"
-        seg = fits.getdata(W / "step01/seg.fits").astype(int)
-        white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
+        seg, white, valid = load_field(W)
         wl  = np.load(W / "step03/wavelength.npy")
-        Z   = zones(seg, white)
+        main, _, pk = main_source_group(seg, np.where(valid, white, np.nan))
+        Z   = zones(seg, white, main)
 
         # 紅移取自這顆自己的擬合,不是寫死的常數 —— 逐顆略有差異,
         # 用別顆的值會讓標線和鼓包對不上而看不出來是對不上
-        _, _, pk = main_source_group(seg, np.where(white != 0, white, np.nan))
         pid = int(seg[pk])
         z = args.z if args.z is not None else galaxy_redshifts(W / "step04",
                                                                [pid])[pid]

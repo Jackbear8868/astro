@@ -23,13 +23,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import ROOT, load_field  # noqa: E402
 from utils import DV_MAX  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
 C_KMS = 299792.458
 
 
@@ -81,9 +80,8 @@ def main():
     rows = []
     for n in args.n:
         W = ROOT / f"results/skymodel/p{n:02d}"
-        seg = fits.getdata(W/"step01/seg.fits").astype(int)
-        white = np.asarray(fits.getdata(W/"step01/whitelight.fits"), float)
-        wn = np.where(white != 0, white, np.nan)
+        seg, white, valid = load_field(W)
+        wn = np.where(valid, white, np.nan)
         ids, _, k = blob_members(seg, wn)
         keep_area = area_keep(seg, ids, args.min_frac)
 

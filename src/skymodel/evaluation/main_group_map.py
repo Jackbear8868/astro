@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 from scipy import ndimage
 import matplotlib
 matplotlib.use("Agg")
@@ -26,10 +25,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT, arcsinh_stretch, load_field  # noqa: E402
 from utils import DV_MAX, main_source_group  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
-FIG  = ROOT / "results/skymodel/evaluation/masking/main_group"
+FIG = EVAL / "masking/main_group"
 
 
 def main():
@@ -44,9 +43,7 @@ def main():
     FIG.mkdir(parents=True, exist_ok=True)
     for n in args.n:
         W = ROOT / f"results/skymodel/p{n:02d}"
-        seg = fits.getdata(W / "step01/seg.fits").astype(int)
-        white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
-        valid = white != 0
+        seg, white, valid = load_field(W)
         wn = np.where(valid, white, np.nan)
         mg, ids, pk = main_source_group(seg, wn, W / "step04", args.dv_max)
         # 不給紅移就只做相鄰判準 —— 左圖要畫的正是「還沒篩」的那一團
@@ -57,9 +54,8 @@ def main():
         y0, x0 = 0, 0
         sub = np.s_[:, :]
 
-        v = np.nanpercentile(white[valid], 99.5)
-        bg = np.arcsinh(np.where(valid, white, np.nan) / (0.02 * v))[sub]
-        vmax = np.arcsinh(1 / 0.02)
+        stretched, vmax = arcsinh_stretch(white, valid)
+        bg = stretched[sub]
 
         fig, ax = plt.subplots(1, 2, figsize=(15, 7.2))
         cmap = plt.cm.tab20(np.linspace(0, 1, 20))

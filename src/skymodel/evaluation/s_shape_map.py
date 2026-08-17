@@ -26,17 +26,15 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT, load_field  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
-# 圖寫中央、檔名帶 pointing —— 放各自的工作區裡的話,要比較幾顆就得開幾個目錄。
-EVAL = ROOT / "results/skymodel/evaluation/s_field"
+FIG = EVAL / "s_field"
 
 
 def main():
@@ -51,9 +49,7 @@ def main():
     if not args.run and len(runs) != 1:
         raise SystemExit(f"★ {W/'step05'} 底下有 {len(runs)} 個 *_sfield,請用 --run 指定")
 
-    seg   = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
-    valid = white != 0
+    seg, white, valid = load_field(W)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
 
     s_free = np.load(run / "s_free.npy").astype(float)
@@ -102,8 +98,8 @@ def main():
                  f"> {p['r_far_haro']:.0f} px from Haro 11   "
                  f"(red = main source group, ids {ids})", fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    EVAL.mkdir(parents=True, exist_ok=True)
-    o = EVAL / f"s_shape_{W.name}.png"
+    FIG.mkdir(parents=True, exist_ok=True)
+    o = FIG / f"s_shape_{W.name}.png"
     fig.savefig(o, dpi=125, bbox_inches="tight")
     print(f"{W.name}  s_hat 中位 {np.nanmedian(s_hat[valid]):.4f}   "
           f"s_free-s_hat 中位 {np.median(d):+.4f}  散布 {np.std(d):.4f}   -> {o.name}")

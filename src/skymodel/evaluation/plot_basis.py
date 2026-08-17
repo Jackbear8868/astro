@@ -12,21 +12,21 @@
     e00.png …      每條 basis 一張
 
 用法:
-    python src/skymodel/tools/plot_basis.py --basis svd
-    python src/skymodel/tools/plot_basis.py --basis svd --ylim -0.1 0.3
-    python src/skymodel/tools/plot_basis.py --basis pca --ylim-sky 0 60
+    conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis svd
+    conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis svd --ylim -0.1 0.3
+    conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis pca --ylim-sky 0 60
 """
 import argparse
-from pathlib import Path
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT    = Path(__file__).resolve().parents[3]
+from common import EVAL, ROOT
+
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
+FIGURES = EVAL / "sky_basis"
 
 
 def main():

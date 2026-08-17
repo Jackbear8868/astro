@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT, arcsinh_stretch  # noqa: E402
 from utils import id_map  # noqa: E402
 
-ROOT    = Path(__file__).resolve().parents[3]
 SEGDIR  = ROOT / "data/wsky_seg"
-FIGURES = ROOT / "results/skymodel/evaluation/masking/prof_seg"
+FIGURES = EVAL / "masking/prof_seg"
 
 
 def load(n):
@@ -69,9 +69,8 @@ def overview(ns, out_path):
         a.axis("on"); a.set_xticks([]); a.set_yticks([])
         # 拉伸和 id_map 一致(asinh,以 99.5 分位的 2% 當軟閾值),
         # 這樣總覽和單張圖看起來是同一份資料。
-        v = np.nanpercentile(img[np.isfinite(img) & (img != 0)], 99.5)
-        a.imshow(np.arcsinh(img / (0.02 * v)), origin="lower", cmap="gray",
-                 vmin=0, vmax=np.arcsinh(1 / 0.02))
+        bg, vmax = arcsinh_stretch(img)
+        a.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
         a.contour(seg > 0, levels=[0.5], colors="#1f77b4", linewidths=0.6)
         n_src = int(seg.max())
         a.set_title(f"#{n}   {n_src} src   "

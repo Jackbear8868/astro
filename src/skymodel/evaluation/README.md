@@ -24,6 +24,7 @@
 | `compare_runs.py` | 幾個 step5 的 run 並排成白光圖 |
 | `prof_seg_maps.py` | 教授的 14 份 segmentation 長什麼樣 |
 | `seg_id_map.py` | 任一份 segmentation 的 source ID 對照圖 |
+| `plot_basis.py` | step3 學到的每一條天空 basis 長什麼樣 |
 
 `ROOT` 與 `import utils` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
 `experiments/` 在同一層，所以搬動不需要改路徑。

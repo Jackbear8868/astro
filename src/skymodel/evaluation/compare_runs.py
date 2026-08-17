@@ -20,32 +20,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT    = Path(__file__).resolve().parents[3]
+from common import EVAL, ROOT, collapse
+
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
-FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
-
-CLIP_SIGMA = 30      # 沿用 step3_sky_basis.py
+FIGURES = EVAL / "masking/edge_oversub"
 
 DEFAULT = [("baseline",            "blank_svdK30_tpl68_s1"),
            ("dilation r=4",        "blank_dil4_svdK30_tpl68_s1"),
            ("sky from x 0-170",    "blank_x0-170_svdK30_tpl68_s1"),
            ("both",                "blank_dil4_x0-170_svdK30_tpl68_s1")]
-
-
-def collapse(path, band, wl, seg):
-    """沿波長壓成影像,blank 先做跨 spaxel 的 sigma-clip(源區不剪)。"""
-    m = (wl >= band[0]) & (wl < band[1])
-    with fits.open(path, memmap=True) as h:
-        d = np.asarray(h[0].data[m], np.float32).copy()
-    blank = seg == 0
-    bl = d[:, blank]
-    p16, med, p84 = np.nanpercentile(bl, [16, 50, 84], axis=1)
-    sg  = np.maximum((p84 - p16) / 2, 1e-6)
-    bad = np.abs(bl - med[:, None]) > CLIP_SIGMA * sg[:, None]
-    d[:, blank] = np.where(bad, np.nan, bl)
-    return np.nanmean(d, axis=0), int(bad.sum())
 
 
 def main():
@@ -73,7 +58,7 @@ def main():
         f = STEP05 / run / "sky_subtracted.fits"
         if not f.exists():
             raise SystemExit(f"找不到 {f}")
-        imgs[lab], nbad = collapse(f, args.band, wl, seg)
+        imgs[lab], nbad, _ = collapse(f, args.band, wl, seg)
         print(f"{lab:20s} {run:38s} sigma-clip 剔除 {nbad:,}")
 
     # 共用拉伸:用第一個 run 算,四張都套同一組

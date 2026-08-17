@@ -14,7 +14,7 @@ blank spaxel 的模型(和 step4 的天空項完全相同,只是少了源):
 
 評測使用**全部** blank spaxel。
 
-用法:  python src/skymodel/step3_compare_basis.py
+用法:  conda run -n astro python src/skymodel/experiments/compare_basis.py
 """
 import time
 

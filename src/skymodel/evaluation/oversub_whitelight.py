@@ -28,49 +28,17 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT    = Path(__file__).resolve().parents[3]
+from common import CLIP_SIGMA, EVAL, ROOT, collapse
+
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
 STEP05  = ROOT / "results/skymodel/ne_pointing/step05"
 CUBE    = ROOT / "data/Haro11_NEpointing_wsky.fits"
-OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
-
-CLIP_SIGMA = 30   # 沿用 step3_sky_basis.py 的門檻與做法
+OUTDIR  = EVAL / "masking/edge_oversub"
 
 RUNS = [("s free",          "blank_svdK54_src9_s1_seg2s68"),
         ("s=1, full-field", "blank_svdK54_tpl68_s1_bs1"),
         ("s=1, x0-170",     "blankx0-170_svdK54_src68_s1_bs1_seg2s68")]
-
-
-def collapse(path, band, wl, seg, verbose=False):
-    """沿波長壓成一張影像,壞 voxel 先剔除再平均。
-
-    剔除的做法與門檻**沿用 step3_sky_basis.py 的 mean_sky**:同一通道、跨 spaxel,
-    中心取中位數、散布取 (p84 - p16) / 2(對離群值穩健),超過 30 sigma 的剔掉。
-    這樣就不需要另外挑一個絕對門檻。
-
-    但**只作用在 blank spaxel 上**。step3 那段註解給的理由是「一條天光線在每個
-    spaxel 都亮,它的亮度就在該通道的中位數裡,不會被剪掉」—— 這個理由對源
-    **不成立**:源只在少數 spaxel 亮,跨 spaxel 看它本來就是離群值。用同一把尺
-    去剪會把源的 spaxel 整條剪光,nanmean 變成 NaN。所以源區不剪。
-    """
-    m = (wl >= band[0]) & (wl < band[1])
-    with fits.open(path, memmap=True) as h:
-        d = np.asarray(h[0].data[m] if h[0].data is not None else h["DATA"].data[m],
-                       np.float32)
-    blank = (seg == 0)
-    bl    = d[:, blank]                                  # (nchan, n_blank)
-    p16, med, p84 = np.nanpercentile(bl, [16, 50, 84], axis=1)
-    sg   = np.maximum((p84 - p16) / 2, 1e-6)
-    bad  = np.abs(bl - med[:, None]) > CLIP_SIGMA * sg[:, None]
-    bl   = np.where(bad, np.nan, bl)
-    d    = d.astype(np.float32).copy()
-    d[:, blank] = bl
-    if verbose:
-        print(f"  sigma-clip {CLIP_SIGMA} sigma(只剪 blank):剔除 "
-              f"{int(np.nansum(bad)):,} / {bad.size:,} 個元素 "
-              f"({100 * np.nanmean(bad):.6f}%)")
-    return np.nanmean(d, axis=0)
 
 
 def show(a, img, seg, v, title, cmap="RdBu_r"):
@@ -206,10 +174,13 @@ def main():
     wl    = np.load(STEP03 / "wavelength.npy")
 
     for band in bands:
-        raw  = collapse(CUBE, band, wl, seg)
-        imgs = {name: collapse(STEP05 / r / "sky_subtracted.fits",
-                               band, wl, seg, verbose=True)
-                for name, r in RUNS}
+        raw  = collapse(CUBE, band, wl, seg)[0]
+        imgs = {}
+        for name, r in RUNS:
+            imgs[name], nbad, ntot = collapse(STEP05 / r / "sky_subtracted.fits",
+                                              band, wl, seg)
+            print(f"  sigma-clip {CLIP_SIGMA} sigma(只剪 blank):剔除 "
+                  f"{nbad:,} / {ntot:,} 個元素 ({100 * nbad / ntot:.6f}%)")
         base = imgs["s=1, x0-170"]
 
         # 色階從 blank 區的散布定出來 —— 不是影像最大值。用中位絕對偏差換算 sigma,

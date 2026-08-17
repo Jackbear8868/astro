@@ -21,11 +21,11 @@ from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT
 from utils import id_map
 
-ROOT    = Path(__file__).resolve().parents[3]
 STEP01  = ROOT / "results/skymodel/ne_pointing/step01"
-FIGURES = ROOT / "results/skymodel/evaluation/masking"
+FIGURES = EVAL / "masking"
 
 
 def main():

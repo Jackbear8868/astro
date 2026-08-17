@@ -34,37 +34,23 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
-from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import ROOT, load_field, zones  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
 # 乾淨窗口:沒有強天光線、也沒有 Haro 11 的強發射線,量連續譜用
 WINDOWS = ((5250, 5450), (5600, 5750), (6050, 6200))
 
 
 def check(work, cube, run=None):
     W = ROOT / "results/skymodel" / work
-    seg = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = fits.getdata(W / "step01/whitelight.fits")
+    seg, white, _ = load_field(W)
     wl = np.load(W / "step03/wavelength.npy")
     ch = np.flatnonzero(np.logical_or.reduce([(wl >= a) & (wl < b) for a, b in WINDOWS]))
 
     main, mids, _ = main_source_group(seg, white, W / "step04")
-    edge = ndimage.distance_transform_edt(white != 0)
-    d_all = ndimage.distance_transform_edt(seg == 0)
-    d_main = ndimage.distance_transform_edt(~main)
-    others = (seg > 0) & ~main
-    d_oth = ndimage.distance_transform_edt(~others) if others.any() else d_all * 0 + 1e9
-    base = (seg == 0) & (white != 0) & (edge > 15)
-
-    zones = {
-        "far":        base & (d_all > 30) & (d_main > 110),
-        "small 1-3":  base & (d_oth > 1) & (d_oth <= 3) & (d_main > 30),
-        "main 1-3":   base & (d_main > 1) & (d_main <= 3) & (d_oth > 6),
-        "main 3-10":  base & (d_main > 3) & (d_main <= 10) & (d_oth > 6),
-    }
+    Z = zones(seg, white, main)
 
     def band(p, hdu=0):
         with fits.open(p, memmap=True) as h:
@@ -83,7 +69,7 @@ def check(work, cube, run=None):
                          + "\n  ".join(p.parent.name for p in subs))
     sub = band(subs[0])
     print(f"  run = {subs[0].parent.name}")
-    far = zones["far"]
+    far = Z["far"]
     if far.sum() < 30:
         print(f"{work}: 遠場格數不足({int(far.sum())}),無法定基線"); return
     rf = np.nanmean(raw[:, far], axis=1)
@@ -94,7 +80,7 @@ def check(work, cube, run=None):
           f"{'保留率':>9}{'校正後':>9}")
     print("-" * 61)
     far_res = float(np.nanmedian(np.nanmean(sub[:, far], axis=1)))
-    for nm, m in zones.items():
+    for nm, m in Z.items():
         if m.sum() < 30:
             print(f"{nm:>12}{int(m.sum()):>8}   格數不足")
             continue

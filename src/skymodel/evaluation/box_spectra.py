@@ -51,12 +51,10 @@ import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import EVAL, ROOT, load_field  # noqa: E402
 from utils import main_source_group, scale, spectrum_stats  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
-# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
-EVAL = ROOT / "results/skymodel/evaluation/acceptance"
+FIG = EVAL / "acceptance"
 
 Z_HARO = 0.0204
 LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
@@ -276,8 +274,7 @@ def main():
     args = ap.parse_args()
 
     W    = ROOT / args.work
-    seg  = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
+    seg, white, _ = load_field(W)
     run   = W / "step05" / args.run
     wl    = np.load(W / "step03/wavelength.npy")
     s_hat = np.load(run / "s_hat.npy") if (run / "s_hat.npy").exists() else None
@@ -300,7 +297,7 @@ def main():
             print(f"讀完 {tag}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
         out = Path(args.out) if args.out else \
-            EVAL / f"box_pdf_{args.run}_{W.name}.pdf"
+            FIG / f"box_pdf_{args.run}_{W.name}.pdf"
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, wl, tri, out, f"{args.work}  [{args.run}]", args.smooth)
         draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
@@ -369,7 +366,7 @@ def main():
     fig.suptitle(f"sky status in spatial boxes   {args.work}  [{args.run}]",
                  fontsize=12)
     out = Path(args.out) if args.out else \
-        EVAL / f"box_spectra_{args.run}_{W.name}.png"
+        FIG / f"box_spectra_{args.run}_{W.name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=135, bbox_inches="tight")
     plt.close(fig)
