@@ -29,10 +29,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, load_field, zones  # noqa: E402
+from common import ROOT, load_field, pointing_dir, slug, zones  # noqa: E402
 from utils import galaxy_redshifts, main_source_group, scale  # noqa: E402
 
-FIG = EVAL / "acceptance"
 
 # 主星系的強發射線,靜止空氣波長。step03/wavelength.npy 存的是空氣波長
 # (step4b 讀進去的變數就叫 wl_air),所以這裡也必須用空氣值,不能混真空值。
@@ -68,7 +67,6 @@ def main():
                     help="標線用的紅移。省略 = 用 step4b 對最亮像素所在那塊擬合的值")
     args = ap.parse_args()
 
-    FIG.mkdir(parents=True, exist_ok=True)
     for n in args.n:
         W   = ROOT / f"results/skymodel/p{n:02d}"
         seg, white, valid = load_field(W)
@@ -103,9 +101,9 @@ def main():
                 for nm, m in Z.items()}
         off = {lbl: float(np.nanmean(spec["far"][lbl])) for lbl, *_ in runs}
 
-        fig, axes = plt.subplots(len(Z), 1, figsize=(19, 3.4 * len(Z)),
-                                 sharex=True)
-        for ax, (nm, m) in zip(np.atleast_1d(axes), Z.items()):
+        zdir = pointing_dir(f"p{n:02d}", "zone")
+        for nm, m in Z.items():
+            fig, ax = plt.subplots(figsize=(19, 4.6))
             ax.axhline(0, color="0.5", lw=0.8, zorder=1)
             for rest, nm_l in LINES:
                 obs = rest * (1 + z)
@@ -127,14 +125,12 @@ def main():
             a, b = min(lo), max(hi)
             pad = 0.35 * max(b - a, 1e-3)
             ax.set_ylim(min(a - pad, -pad), b + pad)
-            # 標籤只寫在最上面那一格,每格都寫會把圖蓋掉
-            if nm == "far":
-                y0, y1 = ax.get_ylim()
-                for rest, nm_l in LINES:
-                    obs = rest * (1 + z)
-                    if wl[0] <= obs <= wl[-1]:
-                        ax.text(obs, y1, f" {nm_l}", color="#6a3d9a", fontsize=8,
-                                rotation=90, va="top", ha="left", zorder=5)
+            y0, y1 = ax.get_ylim()
+            for rest, nm_l in LINES:
+                obs = rest * (1 + z)
+                if wl[0] <= obs <= wl[-1]:
+                    ax.text(obs, y1, f" {nm_l}", color="#6a3d9a", fontsize=8,
+                            rotation=90, va="top", ha="left", zorder=5)
             ax.set_ylabel("flux  [$10^{-20}$ cgs]", fontsize=9)
             ax.legend(fontsize=9, loc="upper right", framealpha=0.92, ncol=1)
             ax.set_title(f"{nm}    {int(m.sum()):,} spaxels"
@@ -144,16 +140,16 @@ def main():
                          fontsize=10, loc="left")
             if args.ylim:
                 ax.set_ylim(*args.ylim)
-        np.atleast_1d(axes)[-1].set_xlabel("wavelength [$\\AA$]", fontsize=10)
-        fig.suptitle(f"p{n:02d}   zone mean spectra   "
-                     f"(thin = per channel, thick = {args.smooth}-channel mean)"
-                     f"   —   dotted violet = Haro 11 emission lines at z = {z:.4f}",
-                     fontsize=13)
-        fig.tight_layout()
-        out = FIG / f"zone_spectra_p{n:02d}.png"
-        fig.savefig(out, dpi=120, bbox_inches="tight")
-        plt.close(fig)
-        print(f"saved -> {out}")
+            ax.set_xlabel("wavelength [$\\AA$]", fontsize=10)
+            fig.suptitle(f"p{n:02d}   zone «{nm}»   "
+                         f"(thin = per channel, thick = {args.smooth}-channel mean)"
+                         f"   —   dotted violet = Haro 11 emission lines at "
+                         f"z = {z:.4f}", fontsize=13)
+            fig.tight_layout()
+            out = zdir / f"{slug(nm)}.png"
+            fig.savefig(out, dpi=120, bbox_inches="tight")
+            plt.close(fig)
+            print(f"saved -> {out}")
 
 
 if __name__ == "__main__":

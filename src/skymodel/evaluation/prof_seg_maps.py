@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, arcsinh_stretch  # noqa: E402
+from common import EVAL, ROOT, arcsinh_stretch, pointing_dir  # noqa: E402
 from utils import id_map  # noqa: E402
 
 SEGDIR  = ROOT / "data/wsky_seg"
-FIGURES = EVAL / "masking/prof_seg"
+FIGURES = EVAL / "masking/prof_seg"          # overview.png 不屬於任何一顆
 
 
 def load(n):
@@ -92,13 +92,12 @@ def main():
     ap.add_argument("--no-overview", action="store_true")
     args = ap.parse_args()
 
-    FIGURES.mkdir(parents=True, exist_ok=True)
     print(f"{'':>4}{'源數':>6}{'源像素':>10}{'佔視野':>8}"
           f"{'最大三塊佔源流量':>18}")
     for n in args.n:
         seg, img = load(n)
         rows, n_all = rows_from(seg, args.min_area)
-        out = FIGURES / f"id_map_p{n:02d}.png"
+        out = pointing_dir(f"p{n:02d}") / "prof_seg.png"
         id_map(seg, img, rows, out, by_group=False)
 
         # 主源被拆成幾塊,是這批資料反覆出現的問題 —— 順手量出來,
@@ -110,7 +109,7 @@ def main():
         print(f"#{n:<3}{n_all:>6}{int((seg > 0).sum()):>10,}"
               f"{100 * (seg > 0).mean():>7.1f}%"
               + "".join(f"{100 * f / tot:>6.1f}%" for f in top))
-    print(f"\n每顆一張 -> {FIGURES}")
+    print("\n每顆一張 -> results/skymodel/evaluation/pNN/prof_seg.png")
     if not args.no_overview:
         overview(args.n, FIGURES / "overview.png")
 

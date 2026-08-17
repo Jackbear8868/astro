@@ -39,7 +39,7 @@ from utils import spectrum_stats  # noqa: E402
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
 # 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
-EVAL = ROOT / "results/skymodel/evaluation/acceptance"
+EVAL = ROOT / "results/skymodel/evaluation/subtraction_check"
 
 Z_HARO = 0.0204
 LINES  = [("[O II]", 3727.0), ("Hb", 4861.3), ("[O III]", 4958.9),

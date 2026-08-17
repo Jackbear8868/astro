@@ -1,6 +1,6 @@
 """方框裡的平均光譜 —— 天空扣乾淨了嗎、源有沒有被扣掉。
 
-一個方框一格、右邊放統計。畫的是 step5 實際輸出的 sky_subtracted
+一個方框一張圖、右邊放統計。畫的是 step5 實際輸出的 sky_subtracted
 (= 資料 − 天空),**源留在裡面**,不是 資料 − 天空 − 源模型。
 
 理由是原則 1:只看殘差判斷不了好壞 —— 把源一起扣光,殘差同樣會變小。
@@ -24,13 +24,13 @@
 「離主源的距離」決定,blank 沿距離均勻取。方框必須整框落在該類區域裡(用
 minimum_filter 檢查),否則標籤和內容會不符。
 
-兩種輸出
---------
-    預設(PNG)  一個方框一列,三條線並排比。需要 ESO nosky 和舊 run 當對照,
-               所以只有 NE 工作區畫得出來。
+兩種輸出,都寫進 results/skymodel/evaluation/pNN/box/
+--------------------------------------------------
+    預設(PNG)  一個方框一張圖,三條線疊在一起比。`_layout.png` 標出方框在
+               視場的哪裡。缺 ESO 或舊 run 時用 --eso none / --ref-run none。
     --pdf      一頁一個方框,上格 raw vs sky model、下格殘差。**只用這個 run
                自己的三份資料**(原始 cube / sky_model.fits / sky_subtracted.fits),
-               不需要任何外部對照,所以 14 顆 pointing 都畫得出來。
+               不需要任何外部對照。
 
     conda run -n astro python src/skymodel/evaluation/box_spectra.py
     conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
@@ -51,13 +51,13 @@ import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, load_field  # noqa: E402
+from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
 from utils import main_source_group, scale, spectrum_stats  # noqa: E402
-
-FIG = EVAL / "acceptance"
 
 Z_HARO = 0.0204
 LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
+
+
 
 # 顏色編的是角色:外部基準橘、舊做法灰、要看的那條藍。
 # 標籤一律英文 —— matplotlib 預設字型沒有中文字符,中文會變成一格格的豆腐。
@@ -270,7 +270,9 @@ def main():
                          "這個模式只看**這一個 run 自己**(raw / model / resid),"
                          "不需要 ESO 或舊 run 當對照,所以每顆 pointing 都畫得出來。"
                          "raw 的路徑從 run 的 meta.json 讀 —— 手打的話遲早會拿錯一顆")
-    ap.add_argument("--out", default=None)
+    ap.add_argument("--out", default=None,
+                    help="輸出**目錄**;預設 results/skymodel/evaluation/pNN/box/。"
+                         "一個方框一張圖,檔名由方框名稱轉成")
     args = ap.parse_args()
 
     W    = ROOT / args.work
@@ -296,8 +298,8 @@ def main():
             h.close()
             print(f"讀完 {tag}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
-        out = Path(args.out) if args.out else \
-            FIG / f"box_pdf_{args.run}_{W.name}.pdf"
+        out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
+               else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, wl, tri, out, f"{args.work}  [{args.run}]", args.smooth)
         draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
@@ -320,14 +322,14 @@ def main():
         h.close()
         print(f"讀完 {m}")
 
-    nrow = len(boxes)
-    fig  = plt.figure(figsize=(15, 2.0 * nrow + 1.2))
-    gs   = fig.add_gridspec(nrow, 2, width_ratios=[6, 1.5], hspace=0.42,
-                            wspace=0.02, left=0.055, right=0.985,
-                            top=1 - 1.0 / (2.0 * nrow + 1.2), bottom=0.05)
+    outdir = Path(args.out) if args.out else pointing_dir(W.name, "box")
+    outdir.mkdir(parents=True, exist_ok=True)
     keys = ("mean", "sigma", "rms_from_zero")
-    for r, (nm, b) in enumerate(boxes.items()):
-        ax = fig.add_subplot(gs[r, 0])
+    for nm, b in boxes.items():
+        fig = plt.figure(figsize=(15, 4.2))
+        gs  = fig.add_gridspec(1, 2, width_ratios=[6, 1.5], wspace=0.02,
+                               left=0.055, right=0.985, top=0.86, bottom=0.13)
+        ax = fig.add_subplot(gs[0, 0])
         ax.axhline(0, color="0.5", lw=0.6)
         for lab, y in curves[nm].items():
             ax.plot(wl, smooth(y, args.smooth), lw=0.5, color=COL[lab],
@@ -338,41 +340,36 @@ def main():
         v = np.concatenate([y[np.isfinite(y)] for y in curves[nm].values()])
         lo, hi = (float(x) for x in np.percentile(v, [0.5, 99.5]))
         pad = 0.30 * max(hi - lo, 1e-9)
-        lo, hi = min(lo - pad, 0.0), max(hi + pad, 0.0)
-        ax.set_ylim(lo, hi)
+        ax.set_ylim(min(lo - pad, 0.0), max(hi + pad, 0.0))
         ax.set_xlim(wl[0], wl[-1])
         for lname, lam in LINES:                      # 紅移後的位置,天空模型扣不掉
             ax.axvline(lam * (1 + Z_HARO), color="0.75", lw=0.5, ls=":")
-        ax.set_ylabel("flux", fontsize=8)
+        ax.set_ylabel("flux", fontsize=9)
+        ax.set_xlabel("wavelength [$\\AA$]", fontsize=9)
         ax.grid(alpha=0.25)
-        ax.tick_params(labelsize=7)
-        ax.set_title(f"{nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
-                     f"{(b[1] - b[0] + 1) * (b[3] - b[2] + 1)} spaxel", fontsize=9)
-        if r == 0:
-            ax.legend(fontsize=8, loc="upper left", ncol=3, framealpha=0.85)
+        ax.tick_params(labelsize=8)
+        ax.legend(fontsize=9, loc="upper left", ncol=3, framealpha=0.85)
 
-        sax = fig.add_subplot(gs[r, 1]); sax.axis("off")
+        sax = fig.add_subplot(gs[0, 1]); sax.axis("off")
         sax.text(0.02, 0.98, "\n".join([""] + [f"{k:<13}" for k in keys]),
-                 va="top", family="monospace", fontsize=7.5,
+                 va="top", family="monospace", fontsize=8.5,
                  transform=sax.transAxes)
         for j, (lab, y) in enumerate(curves[nm].items()):
             st = spectrum_stats(y)
             sax.text(0.30 + 0.235 * j, 0.98,
                      "\n".join([f"{SHORT[lab]:>9}"]
                                + [f"{st[k]:>9.3f}" for k in keys]),
-                     va="top", ha="left", family="monospace", fontsize=7.5,
+                     va="top", ha="left", family="monospace", fontsize=8.5,
                      color=COL[lab], transform=sax.transAxes)
-    fig.axes[-2].set_xlabel("wavelength [$\\AA$]")
-    fig.suptitle(f"sky status in spatial boxes   {args.work}  [{args.run}]",
-                 fontsize=12)
-    out = Path(args.out) if args.out else \
-        FIG / f"box_spectra_{args.run}_{W.name}.png"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=135, bbox_inches="tight")
-    plt.close(fig)
-    print(f"saved -> {out}")
+        fig.suptitle(f"{W.name}  {nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
+                     f"{(b[1] - b[0] + 1) * (b[3] - b[2] + 1)} spaxel   "
+                     f"[{args.run}]", fontsize=12)
+        o = outdir / f"{slug(nm)}.png"
+        fig.savefig(o, dpi=135, bbox_inches="tight")
+        plt.close(fig)
+        print(f"saved -> {o}")
 
-    draw_map(white, seg, s_hat, boxes, out.with_name(out.stem + "_map.png"),
+    draw_map(white, seg, s_hat, boxes, outdir / "_layout.png",
              f"box locations   {args.work}")
 
 

@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 
 ROOT    = Path(__file__).resolve().parents[3]
 STEP03  = ROOT / "results/skymodel/ne_pointing/step03"
-FIGURES = ROOT / "results/skymodel/evaluation/acceptance"
+FIGURES = ROOT / "results/skymodel/evaluation/subtraction_check"
 EXPDIR  = ROOT / "data/NEpointing_exps"
 
 CHUNK = 200

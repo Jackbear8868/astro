@@ -10,6 +10,7 @@
 檔名不能叫 utils.py:這裡的腳本用 sys.path 指到上一層去 import
 `src/skymodel/utils.py`,同名的檔案會把它蓋掉。
 """
+import re
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,42 @@ EVAL = ROOT / "results/skymodel/evaluation"
 
 # 跨 spaxel 剔除壞 voxel 的門檻,沿用 step3_sky_basis.py 的 mean_sky。
 CLIP_SIGMA = 30
+
+# s 的空間圖一律用同一組色階。RdBu_r 是發散色階,中心點兩側分成兩個顏色 ——
+# 「比典型值高還是低」一眼可分,而連續色階只能分出「深淺」。
+S_CMAP = "RdBu_r"
+
+
+def pointing_dir(name, *sub):
+    """一顆 pointing 的圖放哪 —— evaluation/pNN/[子目錄…],並確保目錄存在。
+
+    一顆一個目錄,而不是把 14 顆的圖混在同一層用檔名區分:看某一顆的時候,
+    要的是那一顆的全部,不是在幾百個檔名裡挑出帶 pNN 的那些。
+    """
+    d = EVAL.joinpath(name, *sub)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def slug(name):
+    """區域名稱 -> 檔名。"src edge d=7px" -> "src_edge_d_7px"。
+
+    只留字母數字,其餘一律換成底線再收斂重複的底線 —— 空白、'='、'#' 在 shell
+    和路徑裡都要跳脫,而這些名稱是自動組出來的,遲早會出現。
+    """
+    return re.sub(r"_+", "_", re.sub(r"[^0-9A-Za-z]+", "_", name)).strip("_")
+
+
+def diverging_range(a, centre=None, pct=2.0):
+    """發散色階的 (中心, vmin, vmax) —— 對稱,而且對離群格穩健。
+
+    範圍取分位數而不是最大最小值:少數幾個壞格就能把 min/max 拉到讓其餘部分
+    全部擠成同一個顏色。中心不給的話用中位數,結構的對比最大。
+    """
+    v = a[np.isfinite(a)]
+    c = float(np.median(v)) if centre is None else float(centre)
+    r = float(max(abs(np.percentile(v, pct) - c), abs(np.percentile(v, 100 - pct) - c)))
+    return c, c - r, c + r
 
 
 def load_field(work):

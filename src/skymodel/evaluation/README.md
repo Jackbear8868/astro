@@ -7,8 +7,25 @@
 兩者的差別是問句不同 —— 這裡問「現在的結果如何」，那裡問「換一種做法會不會更好」。
 一支程式如果比較的是兩個候選方案，它屬於 `experiments/`。
 
-輸出一律寫到 `results/skymodel/evaluation/`，檔名帶 pointing。放各自的工作區裡的話，
-要比較幾顆就得開幾個目錄，而且檔名相同排不到一起。
+輸出一律寫到 `results/skymodel/evaluation/`，不寫進 `pNN/` 工作區 —— `pNN/` 底下的每
+一個檔案都是 `run_pointing.sh` 寫的，這條規則讓「刪掉 pNN 重跑」永遠安全。
+
+```
+results/skymodel/evaluation/
+  p01/                      一顆 pointing 的全部驗收圖
+    s_shape.png             s 的空間形狀
+    main_group.png          主源分組
+    prof_seg.png            這顆的 segmentation
+    box/                    一個方框一張圖 + _layout.png 標出位置
+    zone/                   一個環一張圖
+  p02/  …
+  subtraction_check/        跨 pointing、或不屬於任何一顆的驗收圖
+  masking/  sky_basis/  template_fit/  talk/  attic/
+```
+
+一顆一個目錄，而不是把 14 顆混在同一層用檔名區分：看某一顆的時候，要的是那一顆
+的全部，不是在幾百個檔名裡挑出帶 `pNN` 的那些。路徑一律用 `common.pointing_dir()`
+組出來，不要在各支腳本裡各拼各的。
 
 ## 檔案
 

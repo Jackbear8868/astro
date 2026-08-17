@@ -25,10 +25,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, arcsinh_stretch, load_field  # noqa: E402
+from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
 from utils import DV_MAX, main_source_group  # noqa: E402
 
-FIG = EVAL / "masking/main_group"
 
 
 def main():
@@ -40,7 +39,6 @@ def main():
                     help="輸出檔名加後綴,不同設定的圖才不會互相覆蓋")
     args = ap.parse_args()
 
-    FIG.mkdir(parents=True, exist_ok=True)
     for n in args.n:
         W = ROOT / f"results/skymodel/p{n:02d}"
         seg, white, valid = load_field(W)
@@ -103,7 +101,7 @@ def main():
                      f"{100*mf/tot:.1f}% of all source flux   "
                      f"(runner-up: {100*rest[0]/tot:.1f}%)", fontsize=13)
         fig.tight_layout()
-        out = FIG / f"main_group_p{n:02d}{args.out_suffix}.png"
+        out = pointing_dir(f"p{n:02d}") / f"main_group{args.out_suffix}.png"
         fig.savefig(out, dpi=140, bbox_inches="tight")
         plt.close(fig)
         print(f"p{n:02d}: 相鄰 {len(all_ids)} 個 -> 紅移留下 {len(ids)} 個 {ids}"

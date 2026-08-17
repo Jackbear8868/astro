@@ -44,7 +44,7 @@ from utils import main_source_group, scale  # noqa: E402
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
 # 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
-EVAL = ROOT / "results/skymodel/evaluation/acceptance"
+EVAL = ROOT / "results/skymodel/evaluation/subtraction_check"
 BANDS = ((4600, 5500), (5500, 6500), (6500, 7500), (7500, 9350))
 
 
