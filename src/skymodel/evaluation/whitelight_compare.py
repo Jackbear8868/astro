@@ -1,4 +1,4 @@
-"""扣完天空的白光影像 —— ESO、我們、以及兩者的差。
+"""扣完天空的白光影像 —— ESO 與我們並排。
 
 為什麼看白光影像
 ----------------
@@ -6,17 +6,19 @@
 如果是全場一致的偏移,那和「源旁邊被多扣一圈」是完全不同的病,而兩者在區域平均
 上可能給出一樣的數字。影像把空間結構攤開。
 
-三張圖各是什麼
---------------
-    ESO / ours   同一個色階,所以「誰比較亮」看得出來。用的是 asinh 拉伸:
-                 扣完天空之後主星系仍然比背景亮好幾個量級,線性顯示只看得到核心。
-    ours - ESO   發散色階、以 0 為中心。**這張才是重點** —— 紅色代表我們留下的
-                 光比 ESO 多,藍色代表我們扣得比較多。
+兩張圖
+------
+同一個色階,所以「誰比較亮」看得出來 —— 不同色階的話,兩邊的差別會分不清是資料
+還是尺規。尺規是 arcsinh(flux / blank 散布),0 就是「天空扣乾淨」的真值,單位是
+sigma。不扣任何底座:ESO 留下的那層背景在圖上表現成一片均勻的亮,那是真的資訊。
 
 怎麼判讀
 --------
-源身上和源周圍偏紅、blank 區接近白 = 我們少扣了源的光而天空扣得一樣乾淨,
-那是我們要的。blank 區整片偏紅 = 我們天空扣得比較少,不是好事。
+    blank 區       誰比較接近黑,誰的天空就扣得比較乾淨
+    源身上與周圍   兩邊亮度相同 = 源都保住了;我們這邊比較暗 = 我們把源扣掉了
+
+兩者的差值印在終端機(全場零點、以及扣掉零點之後源上還剩多少),不畫成圖 ——
+差值圖被那個零點主導,色階全給了它,空間結構反而看不見。
 
     conda run -n astro python src/skymodel/evaluation/whitelight_compare.py --work results/skymodel/p01
 """
@@ -31,8 +33,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (ROOT, S_CMAP, arcsinh_stretch, collapse, diverging_range,
-                    load_field, pointing_dir)  # noqa: E402
+from common import ROOT, collapse, load_field, pointing_dir  # noqa: E402
 from utils import main_source_group, scale  # noqa: E402
 
 
@@ -62,33 +63,29 @@ def main():
         imgs[lab] = np.where(valid, img, np.nan)
         print(f"  {lab:>10}  剔除壞 voxel {nbad:,}/{ntot:,} ({100*nbad/ntot:.3f}%)")
 
-    # 兩者的差裡有一個全場一致的零點:ESO 在整個視場留著一層背景。那一層在
-    # blank 和源上都一樣,所以它會把色階整個吃掉,真正要看的空間結構反而看不見。
-    # 減掉 blank 的中位之後,0 的意思變成「和背景一樣」,源上偏紅才是「我們多留
-    # 了源的光」。減的是中位不是平均 —— 源的殘留會把平均拉走。
+    # 兩者的差有一個全場一致的零點:ESO 在整個視場留著一層背景,blank 和源上
+    # 都一樣。扣掉它之後,源上剩下的才是「我們比 ESO 多留了多少源的光」。
+    # 減的是中位不是平均 —— 源的殘留會把平均拉走。
     d0  = imgs["ours"] - imgs["ESO nosky"]
     off = float(np.nanmedian(d0[valid & (seg == 0)]))
     d   = d0 - off
-    print(f"  差:blank 中位 {off:+.4f}(全場零點,已從第三張圖扣掉)")
+    print(f"  差:blank 中位 {off:+.4f}(全場零點)")
     print(f"      扣掉零點後  主源上中位 {np.nanmedian(d[main]):+.4f}   "
           f"blank {np.nanmedian(d[valid & (seg == 0)]):+.4f}")
 
-    fig, ax = plt.subplots(1, 3, figsize=(19, 6.4))
-    # 前兩張共用同一個拉伸,否則「誰比較亮」是色階造成的假象。基準用 ESO ——
-    # 它是外部參考,拿我們自己的當基準會把我們的偏差藏進尺規裡。
-    _, vmax = arcsinh_stretch(imgs["ESO nosky"], valid)
-    q0 = max(float(np.nanpercentile(imgs["ESO nosky"][valid], 99.5)), 1e-3)
-    for a, lab in zip(ax[:2], ("ESO nosky", "ours")):
-        im = a.imshow(np.arcsinh(imgs[lab] / (0.02 * q0)), origin="lower",
-                      cmap="magma", vmin=0, vmax=vmax)
+    # 尺規:除以**我們的** blank 散布,不扣任何底座。扣完天空之後 blank 的真值
+    # 就是 0,所以 0 可以直接當基準 —— 而 ESO 留下的那層背景會在圖上表現成一片
+    # 均勻的亮,那是真的資訊,扣掉底座反而會把它藏起來。
+    # 兩張共用同一個尺規,否則「誰比較亮」是色階造成的假象。
+    sig = scale(imgs["ours"][valid & (seg == 0)])
+    zmax = np.arcsinh(np.nanmax(imgs["ours"][valid]) / sig)
+    fig, ax = plt.subplots(1, 2, figsize=(14.5, 6.8))
+    for a, lab in zip(ax, ("ESO nosky", "ours")):
+        im = a.imshow(np.arcsinh(imgs[lab] / sig), origin="lower", cmap="magma",
+                      vmin=np.arcsinh(-3.0), vmax=zmax)
         a.set_title(lab, fontsize=12)
-        fig.colorbar(im, ax=a, fraction=0.046)
-
-    c, lo, hi = diverging_range(d[valid], centre=0.0)
-    im = ax[2].imshow(d, origin="lower", cmap=S_CMAP, vmin=lo, vmax=hi)
-    ax[2].set_title(f"(ours - ESO) - {off:+.3f}      red = we keep more light",
-                    fontsize=12)
-    fig.colorbar(im, ax=ax[2], fraction=0.046)
+        cb = fig.colorbar(im, ax=a, fraction=0.046)
+        cb.set_label(f"arcsinh(flux / {sig:.3f})   = sigma above zero", fontsize=8)
 
     for a in ax:
         a.contour(seg > 0, levels=[0.5], colors="#2ca02c", linewidths=0.4,
