@@ -103,12 +103,17 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
     def whole(m):
         return ndimage.minimum_filter(m.astype(np.uint8), size=size).astype(bool)
 
-    in_main  = whole(main & valid)
     d_main   = ndimage.distance_transform_edt(~main)
     # 視野邊緣要避開:那裡曝光次數少,step5 還會把覆蓋率 < 90% 的 spaxel 寫成
     # NaN。方框落在那裡,量到的是拼接的邊界效應,不是天空扣得好不好。
+    #
+    # 主源也要套同一個限制。halo 取的是「主源內最暗的地方」,而主源的足跡常常
+    # 延伸到視場邊緣 —— 那裡因為曝光不足本來就暗,所以「最暗」會系統性地選到
+    # 邊緣,量到的是邊界效應而不是星系的外圍。
     d_edge   = ndimage.distance_transform_edt(valid)
-    in_blank = whole((seg == 0) & valid) & (d_edge > half + margin)
+    far_edge = d_edge > half + margin
+    in_main  = whole(main & valid) & far_edge
+    in_blank = whole((seg == 0) & valid) & far_edge
 
     boxes = {}
 
