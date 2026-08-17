@@ -35,7 +35,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, asinh_bar, collapse, load_field, pointing_dir  # noqa: E402
+from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
+                    pointing_dir)  # noqa: E402
 
 
 def main():
@@ -73,7 +74,10 @@ def main():
     im = ax.imshow(np.arcsinh(z), origin="lower", cmap="magma",
                    vmin=np.arcsinh(args.vmin_sigma),
                    vmax=np.arcsinh(np.nanmax(z)))
-    ax.contour(seg > 0, levels=[0.5], colors="#39ff14", linewidths=0.6, alpha=.8)
+    ax.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.6, alpha=.8)
+    ax.legend(handles=[plt.Line2D([], [], color=SEG_COLOR, lw=2,
+                                  label="segmentation")],
+              fontsize=9, loc="lower left", framealpha=0.8)
     ax.set_xticks([]); ax.set_yticks([])
     asinh_bar(fig, im, ax, "signal above sky   [$\\sigma$ of blank]",
               args.vmin_sigma, float(np.nanmax(z)))
