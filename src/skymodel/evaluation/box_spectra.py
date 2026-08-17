@@ -24,17 +24,29 @@
 「離主源的距離」決定,blank 沿距離均勻取。方框必須整框落在該類區域裡(用
 minimum_filter 檢查),否則標籤和內容會不符。
 
-兩種輸出,都寫進 results/skymodel/evaluation/pNN/box/
---------------------------------------------------
-    預設(PNG)  一個方框一張圖,三條線疊在一起比。`map.png` 標出方框在
-               視場的哪裡。缺 ESO 或舊 run 時用 --eso none / --ref-run none。
+方框平均 vs 單點
+----------------
+--half 是方框的半寬,框寬 = 2*half+1。**--half 0 就是單一 spaxel** —— 選位置的
+規則完全一樣,只是不做平均。方框把雜訊壓成 1/sqrt(N),適合看零點;單點很吵,
+但它是「這一個位置到底如何」的誠實答案,不靠平均把系統性偏差藏起來。
+
+兩者的檔名相同,所以輸出目錄跟著 --half 走,不會互相覆蓋:
+
+    evaluation/pNN/box/     --half > 0
+    evaluation/pNN/point/   --half 0
+
+兩種輸出
+--------
+    預設(PNG)  一個方框一張圖,三條線疊在一起比。`map.png` 標出位置在視場
+               的哪裡。缺 ESO 或舊 run 時用 --eso none / --ref-run none。
     --pdf      一頁一個方框,上格 raw vs sky model、下格殘差。**只用這個 run
                自己的三份資料**(原始 cube / sky_model.fits / sky_subtracted.fits),
                不需要任何外部對照。
 
-    conda run -n astro python src/skymodel/evaluation/box_spectra.py
     conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
-        --work results/skymodel/p01 --run blank_svdK30_tpl68_sfield --pdf
+        --work results/skymodel/p01 --run blank_svdK30_tpl60_sfield
+    conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
+        --work results/skymodel/p01 --run blank_svdK30_tpl60_sfield --half 0
 """
 import argparse
 import json
@@ -308,7 +320,7 @@ def main():
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, wl, tri, out, f"{args.work}  [{args.run}]", args.smooth)
         draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
-                 f"box locations   {args.work}")
+                 f"{'box' if args.half else 'point'} locations   {W.name}")
         return
 
     srcs = {}
@@ -386,7 +398,7 @@ def main():
         print(f"saved -> {o}")
 
     draw_map(white, seg, s_hat, boxes, outdir / "map.png",
-             f"box locations   {args.work}")
+             f"{kind} locations   {W.name}")
 
 
 if __name__ == "__main__":
