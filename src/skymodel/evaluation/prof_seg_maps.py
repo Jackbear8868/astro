@@ -97,7 +97,7 @@ def main():
     for n in args.n:
         seg, img = load(n)
         rows, n_all = rows_from(seg, args.min_area)
-        out = pointing_dir(f"p{n:02d}") / "prof_seg.png"
+        out = pointing_dir(f"p{n:02d}") / "segmentation_map.png"
         id_map(seg, img, rows, out, by_group=False)
 
         # 主源被拆成幾塊,是這批資料反覆出現的問題 —— 順手量出來,
@@ -109,7 +109,7 @@ def main():
         print(f"#{n:<3}{n_all:>6}{int((seg > 0).sum()):>10,}"
               f"{100 * (seg > 0).mean():>7.1f}%"
               + "".join(f"{100 * f / tot:>6.1f}%" for f in top))
-    print("\n每顆一張 -> results/skymodel/evaluation/pNN/prof_seg.png")
+    print("\n每顆一張 -> results/skymodel/evaluation/pNN/segmentation_map.png")
     if not args.no_overview:
         overview(args.n, FIGURES / "overview.png")
 

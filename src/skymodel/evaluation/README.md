@@ -15,8 +15,9 @@ results/skymodel/evaluation/
   p01/                      一顆 pointing 的全部驗收圖
     s_shape.png             s 的空間形狀
     main_group.png          主源分組
-    prof_seg.png            這顆的 segmentation
+    segmentation_map.png    這顆的 segmentation
     box/                    一個方框一張圖 + map.png 標出位置
+    point/                  一個取樣點一張圖(單一 spaxel)+ map.png
     zone/                   一個環一張圖
   p02/  …
   subtraction_check/        跨 pointing、或不屬於任何一顆的驗收圖

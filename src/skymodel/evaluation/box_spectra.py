@@ -166,8 +166,13 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
         ax.contour(seg > 0, levels=[0.5], colors="#2ca02c", linewidths=0.45)
         for i, (nm, (y0, y1, x0, x1)) in enumerate(boxes.items()):
             c = cmap[i % 10]
-            ax.add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), x1 - x0 + 1,
-                                            y1 - y0 + 1, fill=False, ec=c, lw=1.8))
+            if y0 == y1 and x0 == x1:
+                # 單一 spaxel 畫成方框的話只有 1 px,在 320 px 的視場上看不見
+                ax.plot(x0, y0, "+", color=c, ms=13, mew=2.2)
+            else:
+                ax.add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), x1 - x0 + 1,
+                                                y1 - y0 + 1, fill=False, ec=c,
+                                                lw=1.8))
             ax.annotate(nm, (x0 + (x1 - x0) / 2, y1), xytext=(0, 5),
                         textcoords="offset points", color=c, fontsize=8,
                         fontweight="bold", ha="center",
@@ -322,7 +327,10 @@ def main():
         h.close()
         print(f"讀完 {m}")
 
-    outdir = Path(args.out) if args.out else pointing_dir(W.name, "box")
+    # half=0 的「方框」就是單一 spaxel,那是另一種取樣(誠實但很吵),兩者的圖
+    # 不能混在同一個目錄裡 —— 檔名相同,後跑的會蓋掉先跑的。
+    kind = "box" if args.half else "point"
+    outdir = Path(args.out) if args.out else pointing_dir(W.name, kind)
     outdir.mkdir(parents=True, exist_ok=True)
     keys = ("mean", "sigma", "rms_from_zero")
     # 統計欄的版面用**字元數**算,不用寫死的座標:欄數會隨 --eso / --ref-run
@@ -367,9 +375,11 @@ def main():
                      "\n".join([SHORT[lab]] + [f"{st[k]:.3f}" for k in keys]),
                      va="top", ha="right", family="monospace", fontsize=8.5,
                      color=COL[lab], transform=sax.transAxes)
-        fig.suptitle(f"{W.name}  {nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
-                     f"{(b[1] - b[0] + 1) * (b[3] - b[2] + 1)} spaxels",
-                     fontsize=12)
+        npx = (b[1] - b[0] + 1) * (b[3] - b[2] + 1)
+        where = (f"y {b[0]}  x {b[2]}" if npx == 1 else
+                 f"y {b[0]}-{b[1]}  x {b[2]}-{b[3]}")
+        fig.suptitle(f"{W.name}  {nm}   {where}   "
+                     f"{npx} spaxel{'' if npx == 1 else 's'}", fontsize=12)
         o = outdir / f"{slug(nm)}.png"
         fig.savefig(o, dpi=135, bbox_inches="tight")
         plt.close(fig)
