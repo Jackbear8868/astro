@@ -14,9 +14,9 @@
 
 三條線
 ------
-    ESO nosky      外部基準(ESO pipeline 的天空扣完)
-    s 逐格自由     舊做法:每個 blank spaxel 各自解自己的 s
-    s 空間場       新做法:s 換成一張平滑的空間場,源區與 blank 共用同一張
+    ESO nosky            外部基準(ESO pipeline 的天空扣完)
+    s per-spaxel (old)   舊做法:每個 blank spaxel 各自解自己的 s
+    ours                 現行做法:s 換成一張平滑的空間場,源區與 blank 共用同一張
 
 方框怎麼選
 ----------
@@ -73,9 +73,8 @@ LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
 
 # 顏色編的是角色:外部基準橘、舊做法灰、要看的那條藍。
 # 標籤一律英文 —— matplotlib 預設字型沒有中文字符,中文會變成一格格的豆腐。
-COL = {"ESO nosky": "#ff7f0e", "s per-spaxel (old)": "0.35",
-       "s field (new)": "#1f77b4"}
-SHORT = {"ESO nosky": "ESO", "s per-spaxel (old)": "old", "s field (new)": "new"}
+COL = {"ESO nosky": "#ff7f0e", "s per-spaxel (old)": "0.35", "ours": "#1f77b4"}
+SHORT = {"ESO nosky": "ESO", "s per-spaxel (old)": "old", "ours": "ours"}
 
 # 這些位置的圖畫大張(見迴圈裡的說明)。畫布放大就是每個通道分到更多螢幕像素,
 # 不需要改版面 —— 3801 個通道在 30 in x 200 dpi 下約 1 個通道 1 個像素。
@@ -338,7 +337,7 @@ def main():
         srcs["ESO nosky"] = ROOT / args.eso
     if args.ref_run.lower() != "none":
         srcs["s per-spaxel (old)"] = W / "step05" / args.ref_run / "sky_subtracted.fits"
-    srcs["s field (new)"] = run / "sky_subtracted.fits"
+    srcs["ours"] = run / "sky_subtracted.fits"
     srcs = {k: v for k, v in srcs.items() if v.exists()}
 
     curves = {nm: {} for nm in boxes}
