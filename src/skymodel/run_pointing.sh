@@ -79,11 +79,11 @@ for N in "$@"; do
 
   echo "--- [5/6] step4 模板擬合與分類"
   $RUN src/skymodel/step4_fit_source.py --id all --basis svd -K 30 --s-fix 0.0 \
-       --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1 \
+       --star-window 4600 8000 --gal-window 4600 8000 --line-mask-iter 1 \
        --spec-dir "$W/step02" --work "$W" --num-workers 16 2>&1 | tail -3
 
   echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
-  BEST=$W/step04/classification_nobasis_s0.0_4700-8000_4700-8000_L1cum.npz
+  BEST=$W/step04/classification_nobasis_s0.0_4600-8000_4600-8000_L1cum.npz
   $RUN src/skymodel/step5_fit_spaxels.py --basis svd -K 30 --s-field \
        --work "$W" --cube "$WSKY" --sky-dir "$W/step03" --best "$BEST" 2>&1 \
        | grep -E "s 空間場|ridge|blank 以場|源區域|saved"
