@@ -33,12 +33,12 @@ from common import ROOT, load_field, pointing_dir, slug, zones  # noqa: E402
 from utils import galaxy_redshifts, main_source_group, scale  # noqa: E402
 
 
+# 統計欄的表頭。欄寬放不下完整標籤,而顏色已經把兩者對起來了。
+SHORT = {"ESO nosky": "ESO", "ours": "ours"}
+
 # 主星系的強發射線,靜止空氣波長。step03/wavelength.npy 存的是空氣波長
 # (step4b 讀進去的變數就叫 wl_air),所以這裡也必須用空氣值,不能混真空值。
 # 標在圖上是為了看出「源環上多出來的東西是不是真的來自這個星系」。
-# 統計欄的表頭。放不下完整標籤,而顏色已經對得起來了。
-SHORT = {"ESO nosky": "ESO", "ours method": "ours"}
-
 LINES = [(4861.33, "Hb"), (4958.91, "[O III]"), (5006.84, "[O III]"),
          (5875.6, "He I"), (6300.30, "[O I]"), (6548.05, "[N II]"),
          (6562.82, "Ha"), (6583.45, "[N II]"), (6716.44, "[S II]"),
@@ -102,10 +102,10 @@ def main():
                 print(f"  p{n:02d}: 沒有符合 {pat} 的 run,略過")
                 continue
             hits.append(hit[0])
-        # 只有一個 run 時標籤就叫 ours method;有好幾個才需要用目錄名分辨,
+        # 只有一個 run 時標籤就叫 ours;有好幾個才需要用目錄名分辨,
         # 而目錄名是 lbl 的鍵,重複的話 spec/off 會互相蓋掉。
         for k, h in enumerate(hits):
-            lbl = "ours method" if len(hits) == 1 else h.parent.name
+            lbl = "ours" if len(hits) == 1 else h.parent.name
             runs.append((lbl, h, palette[k % len(palette)],
                          styles[k % len(styles)]))
 
