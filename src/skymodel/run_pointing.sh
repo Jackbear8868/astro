@@ -6,16 +6,14 @@
 #
 # 每個 pointing 一個工作區 results/skymodel/pNN/,底下 step01/step02/... 結構相同。
 #
-# 為什麼偵測影像用 nosky 而不是 wsky:白光是沿波長平均,wsky 的天空連續譜會把
-# 整張圖整片墊高,遠高於源本身的淨流量,SExtractor 的背景與雜訊估計因此完全不同,
-# 延展的源會被切得比實際小。偵測要用扣過天空的。
+# seg 用教授交付的那一份,不自己跑 SExtractor。遮罩決定哪些 spaxel 拿去學天空,
+# 是科學結果的一部分,不是實作細節 —— 由教授的產品定義。
 #
-# DETECT_THRESH 顯式給在指令列,蓋掉 default.sex 裡的值 —— 門檻直接決定 seg 的
-# 範圍,不該藏在設定檔裡。
+# 白光仍然從 nosky 算:它不再用於偵測,但下游要靠它找主源(最亮像素所在的那一團),
+# wsky 的天空連續譜會把整張圖墊高,最亮像素的位置就不可靠了。
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
-SEX=/local/feather/conda_envs/astro/bin/sex
 RUN="conda run --no-capture-output -n astro python"
 
 for N in "$@"; do
@@ -62,11 +60,18 @@ for N in "$@"; do
   echo "--- [1/6] step1 白光（從 nosky）"
   $RUN src/skymodel/step1_whitelight.py "$NOSKY" --out "$W/step01" >/dev/null
 
-  echo "--- [2/6] SExtractor (DETECT_THRESH 2.0)"
-  (cd src/skymodel/SExtractor && $SEX "$W/step01/whitelight.fits" -c default.sex \
-      -DETECT_THRESH 2.0 -CATALOG_NAME "$W/step01/test.cat" \
-      -CHECKIMAGE_TYPE SEGMENTATION -CHECKIMAGE_NAME "$W/step01/seg.fits") 2>&1 \
-      | grep -E "sextracted" | tail -1
+  echo "--- [2/6] 教授的 segmentation"
+  PROF_SEG=$ROOT/data/wsky_seg/DATACUBE_FINAL_${N}_seg.fits
+  [ -f "$PROF_SEG" ] || { echo "★ 找不到 $PROF_SEG"; exit 1; }
+  cp "$PROF_SEG" "$W/step01/seg.fits"
+  # seg 和白光必須是同一個像素格點。對不上的話下游不會報錯,只會安靜地把遮罩
+  # 套錯位置,所以在這裡擋掉。
+  $RUN -c "
+from astropy.io import fits; import numpy as np, sys
+s = fits.getdata('$W/step01/seg.fits'); w = fits.getdata('$W/step01/whitelight.fits')
+if s.shape != w.shape:
+    sys.exit(f'★ seg {s.shape} 與白光 {w.shape} 尺寸不同')
+print(f'    {len(np.unique(s))-1} 個源,遮罩 {100*(s>0).mean():.1f}%')"
 
   echo "--- [3/6] step2 源光譜（nosky,分類用）"
   $RUN src/skymodel/step2_object_spectra.py --work "$W" --cube "$NOSKY" \
