@@ -33,7 +33,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, collapse, load_field, pointing_dir  # noqa: E402
+from common import ROOT, asinh_bar, collapse, load_field, pointing_dir  # noqa: E402
 from utils import main_source_group, scale  # noqa: E402
 
 
@@ -84,8 +84,8 @@ def main():
         im = a.imshow(np.arcsinh(imgs[lab] / sig), origin="lower", cmap="magma",
                       vmin=np.arcsinh(-3.0), vmax=zmax)
         a.set_title(lab, fontsize=12)
-        cb = fig.colorbar(im, ax=a, fraction=0.046)
-        cb.set_label(f"arcsinh(flux / {sig:.3f})   = sigma above zero", fontsize=8)
+        asinh_bar(fig, im, a, "signal   [$\\sigma$ of blank]",
+                  -3.0, float(np.nanmax(imgs["ours"][valid]) / sig))
 
     for a in ax:
         a.contour(seg > 0, levels=[0.5], colors="#2ca02c", linewidths=0.4,
@@ -94,7 +94,7 @@ def main():
         a.set_xticks([]); a.set_yticks([])
     fig.suptitle(f"{W.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    o = pointing_dir(W.name) / "whitelight.png"
+    o = pointing_dir(W.name) / "whitelight_compare.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")
 

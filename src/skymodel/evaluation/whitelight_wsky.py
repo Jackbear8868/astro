@@ -35,7 +35,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, collapse, load_field, pointing_dir  # noqa: E402
+from common import ROOT, asinh_bar, collapse, load_field, pointing_dir  # noqa: E402
 
 
 def main():
@@ -75,14 +75,10 @@ def main():
                    vmax=np.arcsinh(np.nanmax(z)))
     ax.contour(seg > 0, levels=[0.5], colors="#39ff14", linewidths=0.6, alpha=.8)
     ax.set_xticks([]); ax.set_yticks([])
-    cb = fig.colorbar(im, ax=ax, fraction=0.046)
-    cb.set_label(f"arcsinh[(flux $-$ {sky:.1f}) / {sig:.3f}]   "
-                 f"= sigma above sky", fontsize=9)
+    asinh_bar(fig, im, ax, "signal above sky   [$\\sigma$ of blank]",
+              args.vmin_sigma, float(np.nanmax(z)))
     ax.set_title(f"{W.name}   {cube.name} (with sky)   "
-                 f"{args.band[0]:.0f}-{args.band[1]:.0f} A\n"
-                 f"sky = {sky:.2f},  blank scatter = {sig:.3f} "
-                 f"({100*sig/sky:.2f}% of sky),  peak = {np.nanmax(img):.0f}",
-                 fontsize=12)
+                 f"{args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=13)
     fig.tight_layout()
     o = pointing_dir(W.name) / "whitelight_wsky.png"
     fig.savefig(o, dpi=150, bbox_inches="tight")

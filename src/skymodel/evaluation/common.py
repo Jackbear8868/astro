@@ -41,6 +41,24 @@ def pointing_dir(name, *sub):
     return d
 
 
+def asinh_bar(fig, im, ax, label, lo, hi):
+    """asinh 拉伸的色階條 —— 刻度標在原本的物理值上,不是拉伸後的數字。
+
+    影像畫的是 arcsinh(z),所以色階條的預設刻度是 0、2、4… 那些是壓縮過的數字,
+    讀不出「這裡比天空亮多少」。把刻度放到 arcsinh(z) 的位置、標上 z 本身,
+    色階就能直接當成 z 讀,而影像仍然享有 asinh 的動態範圍。
+
+    lo/hi 是 z(不是 arcsinh(z))的範圍,用來決定哪些刻度落得進去。
+    """
+    ticks = [-3, -1, 0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000]
+    t = [v for v in ticks if lo <= v <= hi]
+    cb = fig.colorbar(im, ax=ax, fraction=0.046,
+                      ticks=[np.arcsinh(v) for v in t])
+    cb.ax.set_yticklabels([f"{v:g}" for v in t])
+    cb.set_label(label, fontsize=9)
+    return cb
+
+
 def slug(name):
     """區域名稱 -> 檔名。"src edge d=7px" -> "src_edge_d_7px"。
 
