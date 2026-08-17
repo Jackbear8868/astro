@@ -71,13 +71,12 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
 
     return flux, var, nspax
 
-ROOT   = Path(__file__).resolve().parents[2]
 
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="按 segmentation ID 加總源光譜")
     ap.add_argument("--cube", required=True,
-                    help="要萃取的 cube(取它的 DATA)。預設是含天光的原始 cube;"
+                    help="要萃取的 cube(取它的 DATA)。要含天光的原始 cube;"
                          "分類要用扣過天空的版本(step05 的 sky_subtracted.fits)")
     ap.add_argument("--var-cube", default=None,
                     help="STAT 從哪裡讀,預設同 --cube。我們自己扣天空的 cube 只有 "

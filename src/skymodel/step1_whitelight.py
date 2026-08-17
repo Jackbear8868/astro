@@ -7,7 +7,6 @@ import matplotlib
 matplotlib.use("Agg")              # 關鍵：先設定「畫到檔案」模式
 import matplotlib.pyplot as plt    # 畫圖的主介面，慣例縮寫成 plt
 
-ROOT = Path(__file__).resolve().parents[2]
 
 def main():
     ap = argparse.ArgumentParser(description="cube → 白光影像（whitelight.fits + 預覽 png）")

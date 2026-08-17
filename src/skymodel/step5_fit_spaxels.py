@@ -134,9 +134,6 @@ def run_name(args, sky_dir, n_templates, s_fix, seg_path):
 def build_templates(best, lam_vac):
     """挑出要放模型的源,並把各自的源模型紅移到 MUSE 波長格點。
 
-    step4b 已對第 1 個源係數施加非負限制,A[0] = 0 代表最佳解落在邊界上,
-    也就是這個模型對該源沒有貢獻,這種源不放模型。
-
     模型依 step4b 定出的組別而不同:恆星用該條 SDSS 模板(1 欄),
     星系/QSO 用對應的本徵譜(4 欄)。
 
@@ -329,8 +326,10 @@ def main():
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, default=25,
                     help="天光線 basis 條數;必須和 step3/step4b 用的 K 相同")
-    ap.add_argument("--s-fix", type=float, default=1.0,
-                    help="源區域的天空連續譜係數固定值(預設 1.0)。blank 區一律保持自由。")
+    ap.add_argument("--s-fix", type=float, default=None,
+                    help="源區域的天空連續譜係數固定值(不給時為 1.0)。"
+                         "blank 區一律保持自由。與 --s-field 互斥 —— 開了空間場之後 "
+                         "s 由場決定,這個值不會被用到")
     ap.add_argument("--s-free", action="store_true",
                     help="改讓源區域的 s 成為自由參數,覆蓋 --s-fix")
     ap.add_argument("--blank-chi2", action="store_true",
@@ -356,7 +355,7 @@ def main():
                     help="主源分組:相鄰成員的星系分支紅移離主源多少 km/s 之內"
                          "才算主星系的一部分")
     ap.add_argument("--best", required=True,
-                    help="源模型的來源檔:step4c 定案的分類,例如 "
+                    help="源模型的來源檔:step4 定案的分類,例如 "
                          "{work}/step04/classification_*.npz。"
                          "沒有預設值 —— 它決定每個源用哪個模板與紅移,"
                          "猜錯一個目錄就會安靜地套用另一次擬合的答案")
@@ -398,18 +397,20 @@ def main():
     args = ap.parse_args()
     # 三個選項各自宣稱 s 該怎麼決定,同時給就是矛盾。默默讓其中一個贏會產生
     # 一個名字和內容對不起來的 run —— 直接擋掉。
-    if args.s_field and (args.s_free or args.blank_s_fix is not None):
-        raise SystemExit("--s-field 與 --s-free / --blank-s-fix 互斥:"
+    if args.s_field and (args.s_free or args.blank_s_fix is not None
+                         or args.s_fix is not None):
+        raise SystemExit("--s-field 與 --s-free / --blank-s-fix / --s-fix 互斥:"
                          "前者說 s 由空間場決定,後者說 s 自由或固定成常數。")
     work = Path(args.work)
     STEP01, STEP03 = work / "step01", work / "step03"
     STEP05 = work / "step05"
     CUBE = Path(args.cube)
     print(f"工作區 {work}   cube {CUBE.name}")
-    s_fix = None if args.s_free else args.s_fix
-    tag = (f"{args.basis}_K{args.K}_s_free" if s_fix is None
-           else f"{args.basis}_K{args.K}_s_{s_fix}")
-    # tag 只用來「讀」step3 的 basis 檔名;輸出改成一個 run 一個資料夾,
+    # --s-fix 的預設在 argparse 是 None(用來分辨「沒給」),真正的預設值在這裡代入。
+    # 開了 --s-field 之後 s 由場決定,s_fix 一路都用不到 —— 讓它保持 None,meta 才
+    # 不會記下一個從未生效的設定。
+    s_fix = None if (args.s_free or args.s_field) else (
+        1.0 if args.s_fix is None else args.s_fix)
     # 名字由 run_name() 從參數組出來(見檔案上方)。
     STEP05.mkdir(parents=True, exist_ok=True)
 
@@ -614,6 +615,7 @@ def main():
         cube=str(_rel(CUBE)), seg=str(_rel(seg_path)),
         sky_dir=str(_rel(sky_dir)),
         best=args.best, basis=args.basis, K=args.K,
+        sf_file=args.sf_file,
         s_fix=s_fix,
         s_field=bool(args.s_field),
         s_field_params=(dict(r_far=args.sf_r_far, r_far_haro=args.sf_r_far_haro,

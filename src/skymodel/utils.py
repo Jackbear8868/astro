@@ -309,6 +309,14 @@ def galaxy_redshifts(step04, ids):
         f = sorted(Path(step04).glob(f"scan2_id{i}_*.npz"))
         if not f:
             raise SystemExit(f"★ {step04} 裡找不到 scan2_id{i}_*.npz")
+        # 命中多個代表這個目錄裡有好幾次 step4 的結果(不同視窗、不同遮罩輪次)。
+        # 取 [0] 是照檔名排序挑一個,而紅移決定主源收哪些成員 —— 挑錯了下游
+        # 完全看不出來。寧可停下來要人講清楚。
+        if len(f) > 1:
+            raise SystemExit(
+                f"★ {step04} 裡 id{i} 有 {len(f)} 份 scan2:\n  "
+                + "\n  ".join(x.name for x in f)
+                + "\n  紅移必須和 --best 來自同一次擬合,請先清掉不要的那幾份。")
         d = np.load(f[0], allow_pickle=True)
         out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
     return out

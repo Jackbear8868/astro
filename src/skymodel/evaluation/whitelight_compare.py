@@ -49,6 +49,9 @@ def main():
 
     W = ROOT / args.work
     runs = sorted((W / "step05").glob("*_sfield"))
+    # 多個 run 並存時不能默默挑一個 —— 挑錯了圖看起來完全正常
+    if not args.run and len(runs) != 1:
+        raise SystemExit(f"★ {W/'step05'} 底下有 {len(runs)} 個 *_sfield,請用 --run 指定")
     run = W / "step05" / args.run if args.run else runs[0]
     n = int(W.name[1:])
     eso = ROOT / (args.eso or f"data/nosky/DATACUBE_FINAL_ESOSKY_{n}.fits")

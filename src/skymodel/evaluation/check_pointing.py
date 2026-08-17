@@ -134,11 +134,6 @@ def check(work, cube, run=None):
                   f"{v / P:>9.2f}{(v - far_res) / P:>9.2f}")
 
 
-CUBES = {"p04": "data/wshy/DATACUBE_FINAL_4.fits",
-         "p08": "data/wshy/DATACUBE_FINAL_8.fits",
-         "p12": "data/wshy/DATACUBE_FINAL_12.fits"}
-
-
 if __name__ == "__main__":
     argv = sys.argv[1:]
     run = None
@@ -147,4 +142,6 @@ if __name__ == "__main__":
         run = argv[i + 1]
         argv = argv[:i] + argv[i + 2:]
     for w in argv:
-        check(w, CUBES.get(w, f"data/wshy/DATACUBE_FINAL_{w.lstrip('p0') or w}.fits"), run)
+        # 工作區名字 pNN -> cube 編號。用 int() 而不是 lstrip('p0') —— 後者是
+        # 字元集剝除,"p10" 會變成 "1"。目前 p01-p14 碰巧都對,但那是巧合。
+        check(w, f"data/wshy/DATACUBE_FINAL_{int(w[1:])}.fits", run)

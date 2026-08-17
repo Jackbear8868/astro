@@ -74,7 +74,10 @@ def main():
         W   = ROOT / f"results/skymodel/p{n:02d}"
         seg, white, valid = load_field(W)
         wl  = np.load(W / "step03/wavelength.npy")
-        main, _, pk = main_source_group(seg, np.where(valid, white, np.nan))
+        # 傳 step04 —— 環的定義要和 check_pointing 完全一致,少傳就是跳過
+        # 紅移篩選,主源足跡變大,兩邊的「main 3-10」會是不同的一圈 spaxel
+        main, _, pk = main_source_group(seg, np.where(valid, white, np.nan),
+                                        W / "step04")
         # 遮罩夠大的時候,可能一格都沒有滿足 far 的條件(離所有源都遠)。空的環
         # 平均起來是 NaN,畫不出來 —— 直接跳過並講清楚少了哪個,不要讓下游炸掉
         # 或畫出一張空圖。
@@ -101,7 +104,9 @@ def main():
             if not hit:
                 print(f"  p{n:02d}: 沒有符合 {pat} 的 run,略過")
                 continue
-            hits.append(hit[0])
+            # 命中的全部都要 —— 這支本來就是拿來比較多個 run 的,只取第一個
+            # 會畫出一張宣稱在比較、實際只有一條線的圖
+            hits.extend(hit)
         # 只有一個 run 時標籤就叫 ours;有好幾個才需要用目錄名分辨,
         # 而目錄名是 lbl 的鍵,重複的話 spec/off 會互相蓋掉。
         for k, h in enumerate(hits):

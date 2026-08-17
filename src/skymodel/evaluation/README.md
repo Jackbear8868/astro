@@ -39,10 +39,10 @@ results/skymodel/evaluation/
 | `box_spectra.py` | 方框裡的平均光譜，和 ESO nosky 並排 |
 | `zone_spectra.py` | 同一個環上，ESO 與我們各扣出什麼 |
 | `s_shape_map.py` | 天空連續譜係數 s 的空間形狀 |
-| `oversub_whitelight.py` | over-subtraction 畫成看得見的白光圖 |
+| `whitelight_wsky.py` | 輸入 cube（含天空）的白光影像 |
+| `whitelight_compare.py` | 扣完天空的白光影像，ESO 與我們並排 |
 | `main_group_map.py` | 主源怎麼從被拆散的 seg ID 拼回來 |
 | `main_group_spec.py` | 相鄰整團的每個成員，用光譜判斷是不是主星系的一部分 |
-| `compare_runs.py` | 幾個 step5 的 run 並排成白光圖 |
 | `prof_seg_maps.py` | 教授的 14 份 segmentation 長什麼樣 |
 | `seg_id_map.py` | 任一份 segmentation 的 source ID 對照圖 |
 | `plot_basis.py` | step3 學到的每一條天空 basis 長什麼樣 |

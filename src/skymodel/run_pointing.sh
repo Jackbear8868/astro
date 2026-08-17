@@ -64,8 +64,9 @@ for N in "$@"; do
   PROF_SEG=$ROOT/data/wsky_seg/DATACUBE_FINAL_${N}_seg.fits
   [ -f "$PROF_SEG" ] || { echo "★ 找不到 $PROF_SEG"; exit 1; }
   cp "$PROF_SEG" "$W/step01/seg.fits"
-  # seg 和白光必須是同一個像素格點。對不上的話下游不會報錯,只會安靜地把遮罩
-  # 套錯位置,所以在這裡擋掉。
+  # 只比尺寸。**形狀相同不等於同一個像素格點**,但目前做不到更好 —— step1 寫
+  # whitelight.fits 時沒有帶 header,那張圖沒有 WCS 可比(教授的 seg 和 cube 都有)。
+  # 要真正擋住錯位,得先讓 step1 保留 WCS。
   $RUN -c "
 from astropy.io import fits; import numpy as np, sys
 s = fits.getdata('$W/step01/seg.fits'); w = fits.getdata('$W/step01/whitelight.fits')
@@ -83,12 +84,19 @@ print(f'    {len(np.unique(s))-1} 個源,遮罩 {100*(s>0).mean():.1f}%')"
        | grep -E "空間限制|exclude-box|blank spaxels|svd "
 
   echo "--- [5/6] step4 模板擬合與分類"
-  $RUN src/skymodel/step4_fit_source.py --id all --basis svd -K 30 --s-fix 0.0 \
-       --star-window 4600 8000 --gal-window 4600 8000 --line-mask-iter 1 \
+  # step4 的可變參數集中在這裡,底下的 BEST 用同一組變數組出檔名 —— 改了參數
+  # 卻忘了改 BEST 的話,step5 會安安靜靜地讀上一次的分類檔跑完。
+  SFIX=0.0
+  WIN=(4600 8000)
+  LITER=1
+  $RUN src/skymodel/step4_fit_source.py --id all --basis svd -K 30 --s-fix "$SFIX" \
+       --star-window "${WIN[@]}" --gal-window "${WIN[@]}" --line-mask-iter "$LITER" \
        --spec-dir "$W/step02" --work "$W" --num-workers 16 2>&1 | tail -3
 
   echo "--- [6/6] step5 逐 spaxel 擬合（--s-field）"
-  BEST=$W/step04/classification_nobasis_s0.0_4600-8000_4600-8000_L1cum.npz
+  # 檔名的組法是 step4_fit_source.py 的 make_tag();這裡是它的第二份實作,
+  # 所以組成的每一段都必須來自上面那組變數,不能手抄。
+  BEST=$W/step04/classification_nobasis_s${SFIX}_${WIN[0]}-${WIN[1]}_${WIN[0]}-${WIN[1]}_L${LITER}cum.npz
   $RUN src/skymodel/step5_fit_spaxels.py --basis svd -K 30 --s-field \
        --work "$W" --cube "$WSKY" --sky-dir "$W/step03" --best "$BEST" 2>&1 \
        | grep -E "s 空間場|ridge|blank 以場|源區域|saved"

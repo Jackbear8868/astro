@@ -40,9 +40,9 @@ def main():
 
     W = ROOT / args.work
     runs = sorted((W / "step05").glob("*_sfield"))
-    run = W / "step05" / args.run if args.run else runs[0]
     if not args.run and len(runs) != 1:
         raise SystemExit(f"★ {W/'step05'} 底下有 {len(runs)} 個 *_sfield,請用 --run 指定")
+    run = W / "step05" / args.run if args.run else runs[0]
 
     seg, white, valid = load_field(W)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
