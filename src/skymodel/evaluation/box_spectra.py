@@ -77,6 +77,11 @@ COL = {"ESO nosky": "#ff7f0e", "s per-spaxel (old)": "0.35",
        "s field (new)": "#1f77b4"}
 SHORT = {"ESO nosky": "ESO", "s per-spaxel (old)": "old", "s field (new)": "new"}
 
+# 這些位置的圖畫大張(見迴圈裡的說明)。畫布放大就是每個通道分到更多螢幕像素,
+# 不需要改版面 —— 3801 個通道在 30 in x 200 dpi 下約 1 個通道 1 個像素。
+BIG_BOXES = {"core"}
+BIG_FIG, BIG_DPI = (30, 8.4), 200
+
 
 def cube_data(path):
     """讀 cube 的 DATA。step5 寫在 primary HDU,ESO 的在名為 DATA 的 HDU。"""
@@ -356,11 +361,19 @@ def main():
     ncol   = len(srcs)
     span   = NW + VW * ncol
     for nm, b in boxes.items():
-        fig = plt.figure(figsize=(15, 4.2))
+        # core 畫大張。3801 個通道在 15 in x 135 dpi 下是 2.5 個通道擠 1 個螢幕
+        # 像素,而 MUSE 的線寬只有約 1.8 個通道 —— 線比一個像素還窄,細節在畫之前
+        # 就被抽掉了。core 是發射線最密、最需要看細節的地方,所以只有它放大;
+        # 其餘位置以雜訊為主,放大不會多出資訊,只會多出檔案大小。
+        big = nm in BIG_BOXES
+        w, h, dpi = (BIG_FIG + (BIG_DPI,)) if big else (15, 4.2, 135)
+        sc = w / 15.0                       # 字級跟著畫布放大,否則大圖上小到看不見
+        fig = plt.figure(figsize=(w, h))
         # 0.04 是「一個字元佔多少寬度比例」,由 fontsize 8.5 的等寬字元量出來的:
         # 欄位靠 span 換算成軸內比例,軸本身太窄會截斷、太寬會把數字推到天邊。
         gs  = fig.add_gridspec(1, 2, width_ratios=[6, 0.04 * span], wspace=0.02,
-                               left=0.055, right=0.985, top=0.86, bottom=0.13)
+                               left=0.055, right=0.985,
+                               top=1 - 0.59 / h, bottom=0.55 / h)
         ax = fig.add_subplot(gs[0, 0])
         ax.axhline(0, color="0.5", lw=0.6)
         for lab, y in curves[nm].items():
@@ -376,29 +389,29 @@ def main():
         ax.set_xlim(wl[0], wl[-1])
         for lname, lam in LINES:                      # 紅移後的位置,天空模型扣不掉
             ax.axvline(lam * (1 + Z_HARO), color="0.75", lw=0.5, ls=":")
-        ax.set_ylabel("flux", fontsize=9)
-        ax.set_xlabel("wavelength [$\\AA$]", fontsize=9)
+        ax.set_ylabel("flux", fontsize=9 * sc)
+        ax.set_xlabel("wavelength [$\\AA$]", fontsize=9 * sc)
         ax.grid(alpha=0.25)
-        ax.tick_params(labelsize=8)
-        ax.legend(fontsize=9, loc="upper left", ncol=3, framealpha=0.85)
+        ax.tick_params(labelsize=8 * sc)
+        ax.legend(fontsize=9 * sc, loc="upper left", ncol=3, framealpha=0.85)
 
         sax = fig.add_subplot(gs[0, 1]); sax.axis("off")
         sax.text(0.0, 0.98, "\n".join([""] + list(keys)),
-                 va="top", ha="left", family="monospace", fontsize=8.5,
+                 va="top", ha="left", family="monospace", fontsize=8.5 * sc,
                  transform=sax.transAxes)
         for j, (lab, y) in enumerate(curves[nm].items()):
             st = spectrum_stats(y)
             sax.text((NW + VW * (j + 1)) / span, 0.98,
                      "\n".join([SHORT[lab]] + [f"{st[k]:.3f}" for k in keys]),
-                     va="top", ha="right", family="monospace", fontsize=8.5,
+                     va="top", ha="right", family="monospace", fontsize=8.5 * sc,
                      color=COL[lab], transform=sax.transAxes)
         npx = (b[1] - b[0] + 1) * (b[3] - b[2] + 1)
         where = (f"y {b[0]}  x {b[2]}" if npx == 1 else
                  f"y {b[0]}-{b[1]}  x {b[2]}-{b[3]}")
         fig.suptitle(f"{W.name}  {nm}   {where}   "
-                     f"{npx} spaxel{'' if npx == 1 else 's'}", fontsize=12)
+                     f"{npx} spaxel{'' if npx == 1 else 's'}", fontsize=12 * sc)
         o = outdir / f"{slug(nm)}.png"
-        fig.savefig(o, dpi=135, bbox_inches="tight")
+        fig.savefig(o, dpi=dpi, bbox_inches="tight")
         plt.close(fig)
         print(f"saved -> {o}")
 
