@@ -21,6 +21,7 @@
         --work results/skymodel/p01
 """
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,9 @@ from scipy import ndimage
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import fit_dirs                                # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
@@ -107,7 +111,7 @@ def main():
     ap.add_argument("--work", required=True,
                     help="pointing 的工作區,例如 results/skymodel/p01")
     ap.add_argument("--run", nargs="+", default=None,
-                    help="step05 底下要比的 run 目錄名;預設取全部 *_sfield")
+                    help="step05 底下要比的替代 run 目錄名(可給多個,一個一欄);\n預設用 pipeline 自己的 step06")
     ap.add_argument("--seg", default=None,
                     help="segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--main-id", type=int, default=1, help="單獨拿出來看的源")
@@ -119,13 +123,13 @@ def main():
     args = ap.parse_args()
 
     W = ROOT / args.work
-    STEP01, STEP03, STEP05 = W / "step01", W / "step03", W / "step05"
-    # run 名字編了 basis/K/模板數/s 的處理方式,每次改設定就換一個名字,寫死必過期。
-    # 直接看工作區裡實際有哪些 run。
-    runs = args.run or sorted(p.name for p in STEP05.glob("*_sfield"))
-    if not runs:
-        raise SystemExit(f"★ {STEP05} 底下沒有 *_sfield,先跑 step5_fit_spaxels.py")
-    args.run = runs
+    STEP01, STEP03 = W / "step01", W / "step03"
+    # 名字同時是圖上的欄標題,所以 run -> 目錄的對應要留著,不能只留目錄。
+    cubedir = {(r or "step06"): fit_dirs(W, r)[1] for r in (args.run or [None])}
+    for r, d in cubedir.items():
+        if not (d / "sky_subtracted.fits").exists():
+            raise SystemExit(f"★ 找不到 {d / 'sky_subtracted.fits'}")
+    args.run = list(cubedir)
 
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
@@ -142,12 +146,12 @@ def main():
 
     allspec = {}
     for run in args.run:
-        D = fits.getdata(STEP05 / run / "sky_subtracted.fits").astype(np.float32)
+        D = fits.getdata(cubedir[run] / "sky_subtracted.fits").astype(np.float32)
         spec = ring_spectra(D, dist, groups, far)
         # 天空模型本身。殘差看的是「留下多少」,天空模型看的是「扣掉多少」——
         # blank 的 s 固定成 1 時 s·C_sky 對每個 spaxel 都一樣,所以天空模型在環上
         # 的任何超出量,只能來自天光線係數 cₖ 把源的光吸了進去。
-        S = fits.getdata(STEP05 / run / "sky_model.fits").astype(np.float32)
+        S = fits.getdata(cubedir[run] / "sky_model.fits").astype(np.float32)
         sspec = ring_spectra(S, dist, groups, far)
         del S
         print(f"\n=== {run}")

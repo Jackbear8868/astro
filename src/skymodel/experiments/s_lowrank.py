@@ -23,8 +23,8 @@ mu + a(y) + b(x) 是它的特例(加法模型 = 秩 3),所以這是嚴格的推�
                           到 sigma_n,不扣掉就是在比雜訊
     ③ >= 3 個不同位置的洞都成立   單一個洞可能只是運氣
 
-**這支不回答 over-subtraction。** 洞挖在 blank 區,源旁邊會怎樣要靠端到端的
-check_pointing。
+**這支不回答 over-subtraction。** 洞挖在 blank 區,源旁邊會怎樣要靠端到端的量測,
+而那個量測目前沒有(原本的 check_pointing 已於 2026-08-18 刪除)。
 
     conda run -n astro python src/skymodel/experiments/s_lowrank.py
 """
@@ -41,7 +41,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import build_s_field, main_source_group, rowcol_field, scale  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, rowcol_field, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -106,8 +106,7 @@ def main():
     args = ap.parse_args()
 
     W = ROOT / args.work
-    run = (W / "step05" / args.run if args.run
-           else sorted((W / "step05").glob("*_sfield"))[0])
+    run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
     p = meta["s_field_params"]
     seg   = fits.getdata(W / "step01/seg.fits").astype(int)

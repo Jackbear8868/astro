@@ -42,8 +42,9 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 `run_pointing.sh` 的 `REGION` 是使用者看著 `sky_region_visual.py` 的輸出
 (`evaluation/masking/prof_seg/visual_pNN.png`)親自定的,不是推導出來的值。
 
-`dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg` 與
-`step5_fit_spaxels.py --seg`,兩支的 `--help` 都指名它。
+`dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg`(界定 blank)、
+`step5_s_field.py --seg` 與 `step6_fit_sky.py --seg`(界定源區);
+`step3_sky_basis.py` 的 `--help` 指名它。
 
 ### 天空 basis
 
@@ -119,6 +120,11 @@ repo 裡僅存的紀錄;鍵是 NE pointing 的 source ID,和教授新的 14 份 
 | `chi2+nn` | 1/STAT | NNLS |
 | `unw+free` | 無 | 無約束 |
 | `chi2+free` | 1/STAT | 無約束 |
+
+這個 2x2 是 `exp02_basis_solver_matrix.py` 自帶的實作,不經過 step5,所以仍然跑得動。
+但要知道 **pipeline 那邊只剩 `unw` 這一半**:step5 的加權路徑在 2026-08-18 比較後
+移除(見 `docs/tried-not-adopted.md` 第二節),而被標成「教授的方式(字面上)」的
+`chi2+free` 在 pipeline 裡已無對應選項。
 
 ### 記帳原則
 

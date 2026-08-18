@@ -41,7 +41,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import main_source_group, rowcol_field, scale  # noqa: E402
+from utils import fit_dirs, main_source_group, rowcol_field, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 FIG  = ROOT / "results/skymodel/evaluation/s_field"
@@ -52,10 +52,10 @@ def load_all(ns):
     out = {}
     for n in ns:
         W = ROOT / f"results/skymodel/p{n:02d}"
-        runs = sorted((W / "step05").glob("*_sfield"))
-        if not runs:
+        sdir, _ = fit_dirs(W)
+        if not (sdir / "s_free.npy").exists():
             continue
-        s = np.load(runs[0] / "s_free.npy").astype(float)
+        s = np.load(sdir / "s_free.npy").astype(float)
         seg = fits.getdata(W / "step01/seg.fits").astype(int)
         white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
         valid = white != 0

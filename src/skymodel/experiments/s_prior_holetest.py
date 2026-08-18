@@ -57,9 +57,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from step5_fit_spaxels import build_templates            # noqa: E402
+from fitting import build_templates                     # noqa: E402
 from templates import air_to_vacuum                      # noqa: E402
-from utils import build_s_field, main_source_group, rowcol_field, scale  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, rowcol_field, scale  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -107,7 +107,8 @@ def solve(y, var, design, lb, ub, lam=None, prior=None):
 def main():
     ap = argparse.ArgumentParser(description="s 先驗正則化的挖洞測試")
     ap.add_argument("--work", default="results/skymodel/p01")
-    ap.add_argument("--run", default=None, help="省略 = step05 底下第一個 *_sfield")
+    ap.add_argument("--run", default=None,
+                    help="step05 底下的替代 run 目錄;預設用 pipeline 自己的 step05")
     ap.add_argument("--radius", type=float, default=45.0, help="洞的半徑(px)")
     ap.add_argument("--margin", type=float, default=15.0, help="洞要離視野邊緣多遠")
     ap.add_argument("-f", type=float, nargs="+", default=[0.3],
@@ -128,8 +129,7 @@ def main():
     args = ap.parse_args()
 
     W = ROOT / args.work
-    run = (W / "step05" / args.run if args.run
-           else sorted((W / "step05").glob("*_sfield"))[0])
+    run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
     p = meta["s_field_params"]
     cube = ROOT / meta["cube"]

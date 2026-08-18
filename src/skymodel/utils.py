@@ -1,8 +1,10 @@
 """Shared utilities.
 
-兩組東西:
-  * 光譜方向 —— running median、逐輪天光線偵測(estimate_continuum 等)
-  * 空間方向 —— 把逐 spaxel 的係數建成一個平滑的場(檔案後半的 s field 那一節)
+Two groups:
+  * spectral direction -- running median, iterative sky-line detection
+    (estimate_continuum etc.)
+  * spatial direction -- building a smooth field from per-spaxel coefficients
+    (the s-field section in the second half of this file)
 """
 
 import warnings
@@ -13,10 +15,30 @@ import pandas as pd
 from scipy.interpolate import UnivariateSpline
 from scipy import ndimage
 import matplotlib
-matplotlib.use("Agg")              # 必須在 import pyplot 之前
+matplotlib.use("Agg")              # must be set before importing pyplot
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from scipy.stats import skew, kurtosis
+
+
+def fit_dirs(work, run=None):
+    """Where one pointing's fitted products are -- (s-field dir, cube dir).
+
+        s-field dir   s_hat.npy, s_free.npy       written by step5
+        cube dir      sky_subtracted.fits, sky_model.fits, A_map.npy, s_map.npy
+                                                  written by step6
+
+    With no `run`, the two are step05 and step06. Giving `run` names a single
+    directory under step05 that holds both kinds of product, which is how an
+    alternative run is kept side by side with the pipeline's own output.
+    """
+    work = Path(work)
+    if run is None:
+        return work / "step05", work / "step06"
+    d = work / "step05" / run
+    if not d.is_dir():
+        raise SystemExit(f"★ run directory not found: {d}")
+    return d, d
 
 
 def running_median(spectrum, window=300):
@@ -31,7 +53,7 @@ def running_median(spectrum, window=300):
 def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
     m = mean_sky.copy()
     if exclude is not None:
-        m[exclude] = np.nan                        # 上一輪抓到的線 → 不參與 continuum
+        m[exclude] = np.nan                        # lines found in previous iteration -> excluded from continuum
     continuum = running_median(m, window)
     
     x = np.arange(len(m))
@@ -41,7 +63,7 @@ def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
     continuum = spl(x)
 
     abs_diff = np.abs(m - continuum)
-    sigma = running_median(abs_diff, window)       # 對波長方向取 running median
+    sigma = running_median(abs_diff, window)       # running median along wavelength
 
     line_mask = (mean_sky > continuum + thresholds[0] * sigma) | (mean_sky < continuum - thresholds[1] * sigma)
     return continuum, sigma, line_mask
@@ -73,93 +95,44 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_
 
 
 def load_line_masks(path, cumulative=True):
-    """讀 step3 存下的逐輪天光線遮罩,預設回傳累加版。
+    """Load the per-iteration sky-line masks saved by step3; returns the
+    cumulative version by default.
 
-    存檔存的是「每一輪實際用的遮罩」—— 上面 estimate_continuum 的迴圈裡,
-    每一輪的 new_mask 是 detect_lines 從頭算出來的,整個取代舊的,不是累加
-    (`line_mask = new_mask`)。收斂條件 `np.array_equal(new_mask, line_mask)`
-    也依賴這一點:累加的遮罩只會單調成長,永遠不可能相等。所以存檔必須維持
-    非累加,那是過程的忠實紀錄。
+    The saved file stores the mask each iteration actually used -- inside
+    estimate_continuum's loop, new_mask is recomputed from scratch by
+    detect_lines and wholly replaces the old one, not accumulated
+    (`line_mask = new_mask`). The convergence condition
+    `np.array_equal(new_mask, line_mask)` relies on this: a mask that can
+    only grow monotonically would never equal its predecessor. So the saved
+    file must remain non-cumulative; it is a faithful record of the process.
 
-    但拿來當「遮得越來越多」的序列比較時,非累加版有例外 —— 連續譜重擬之後
-    個別通道會掉回門檻以下,於是第 i 輪並不嚴格包含第 i−1 輪。cumulative=True
-    用 logical_or 前綴累積補上這個性質,讓通道數單調遞減。
+    When used as a "progressively wider" sequence, however, the non-cumulative
+    version has exceptions -- after the continuum is re-estimated, individual
+    channels can drop back below threshold, so iteration i does not strictly
+    contain iteration i-1. cumulative=True applies a logical_or prefix
+    accumulation to enforce monotonicity.
 
-    第 1 輪兩者相同,所以只讀 [0] 的呼叫端不受影響。
+    Iteration 1 is the same either way, so call sites that read only [0] are
+    unaffected.
     """
     m = np.load(path)
     return np.logical_or.accumulate(m, axis=0) if cumulative else m
 
 
-def fit_chi2_coefficients(residual, variance, basis):
-    """固定 sky basis，以 inverse-variance weighted least squares 求一條光譜的係數。
-
-    Parameters
-    ----------
-    residual : ndarray, shape (nz,)
-        一個 spaxel 中準備拿來擬合 sky lines 的殘差光譜。
-    variance : ndarray, shape (nz,)
-        同一個 spaxel 的 MUSE STAT；其數值是每個波長的 variance。
-    basis : ndarray, shape (K, nz)
-        只從 blank spaxels 學到的 K 條固定 sky-line basis。
-
-    Returns
-    -------
-    coefficients : ndarray, shape (K,)
-        讓 chi-square 最小的 K 個 basis 係數。若有效資料不足或 basis
-        不具完整 rank，回傳 K 個 NaN，表示無法可靠求解。
-    """
-    # 每一個條件的 shape 都是 (nz,)。只有 data、STAT 與全部 basis
-    # 都是有限值，且 STAT > 0 的波長，才能參與 1/STAT 加權擬合。
-    good = (
-        np.isfinite(residual)
-        & np.isfinite(variance)
-        & (variance > 0)
-        & np.all(np.isfinite(basis), axis=0)
-    )
-
-    n_coeff = basis.shape[0]  # K：需要求解的 sky-basis 係數數量
-
-    # 有效觀測數必須多於未知係數數量，否則沒有多餘資料約束這個 fit。
-    if good.sum() <= n_coeff:
-        return np.full(n_coeff, np.nan)
-
-    y = residual[good].astype(np.float64)          # (n_good,)
-    A = basis[:, good].T.astype(np.float64)        # (n_good, K)
-
-    # STAT = sigma^2；除以 sigma 等價於讓平方殘差帶有 1/STAT 權重。
-    sigma = np.sqrt(variance[good].astype(np.float64))
-    y_white = y / sigma                            # (n_good,)
-    A_white = A / sigma[:, None]                   # (n_good, K)
-
-    # 同時求解 K 個可正可負的係數，使 ||y_white - A_white @ w||^2 最小。
-    coefficients, _, rank, _ = np.linalg.lstsq(
-        A_white,
-        y_white,
-        rcond=None,
-    )
-
-    # rank < K 表示 basis 中沒有 K 個獨立方向，因此係數不是唯一解。
-    if rank < n_coeff:
-        return np.full(n_coeff, np.nan)
-
-    return coefficients
-
-
 def spectrum_stats(spec):
-    """把一條光譜濃縮成摘要統計。"""
-    spec = spec[np.isfinite(spec)]                     # 先丟掉 NaN
+    """Condense a spectrum into summary statistics."""
+    spec = spec[np.isfinite(spec)]                     # drop NaN first
     return {
         "mean":          np.mean(spec),
         "sigma":         np.std(spec),
         "skewness":      skew(spec),
         "kurtosis":      kurtosis(spec),
-        "rms_from_zero": np.sqrt(np.mean(spec**2)),    # sqrt(平方的平均) = 離 0 的均方根
+        "rms_from_zero": np.sqrt(np.mean(spec**2)),    # sqrt(mean of squares) = RMS from zero
     }
 
 
 def plot_compare(wl, spec, spec_compare, out_path, label="ours", label_compare="nosky", ylim=(-20, 20), title=None):
-    """對照圖：左光譜（藍=spec、橘虛線=spec_compare），右兩組 stats。"""
+    """Comparison plot: left panel shows spectra (blue=spec, dashed orange=spec_compare), right panel shows summary stats for both."""
     fig, (ax, stat_ax) = plt.subplots(1, 2, figsize=(15.5, 4.5), gridspec_kw={"width_ratios": [5, 1]})
     ax.axhline(0, color="0.5", lw=0.5)
     ax.plot(wl, spec, lw=0.9, color="#1f77b4", label=label)
@@ -188,25 +161,26 @@ def per_spaxel_continuum(
     window=300,
     chunk=8000,
 ):
-    """估計每個 spaxel 自己的平滑 continuum。
+    """Estimate each spaxel's own smooth continuum.
 
     Parameters
     ----------
     spectra : ndarray, shape (nz, n_spaxels)
-        多個 spaxels 的光譜；每一欄是一個 spaxel。
+        Spectra of multiple spaxels; each column is one spaxel.
     line_mask : ndarray of bool, shape (nz,)
-        從 mean blank-sky spectrum 偵測出的全域 sky-line mask。
-        True 表示該 wavelength 不參與 running median。
+        Global sky-line mask detected from the mean blank-sky spectrum.
+        True means that wavelength channel is excluded from the running
+        median.
     window : int
-        running median 的 wavelength window，單位是 spectral pixels。
+        Wavelength window for the running median, in spectral pixels.
     chunk : int
-        每次同時處理的 spaxel 數量，只控制記憶體與速度，
-        不改變 continuum 的科學定義。
+        Number of spaxels processed at once; controls only memory and
+        speed, not the scientific definition of the continuum.
 
     Returns
     -------
     continuum_own : ndarray, shape (nz, n_spaxels)
-        每個 spaxel 各自估計的平滑 continuum。
+        Smooth continuum estimated independently for each spaxel.
     """
     nz, n_spaxels = spectra.shape
 
@@ -243,35 +217,57 @@ def per_spaxel_continuum(
 
 
 # ---------------------------------------------------------------------------
-# s field —— 把逐 spaxel 的天空連續譜係數 s 建成一個空間上的場
+# s field -- build a spatial field from the per-spaxel sky-continuum
+# coefficient s
 # ---------------------------------------------------------------------------
-# 為什麼要這樣做:逐 spaxel 自由解 s 的話,源旁邊那格看到多出來的源光,唯一能
-# 解釋它的辦法就是把自己的 s 抬高 —— 那個逐 spaxel 的自由度就是源光被天空模型
-# 吃掉的通道。改成「只用遠離源的 spaxel 定一個場,再外插到源附近」,一格的資料
-# 撼動不了那個場,源的光在天空模型裡就無處可去,只能留在殘差裡(= 被保留)。
+# Why this is needed: if s is solved freely per spaxel, a spaxel adjacent to
+# a source that sees leaked source light can only explain it by raising its
+# own s -- that per-spaxel degree of freedom is the channel through which
+# the sky model absorbs source flux. Replacing it with "build a field from
+# spaxels far from all sources, then extrapolate to the source vicinity"
+# means one spaxel's data cannot budge the field, so source light has nowhere
+# to go inside the sky model and stays in the residual (= is preserved).
 #
-# 場的形式(見 rowcol_field):
+# The functional form of the field (see rowcol_field):
 #
 #     s_hat(x, y) = mu + a(y) + b(x)
 #
-# 描述的是儀器造成的軸對齊條紋(沿整行/整列延伸,不是天空也不是源)。
+# describes axis-aligned striping caused by the instrument (extending along
+# entire rows/columns, neither sky nor source).
+
+
+def arcsinh_stretch(img, valid=None, soft=0.02):
+    """asinh stretch for display -- returns (stretched image, vmax).
+
+    Maps the dynamic range of a white-light image into a displayable
+    range: linear in the faint parts, logarithmic in the bright parts.
+    vmin is always 0; vmax = arcsinh(1 / soft).
+    """
+    m = np.isfinite(img) & (img != 0)
+    v = np.nanpercentile(img[m], 99.5)
+    a = img if valid is None else np.where(valid, img, np.nan)
+    return np.arcsinh(a / (soft * v)), np.arcsinh(1 / soft)
 
 
 def scale(a):
-    """穩健散布 (p84 − p16)/2。
+    """Robust spread (p84 - p16) / 2.
 
-    不能用 rms/std:s 有少數擬合失敗的格,離群值極大,rms 與 std 會被那幾格
-    單獨主宰,量到的不再是整體的散布。
+    rms/std cannot be used: s has a few spaxels with failed fits whose
+    outlier values are extreme, and rms/std would be dominated by those few,
+    no longer measuring the overall spread.
     """
     a = a[np.isfinite(a)]
     return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2) if a.size else np.nan
 
 
 def noise_floor(img, m, axis=1):
-    """相鄰格差分估求解雜訊。var(a−b) = 2·var(noise),所以要除 sqrt(2)。
+    """Estimate the per-solve noise from adjacent-pixel differences.
+    var(a - b) = 2 var(noise), so divide by sqrt(2).
 
-    假設真值在相鄰兩格近似相同。若真有 1 px 尺度的結構,這個估計會偏高 ——
-    所以它是雜訊的上界,也就是「可壓縮空間」的保守估計。
+    Assumes the true value is approximately the same in adjacent pixels. If
+    there is genuine structure at the 1 px scale, this estimate is biased
+    high -- it is therefore an upper bound on the noise, i.e. a conservative
+    estimate of the "compressible headroom".
     """
     if axis == 0:
         d, mm = img[1:] - img[:-1], m[1:] & m[:-1]
@@ -281,10 +277,12 @@ def noise_floor(img, m, axis=1):
 
 
 def nanmed(a, axis):
-    """沿 axis 取中位數;整行/整列全是 NaN 時回 0 而不是 NaN。
+    """Median along axis; returns 0 instead of NaN when an entire row/column
+    is all NaN.
 
-    全 NaN 代表那一行沒有任何訓練點,偏移量無從估計。設 0 就是「不作修正」,
-    是這種情況下唯一誠實的選擇 —— 但要知道它是一個假設,不是一個測量。
+    All-NaN means that row has no training points, so the offset cannot be
+    estimated. Setting 0 is "apply no correction" -- the only honest choice
+    in that situation, though it is an assumption, not a measurement.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -293,59 +291,87 @@ def nanmed(a, axis):
 
 C_KMS = 299792.458
 
-# 離主源多少 km/s 之內算主星系的一部分。星系內部有轉動與外流,速度場本身就有
-# 寬度,所以判準是「落在星系的速度範圍內」,不是「和主源同一個紅移」。
-DV_MAX = 1468.0
+# How close in redshift a member must be to the main source to count as part
+# of the same galaxy. The galaxy has internal rotation and outflows, so the
+# criterion is "within the galaxy's velocity range", not "identical redshift".
+#
+# The threshold must be loose enough not to exclude the galaxy's own bright
+# knots and tight enough to reject background galaxies. The data make this
+# easy: genuine members differ by only tens of km/s, while a superposed
+# background galaxy differs by ~350,000 km/s -- four orders of magnitude
+# apart, so any threshold between ~300 and ~3000 km/s gives the same result
+# (see the scan table in evaluation/main_group_spec.py).
+#
+# 0.005 is chosen because step4's stellar-redshift scan half-width (--star-dz)
+# uses the same value, and reusing the same number is easier to remember.
+# Converted to velocity: c dz / (1+z) = 1469 km/s at z = 0.0205, which falls
+# in the safe interval.
+DZ_MAX = 0.005
 
 
 def galaxy_redshifts(step04, ids):
-    """每個 seg ID 的星系分支最佳紅移。回傳 {id: z}。
+    """Best galaxy-branch redshift for each seg ID. Returns {id: z}.
 
-    step4b 把兩條分支分開存,scan2 是星系分支。不讀 classification 的 z ——
-    那是勝出分支的值,源被判成恆星時它是視向速度,不是紅移。
+    step4 stores the two branches separately; scan2 is the galaxy branch.
+    The z from the classification file is not used -- that is the winning
+    branch's value, and when the source is classified as a star it is a
+    radial velocity, not a redshift.
     """
     out = {}
     for i in ids:
         f = sorted(Path(step04).glob(f"scan2_id{i}_*.npz"))
         if not f:
-            raise SystemExit(f"★ {step04} 裡找不到 scan2_id{i}_*.npz")
-        # 命中多個代表這個目錄裡有好幾次 step4 的結果(不同視窗、不同遮罩輪次)。
-        # 取 [0] 是照檔名排序挑一個,而紅移決定主源收哪些成員 —— 挑錯了下游
-        # 完全看不出來。寧可停下來要人講清楚。
+            raise SystemExit(f"scan2_id{i}_*.npz not found in {step04}")
+        # Multiple hits mean the directory contains results from several step4
+        # runs (different windows, different mask iterations). Taking [0] picks
+        # one by filename order, and since the redshift determines which members
+        # belong to the main source, picking the wrong one is invisible
+        # downstream. Better to stop and ask.
         if len(f) > 1:
             raise SystemExit(
-                f"★ {step04} 裡 id{i} 有 {len(f)} 份 scan2:\n  "
+                f"id{i} has {len(f)} scan2 files in {step04}:\n  "
                 + "\n  ".join(x.name for x in f)
-                + "\n  紅移必須和 --best 來自同一次擬合,請先清掉不要的那幾份。")
+                + "\n  redshift must come from the same fit as --best; remove the unwanted files first.")
         d = np.load(f[0], allow_pickle=True)
         out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
     return out
 
 
-def main_source_group(seg, white, step04=None, dv_max=DV_MAX):
-    """主星系的完整足跡 —— 最亮像素所在的那一團,只收紅移相符的成員。
-    回傳 (遮罩, ID 清單, 峰值座標)。
+def main_source_group(seg, white, step04=None, dz_max=DZ_MAX):
+    """Full footprint of the main galaxy -- the connected blob containing the
+    brightest pixel, keeping only members with matching redshifts.
+    Returns (mask, ID list, peak coordinates).
 
-    為什麼不能用「面積最大」或「流量最大」的**單一** ID:SExtractor 的 deblender
-    會把主星系拆開。並合星系本來就有數個亮結,而拆不拆、拆成幾塊,取決於那一次的
-    seeing 與 dither,不同 exposure 並不一致。被拆開時,任何「選一個 ID」的規則
-    都只會拿到星系的一部分,而下游用它來決定「遮掉哪半邊」與「排除周圍多少像素」
-    —— 選錯一塊,兩件事都會遮錯位置。
+    Why a single "largest-area" or "brightest" ID does not work: SExtractor's
+    deblender splits the main galaxy. A merging galaxy naturally has several
+    bright knots, and whether they are split and into how many pieces depends
+    on that exposure's seeing and dither -- it varies between exposures. When
+    split, any "pick one ID" rule gets only part of the galaxy, and downstream
+    uses it to decide "which side to mask" and "how many pixels to exclude
+    around it" -- picking the wrong piece misplaces both.
 
-    兩個判準:
+    Two criteria:
 
-    ① **直接相鄰**(不做任何膨脹)。deblend 出來的兄弟是把同一塊超過門檻的連通
-       區域切開,彼此貼著;另一個天體則被低於門檻的背景隔開。膨脹會抹掉這個分野,
-       把附近不相干的源一起吸進來。
-    ② **紅移相符**。相鄰還不夠 —— 疊在星系上的另一個天體也會被 deblend 成同一個
-       父偵測的子代,因此同樣貼著。用 step4b 擬合出來的星系分支紅移分辨:和主源
-       差超過 dv_max 的成員不是這個星系的。主源的紅移取最亮像素所在的那個成員。
+    (1) **Directly adjacent** (no dilation). Deblended siblings are carved from
+        the same above-threshold connected region, so they touch; a different
+        object is separated by below-threshold background. Dilation would blur
+        this distinction, pulling in unrelated nearby sources.
+    (2) **Redshift match**. Adjacency alone is not enough -- another object
+        superposed on the galaxy is also deblended as a child of the same
+        parent detection and therefore also touches. The galaxy-branch
+        redshift from step4's fit discriminates: members differing from the
+        main source by more than dz_max are not part of this galaxy. The main
+        source's redshift is taken from the member containing the brightest
+        pixel.
 
-    step04 省略時只做 ①。教授交付的 seg 沒有對應的模板擬合,那種情況下沒有紅移
-    可用,回傳整個相鄰塊是唯一誠實的選擇。
+    When step04 is omitted, only criterion (1) is applied. The professor's
+    delivered seg has no corresponding template fit, so no redshift is
+    available; returning the entire adjacent blob is the only honest choice.
 
-    回傳的遮罩再與連通塊取交集,不是 `isin(seg, ids)` —— SExtractor 的 CLEAN 會把
-    散落各處的假偵測併進亮源的 ID,那些像素帶著主源的編號卻不在主源身上。
+    The returned mask is intersected with the connected blob, not
+    `isin(seg, ids)` -- SExtractor's CLEAN merges scattered spurious
+    detections into the bright source's ID, and those pixels carry the main
+    source's number but are not on the main source.
     """
     k = np.unravel_index(np.nanargmax(np.where(np.isfinite(white), white, -np.inf)),
                          white.shape)
@@ -357,23 +383,29 @@ def main_source_group(seg, white, step04=None, dv_max=DV_MAX):
     if step04 is not None:
         z = galaxy_redshifts(step04, ids)
         z0 = z[int(seg[k])]
-        ids = [i for i in ids
-               if abs(C_KMS * (z[i] - z0) / (1 + z0)) <= dv_max]
+        # Comparing |dz| and |c dz/(1+z0)| is the same criterion -- both sides
+        # are multiplied by the same positive number. Using the redshift
+        # difference directly avoids tying the threshold to a particular z0.
+        ids = [i for i in ids if abs(z[i] - z0) <= dz_max]
 
     return np.isin(seg, ids) & blob, ids, k
 
 
 def main_source_mask(seg, source_id=None, main_blob=True):
-    """主源的遮罩。回傳 (布林遮罩, 用到的 seg ID)。
+    """Mask of the main source. Returns (boolean mask, seg ID used).
 
-    source_id 省略時取**面積最大**的源 —— 不要寫死 seg == 1。SExtractor 的編號
-    是按偵測順序給的,換一個 pointing 就不保證主星系還是 1 號,而寫死的話跑錯
-    不會報錯,只會安靜地把某個小源當成主源去排除幾十像素。
+    When source_id is omitted, the largest-area source is selected -- do not
+    hard-code seg == 1. SExtractor numbers sources in detection order, so a
+    different pointing may give the main galaxy a different ID, and hard-coding
+    would silently use some small source as the main, excluding dozens of
+    pixels in the wrong place.
 
-    main_blob=True 只取最大的連通塊。一個 seg ID 可能由**數個不相連的塊**組成 ——
-    那是 SExtractor 的 `CLEAN Y` 把它判為假偵測的天體「像素併進鄰近亮源」造成的。
-    用整個 ID 算距離的話,那些散在遠處的小碎塊會各自撐出一圈排除區,把排除面積
-    放大到遠超過主源本身。
+    main_blob=True keeps only the largest connected component. A single seg ID
+    can consist of **several disconnected patches** -- that is caused by
+    SExtractor's `CLEAN Y` merging pixels of objects it judges to be spurious
+    into the nearby bright source. Using the entire ID for distance
+    calculations would let those scattered fragments each produce an exclusion
+    ring, inflating the exclusion area far beyond the main source itself.
     """
     if source_id is None:
         ids, cnt = np.unique(seg[seg > 0], return_counts=True)
@@ -388,29 +420,40 @@ def main_source_mask(seg, source_id=None, main_blob=True):
 
 
 def rowcol_field(s, w, n_iter=4):
-    """s ≈ mu + a(y) + b(x),交替以中位數求解(Tukey 的 median polish)。
+    """s ~ mu + a(y) + b(x), solved by alternating medians (Tukey's median
+    polish).
 
-    回傳 (場, a, b)。
+    Returns (field, a, b).
 
-    為什麼是「相加」而不是一般的二維函數 f(x, y):一般的 f 等於每格一個數字,
-    沒有壓縮、也就無法預測沒有資料的地方。相加的形式只有 1 + ny + nx 個參數,
-    而且 **a(y) 被那一列的所有 spaxel 共用** —— 這正是資訊能橫向流動、伸得進
-    大洞的原因:洞中央那一列的 a(y),是從同一列遠離源的那些格算出來的。
+    Why additive rather than a general 2D function f(x, y): a general f is
+    one number per pixel -- no compression, and therefore no ability to
+    predict where there is no data. The additive form has only 1 + ny + nx
+    parameters, and **a(y) is shared by all spaxels in that row** -- this is
+    exactly why information can flow sideways into large gaps: a(y) for a row
+    in the centre of the gap is determined by the training spaxels in the same
+    row far from the source.
 
-    能表示:橫條紋、直條紋、任何線性的斜向梯度(alpha*x + beta*y 本身可分離)。
-    不能表示:只出現在某個位置、不沿整列或整行延伸的東西(統計上叫交互作用項)。
-    那些會留在殘差裡,交給 kernel_field 處理。
+    Can represent: horizontal stripes, vertical stripes, any linear diagonal
+    gradient (alpha*x + beta*y is separable). Cannot represent: features that
+    appear only at a specific location and do not extend along an entire row
+    or column (statistically: interaction terms). Those stay in the residual.
 
-    為什麼用中位數而不是平均:① 對壞格穩健;② **對「缺一大塊」自然** —— 一列
-    即使被源佔掉大半,剩下那些格的中位數照樣是那一列偏移量的好估計。
+    Why median rather than mean: (1) robust to bad spaxels; (2) **natural
+    for large gaps** -- even when most of a row is occupied by a source, the
+    median of the remaining spaxels is still a good estimate of that row's
+    offset.
 
-    為什麼要交替:a 和 b 互相耦合。要量「這一列偏高多少」,得先把各行本身的偏移
-    扣掉,否則量到的是「這一列剛好有哪些行還在」。n_iter 預設 4,是收斂所需輪數
-    之上留的餘裕。
+    Why alternate: a and b are coupled. To measure "how much higher is this
+    row", the column offsets must be subtracted first, otherwise the
+    measurement reflects "which columns happen to remain in this row". n_iter
+    defaults to 4, providing margin above the number of iterations needed for
+    convergence.
 
-    注意簡併:每個 a(y) 加 c、每個 b(x) 減 c,場完全相同。所以 (mu, a, b) 各自
-    不唯一,只有它們的和有意義;交替中位數會自然讓 median(a)、median(b) 落在 0
-    附近,由 mu 吸收整體水準。要單獨解讀 a(y) 時必須記得這一點。
+    Note the degeneracy: adding c to every a(y) and subtracting c from every
+    b(x) leaves the field unchanged. So (mu, a, b) are individually
+    non-unique; only their sum is meaningful. The alternating medians
+    naturally keep median(a) and median(b) near 0, with mu absorbing the
+    overall level. This must be kept in mind when interpreting a(y) alone.
     """
     S  = np.where(w, s, np.nan)
     with warnings.catch_warnings():
@@ -426,37 +469,51 @@ def rowcol_field(s, w, n_iter=4):
 
 def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
                   main_id=None, exclude=None, main=None):
-    """從逐 spaxel 的 s 圖建出空間場。回傳 (s_hat, 訓練遮罩)。
+    """Build a spatial field from the per-spaxel s map. Returns (s_hat,
+    training mask).
 
-    場的形式是 mu + a(y) + b(x)(見 rowcol_field)。它只有 1 + ny + nx 個參數,
-    而且 a(y) 被整列共用、b(x) 被整行共用 —— 這正是它能伸進源區的原因:那一列
-    在遠處仍有訓練點,參數從那些格算出來、再套用到洞中央。
+    The field has the form mu + a(y) + b(x) (see rowcol_field). It has only
+    1 + ny + nx parameters, and a(y) is shared across an entire row while
+    b(x) is shared across an entire column -- this is exactly why it can
+    extrapolate into the source region: rows that pass through the source
+    still have training spaxels far away, and the parameters are determined
+    from those, then applied to the centre of the gap.
 
     Parameters
     ----------
     s : ndarray, shape (ny, nx)
-        逐 spaxel 自由解出來的天空連續譜係數。源區的值不會被用到。
+        Sky-continuum coefficients from the per-spaxel free solve. Values in
+        the source region are not used.
     seg : ndarray, shape (ny, nx)
-        segmentation;0 = blank,>0 = 源。
+        Segmentation; 0 = blank, >0 = source.
     blank : ndarray of bool, shape (ny, nx)
-        可用的 blank spaxel(視場內、非源、光譜完整、s 有解)。
+        Usable blank spaxels (inside FoV, not source, spectrally complete,
+        s successfully solved).
     r_far : float
-        訓練點必須離**任何**源這麼遠(px)。要蓋過源的 PSF 翼,否則訓練點本身
-        就帶著源光。代價只是樣本變少。
+        Training points must be at least this far (px) from **any** source,
+        to avoid the source PSF wings; otherwise the training points
+        themselves carry source flux. The only cost is fewer samples.
     r_far_haro : float or None
-        主源專用的加碼半徑,只對主源生效。主源的延展暈比小源伸得遠得多,用同一個
-        r_far 的話訓練點仍在暈裡,模型會把暈學成天空。None = 不加碼。
+        Extra exclusion radius applied only to the main source. The main
+        source's extended halo reaches much farther than the PSF wings of
+        small sources; using the same r_far would leave training points
+        inside the halo, and the model would learn the halo as sky.
+        None = no extra exclusion.
     clip : float
-        |s − 中位| > clip x 穩健散布 的格不採用(剔掉擬合失敗的解)。
+        Spaxels with |s - median| > clip x robust spread are excluded
+        (rejects failed-fit solutions).
     main_id : int or None
-        主源的 segmentation ID。None = 自動取面積最大的源(見 main_source_mask)。
+        Segmentation ID of the main source. None = automatically select the
+        largest-area source (see main_source_mask).
     exclude : ndarray of bool or None
-        額外排除在訓練樣本外的格(仍然會被扣天空,只是不參與定場)。用途:
-        鑲嵌視場裡曝光數不足、雜訊遠高於外圈的區塊 —— 拿它學天空等於把雜訊
-        寫進場裡。
+        Additional spaxels to exclude from training (they are still sky-
+        subtracted, just not used for building the field). Purpose: mosaic
+        sub-fields with insufficient exposure depth where noise is far
+        higher than the outer ring -- using them to learn the sky writes
+        noise into the field.
     main : ndarray of bool or None
-        主源的遮罩;給定時就不再從 main_id 推。呼叫端通常已經用
-        main_source_group 算好。
+        Mask of the main source; when given, main_id is not used. Callers
+        typically have already computed this via main_source_group.
     """
     train = blank & (ndimage.distance_transform_edt(seg == 0) > r_far)
     if exclude is not None:
@@ -471,29 +528,32 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
     return M, train
 
 
-# 源定位圖用的顏色。GROUP_COLOR 只在 by_group=True 時用得到。
+# Colours for the source locator map. GROUP_COLOR is only used when by_group=True.
 GROUP_COLOR = {"star": "#2ca02c", "galaxy": "#1f77b4", "qso": "#d62728"}
-PLAIN_COLOR = "#ff7b7b"     # 不分組時的統一顏色,淡紅在灰階底圖上夠明顯
+PLAIN_COLOR = "#ff7b7b"     # uniform colour when not grouping; pale red is visible on greyscale
 
 
 def id_map(seg, white, rows, out, by_group=False):
-    """白光底圖 + 源的範圍 + 編號。
+    """White light background + source outlines + ID labels.
 
-    底圖用 asinh 拉伸:白光的動態範圍跨好幾個量級(Haro 11 本體 vs 暗源),
-    線性顯示會讓除了本體以外的東西全黑。asinh 在亮處是對數、暗處是線性,
-    是影像顯示的標準做法。
+    The background uses an asinh stretch: the dynamic range of white light
+    spans several orders of magnitude (Haro 11 body vs faint sources), and
+    a linear display makes everything outside the body black. asinh is
+    logarithmic in the bright regime and linear in the faint regime -- the
+    standard practice for image display.
 
-    by_group=False(預設)只畫「範圍 + 編號」,不上組別顏色。分類是 step4b 的
-    「結論」,把結論畫進定位圖裡,看圖的人會不自覺地把它當成既定事實;
-    定位圖的職責只是回答「哪個點是哪個源」。
+    by_group=False (default) draws only outlines and labels, without group
+    colours. Classification is step4's "conclusion"; drawing it on the
+    locator map would lead viewers to unconsciously treat it as established
+    fact. The locator map's job is only to answer "which spot is which source".
     """
     fig, ax = plt.subplots(figsize=(13, 12.5))
     v = np.nanpercentile(white[np.isfinite(white) & (white != 0)], 99.5)
     ax.imshow(np.arcsinh(white / (0.02 * v)), origin="lower", cmap="gray",
               vmin=0, vmax=np.arcsinh(1 / 0.02))
 
-    # 每個源填一層半透明的顏色,再描一圈輪廓 —— 填色看得出範圍,
-    # 輪廓在小源上仍然看得見。
+    # Each source gets a semi-transparent colour fill plus a contour outline --
+    # the fill shows extent, and the contour remains visible on small sources.
     for r in rows:
         m = seg == r["id"]
         c = GROUP_COLOR[r["group"]] if by_group else PLAIN_COLOR
@@ -511,7 +571,8 @@ def id_map(seg, white, rows, out, by_group=False):
     ax.set_xlabel("x [px]")
     ax.set_ylabel("y [px]")
     if by_group:
-        # 圖例放在座標軸外面 —— 右上角有源時,放在軸內會把它們蓋掉。
+        # Legend placed outside the axes -- when sources sit in the upper right,
+        # an in-axes legend would cover them.
         ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
                            for g, c in GROUP_COLOR.items()],
                   loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,

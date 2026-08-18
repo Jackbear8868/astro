@@ -1,23 +1,31 @@
-"""學天空的範圍 —— 兩個階段各自用了哪些 spaxel。
+"""The regions the sky is learned from -- which spaxels each of the two stages used.
 
-pipeline 裡有**兩個**不同的「學天空範圍」,遮罩不一樣,不能混為一談:
+There are **two** different "regions the sky is learned from" in the pipeline, with
+different masks, and they must not be conflated:
 
-    step3  天空 basis     blank = 視場內 & seg == 0,再套逐顆目視選定的
-                          --xlim / --ylim / --exclude-box。**不做膨脹。**
-    step5  s 空間場       在上面的基礎上再要求離**任何**源 > r_far、離主源
-                          > r_far_haro,並剔除 |s − 中位| > clip x 散布 的格。
-                          這一層才是「避開不穩定的區域」。
+    step3  sky basis      blank = inside the field of view & seg == 0, then the
+                          --xlim / --ylim / --exclude-box selected visually for each
+                          pointing. **No dilation.**
+    step5  s spatial      on top of the above, additionally requires > r_far from
+           field          **any** source and > r_far_haro from the main source group,
+                          and rejects the pixels with |s − median| > clip x spread.
+                          This layer is the one that "avoids the unstable regions".
 
-為什麼兩層的判準不同
---------------------
-basis 學的是天光線的**形狀**,一條天光線在每個 blank spaxel 都長一樣,源的
-PSF 翼混進來影響有限,所以只需要避開主源的暈(那是 --xlim/--ylim 在做的)。
+Why the two layers use different criteria
+-----------------------------------------
+The basis learns the **shape** of the sky emission lines, a sky emission line looks
+the same in every blank spaxel, and the source's PSF wings mixing in has only a
+limited effect, so it only needs to avoid the halo of the main source (that is what
+--xlim/--ylim are doing).
 
-s 學的是天空連續譜的**振幅**,而星系的連續譜和天空連續譜形狀太像 —— 訓練點
-只要沾到一點源光,s 就被墊高,天空模型跟著長高,扣掉時把源吃掉。所以它要退得
-更遠,而且要把擬合失敗的格剔掉。
+s learns the **amplitude** of the sky continuum, and the continuum of the galaxy is
+too similar in shape to the sky continuum -- as soon as a training point picks up a
+little source light, s gets propped up, the sky model grows with it, and subtracting
+it eats the source. So it has to back off further, and it has to reject the pixels
+where the fit failed.
 
-範圍參數的唯一來源是 run_pointing.sh 的 case 區塊,這支直接去讀它,不另外抄一份。
+The single source of the region parameters is the case block of run_pointing.sh, and
+this script reads it directly rather than keeping a second copy.
 
     conda run -n astro python src/skymodel/evaluation/sky_region_map.py --work results/skymodel/p01
 """
@@ -35,19 +43,21 @@ import matplotlib.patches as mpatches
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
-from utils import build_s_field, main_source_group  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group  # noqa: E402
 
 
 def region_args(n):
-    """從 run_pointing.sh 的 case 區塊讀出第 n 顆的空間限制。
+    """Read the spatial restrictions of pointing n out of the case block of
+    run_pointing.sh.
 
-    不在這裡抄一份 —— 兩處各存一份的話,改了一邊沒改另一邊,圖就會和實際跑的
-    設定不符,而圖上看起來完全正常。
+    No copy is kept here -- with a copy stored in each of the two places, editing one
+    side without editing the other makes the figure disagree with the settings
+    actually used, while the figure looks perfectly normal.
     """
     txt = (ROOT / "src/skymodel/run_pointing.sh").read_text()
     m = re.search(rf"^\s*{n}\)\s*REGION=\((.*?)\)\s*;;", txt, re.M)
     if not m:
-        raise SystemExit(f"★ run_pointing.sh 的 case 區塊裡沒有 #{n}")
+        raise SystemExit(f"run_pointing.sh case block has no entry for #{n}")
     tok = m.group(1).split()
     out = {}
     for k in ("--xlim", "--ylim", "--exclude-box"):
@@ -59,20 +69,20 @@ def region_args(n):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="學天空的範圍:basis 與 s 場各自用了哪些格")
+    ap = argparse.ArgumentParser(description="Sky learning regions: spaxels used by basis and s field")
     ap.add_argument("--work", required=True)
-    ap.add_argument("--run", default=None, help="預設取唯一的 *_sfield")
+    ap.add_argument("--run", default=None,
+                    help="alternative run directory under step05; default is the pipeline's own step05/step06")
     args = ap.parse_args()
 
     W = ROOT / args.work
     n = int(W.name[1:])
-    run = (W / "step05" / args.run if args.run
-           else sorted((W / "step05").glob("*_sfield"))[0])
+    run, _ = fit_dirs(W, args.run)
 
     seg, white, valid = load_field(W)
     reg = region_args(n)
 
-    # --- step3:blank,再套空間限制 ---
+    # --- step3: blank, then the spatial restrictions on top ---
     blank = valid & (seg == 0)
     keep = np.ones_like(blank)
     yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
@@ -85,7 +95,8 @@ def main():
         keep &= ~((yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1))
     basis_train = blank & keep
 
-    # --- step5:再退開源,並剔除擬合失敗的格 ---
+    # --- step5: back further off the sources, and reject the pixels where the fit
+    #     failed ---
     p = json.loads((run / "meta.json").read_text())["s_field_params"]
     s = np.load(run / "s_free.npy").astype(float)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
@@ -108,7 +119,8 @@ def main():
         a.set_title(ttl, fontsize=12)
         a.set_xticks([]); a.set_yticks([])
 
-    # 空間限制畫成框,才看得出「這條線是人訂的」而不是資料的邊界
+    # the spatial restrictions are drawn as boxes, so that "this line was set by hand"
+    # is visible rather than looking like a boundary of the data
     ny, nx = seg.shape
     if "xlim" in reg or "ylim" in reg:
         x0, x1 = reg.get("xlim", [0, nx])

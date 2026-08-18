@@ -1,52 +1,66 @@
-"""方框裡的平均光譜 —— 天空扣乾淨了嗎、源有沒有被扣掉。
+"""Mean spectrum inside a box -- was the sky removed cleanly, and did the source get
+subtracted away.
 
-一個方框一張圖、右邊放統計。畫的是 step5 實際輸出的 sky_subtracted
-(= 資料 − 天空),**源留在裡面**,不是 資料 − 天空 − 源模型。
+One figure per box, with the statistics on the right. What is drawn is the
+sky_subtracted that step6 actually writes out (= data − sky), **with the source still
+in it**, not data − sky − source model.
 
-理由是原則 1:只看殘差判斷不了好壞 —— 把源一起扣光,殘差同樣會變小。
-留著源,兩件事才在同一張圖上分得開:
+The reason is Principle 1: residuals alone cannot tell good from bad -- subtracting
+the source away as well makes the residual smaller in exactly the same way. Only by
+leaving the source in do the two things become separable in the same figure:
 
-    blank 的格   線壓在 0 上   -> 天空扣乾淨了
-    源上的格     線是星系光譜  -> 源留住了;線被壓低就是 over-subtraction
+    blank pixels    the line sits on 0             -> the sky was removed cleanly
+    source pixels   the line is a galaxy spectrum  -> the source was preserved; a
+                                                     line pushed down is
+                                                     over-subtraction
 
-而且這裡不重新擬合任何東西,直接讀 step5 寫出來的 cube 取區域平均。圖上看到的
-就是使用者拿到的那份資料,沒有「圖是另外算的」這層落差。
+And nothing is re-fitted here: the cube step6 wrote out is read directly and averaged
+over the region. What the figure shows is the same data the user gets, without the
+gap of "the figure was computed separately".
 
-三條線
-------
-    ESO nosky            外部基準(ESO pipeline 的天空扣完)
-    s per-spaxel (old)   舊做法:每個 blank spaxel 各自解自己的 s
-    ours                 現行做法:s 換成一張平滑的空間場,源區與 blank 共用同一張
+The three lines
+---------------
+    ESO nosky            external reference (sky subtracted by the ESO pipeline)
+    s per-spaxel (old)   the old approach: every blank spaxel solves its own s
+    ours                 the current approach: s is replaced by a smooth spatial
+                         field, shared by the source region and blank alike
 
-方框怎麼選
-----------
-用**內容**選,不用手打座標:core/halo 由主源內的白光亮度決定,src edge 由
-「離主源的距離」決定,blank 沿距離均勻取。方框必須整框落在該類區域裡(用
-minimum_filter 檢查),否則標籤和內容會不符。
+How the boxes are chosen
+------------------------
+By **content**, not by typed-in coordinates: core/halo are decided by the white light
+brightness inside the main source group, src edge is decided by "distance from the
+main source group", and blank is sampled uniformly along that distance. A box must lie
+entirely inside the region of its class (checked with minimum_filter), otherwise the
+label and the content would not match.
 
-方框平均 vs 單點
-----------------
---half 是方框的半寬,框寬 = 2*half+1。**--half 0 就是單一 spaxel** —— 選位置的
-規則完全一樣,只是不做平均。方框把雜訊壓成 1/sqrt(N),適合看零點;單點很吵,
-但它是「這一個位置到底如何」的誠實答案,不靠平均把系統性偏差藏起來。
+Box mean vs single point
+------------------------
+--half is the half width of the box, box width = 2*half+1. **--half 0 is a single
+spaxel** -- the rule for choosing the position is exactly the same, only no averaging
+is done. A box beats the noise down as 1/sqrt(N) and is good for looking at the zero
+point; a single point is very noisy, but it is the honest answer to "what is this one
+position really like", without averaging hiding a systematic offset.
 
-兩者的檔名相同,所以輸出目錄跟著 --half 走,不會互相覆蓋:
+The two have the same filenames, so the output directory follows --half and they do
+not overwrite each other:
 
     evaluation/pNN/box/     --half > 0
     evaluation/pNN/point/   --half 0
 
-兩種輸出
---------
-    預設(PNG)  一個方框一張圖,三條線疊在一起比。`map.png` 標出位置在視場
-               的哪裡。缺 ESO 或舊 run 時用 --eso none / --ref-run none。
-    --pdf      一頁一個方框,上格 raw vs sky model、下格殘差。**只用這個 run
-               自己的三份資料**(原始 cube / sky_model.fits / sky_subtracted.fits),
-               不需要任何外部對照。
+Two kinds of output
+-------------------
+    default (PNG)  one figure per box, the three lines overplotted for comparison.
+                   `map.png` marks where in the field of view the positions are. Use
+                   --eso none / --ref-run none when ESO or the old run is missing.
+    --pdf          one box per page, raw vs sky model on the upper panel and the
+                   residual on the lower one. **Uses only this run's own three
+                   files** (original cube / sky_model.fits / sky_subtracted.fits),
+                   so no external reference is needed.
 
     conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
-        --work results/skymodel/p01 --run blank_svdK30_tpl60_sfield
+        --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
-        --work results/skymodel/p01 --run blank_svdK30_tpl60_sfield --half 0
+        --work results/skymodel/p01 --half 0
 """
 import argparse
 import json
@@ -64,56 +78,72 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
-from utils import main_source_group, scale, spectrum_stats  # noqa: E402
+from utils import fit_dirs, main_source_group, scale, spectrum_stats  # noqa: E402
 
 Z_HARO = 0.0204
 LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
 
 
 
-# 顏色編的是角色:外部基準橘、舊做法灰、要看的那條藍。
-# 標籤一律英文 —— matplotlib 預設字型沒有中文字符,中文會變成一格格的豆腐。
+# The colours encode roles: the external reference orange, the old approach grey, and
+# the line we care about blue.
+# The labels are always in English -- matplotlib's default font has no Chinese glyphs,
+# and Chinese would turn into a row of tofu boxes.
 COL = {"ESO nosky": "#ff7f0e", "s per-spaxel (old)": "0.35", "ours": "#1f77b4"}
 SHORT = {"ESO nosky": "ESO", "s per-spaxel (old)": "old", "ours": "ours"}
+# Fallbacks for labels given on the command line: the reference is drawn in the
+# same grey as the old run, the main one in the same blue, so the roles stay
+# readable whatever the two runs are called.
+REF_FALLBACK, RUN_FALLBACK = "0.35", "#1f77b4"
 
-# 這些位置的圖畫大張(見迴圈裡的說明)。畫布放大就是每個通道分到更多螢幕像素,
-# 不需要改版面 —— 3801 個通道在 30 in x 200 dpi 下約 1 個通道 1 個像素。
+# The figures for these positions are drawn large (see the explanation inside the
+# loop). Enlarging the canvas simply gives each channel more screen pixels, with no
+# need to change the layout -- 3801 channels at 30 in x 200 dpi is about 1 channel per
+# pixel.
 BIG_BOXES = {"core"}
 BIG_FIG, BIG_DPI = (30, 8.4), 200
 
 
 def cube_data(path):
-    """讀 cube 的 DATA。step5 寫在 primary HDU,ESO 的在名為 DATA 的 HDU。"""
+    """Read the cube's DATA. step5 writes it in the primary HDU, ESO's is in an HDU
+    named DATA."""
     h = fits.open(path, memmap=True)
     hdu = h["DATA"] if "DATA" in h else h[0]
     return h, hdu
 
 
 def box_mean(hdu, y0, y1, x0, x1):
-    """一個方框的平均光譜。NaN 的 spaxel 自動略過(nanmean)。"""
+    """Mean spectrum of one box. NaN spaxels are skipped automatically (nanmean)."""
     sub = np.asarray(hdu.data[:, y0:y1 + 1, x0:x1 + 1], np.float32)
     with np.errstate(invalid="ignore"):
         return np.nanmean(sub.reshape(sub.shape[0], -1), axis=1)
 
 
 def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
-    """依內容挑方框,回傳 {名稱: (y0, y1, x0, x1)}(含端點)。"""
+    """Pick the boxes by content, returning {name: (y0, y1, x0, x1)} (endpoints
+    included)."""
     main, ids, peak = main_source_group(seg, white, step04)
     valid = white != 0
     size  = 2 * half + 1
 
-    # 「整框都在某類區域裡」= 該類的布林圖經過 minimum_filter 之後仍為 True。
-    # minimum_filter 對布林圖就是「這個視窗裡有沒有 False」的檢查。
+    # "the whole box is inside a region of some class" = that class's boolean map is
+    # still True after a minimum_filter. For a boolean map, minimum_filter is exactly
+    # the check "is there any False inside this window".
     def whole(m):
         return ndimage.minimum_filter(m.astype(np.uint8), size=size).astype(bool)
 
     d_main   = ndimage.distance_transform_edt(~main)
-    # 視野邊緣要避開:那裡曝光次數少,step5 還會把覆蓋率 < 90% 的 spaxel 寫成
-    # NaN。方框落在那裡,量到的是拼接的邊界效應,不是天空扣得好不好。
+    # The edge of the field of view has to be avoided: the number of exposures is low
+    # there, and step5 additionally writes NaN for spaxels with coverage < 90%. A box
+    # landing there measures the boundary effect of the mosaicking, not how well the
+    # sky was removed.
     #
-    # 主源也要套同一個限制。halo 取的是「主源內最暗的地方」,而主源的足跡常常
-    # 延伸到視場邊緣 —— 那裡因為曝光不足本來就暗,所以「最暗」會系統性地選到
-    # 邊緣,量到的是邊界效應而不是星系的外圍。
+    # The same restriction has to be applied to the main source group. halo takes "the
+    # faintest place inside the main source group", and the footprint of the main
+    # source group often extends to the edge of the field of view -- which is faint to
+    # begin with because of the insufficient exposure, so "the faintest" would
+    # systematically pick the edge and would measure the boundary effect instead of
+    # the outskirts of the galaxy.
     d_edge   = ndimage.distance_transform_edt(valid)
     far_edge = d_edge > half + margin
     in_main  = whole(main & valid) & far_edge
@@ -124,24 +154,27 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
     def add(name, cy, cx):
         boxes[name] = (cy - half, cy + half, cx - half, cx + half)
 
-    # --- 主源:最亮的核心、以及仍整框在源內的最暗處(halo) ---
+    # --- main source group: the brightest core, and the faintest place whose box is
+    #     still entirely inside the source (halo) ---
     wm = ndimage.uniform_filter(np.where(valid, white, 0.0), size=size)
     if in_main.any():
         cand = np.flatnonzero(in_main.ravel())
         add("core", *divmod(int(cand[np.argmax(wm.ravel()[cand])]), seg.shape[1]))
         add("halo", *divmod(int(cand[np.argmin(wm.ravel()[cand])]), seg.shape[1]))
-    else:                                    # 主源太小,框放不進去 -> 就放在峰值上
+    else:               # main source group too small for the box -> put it on the peak
         add("core", *peak)
 
-    # --- 源外那一圈:over-subtraction 的案發現場 ---
-    # 方框整框在 blank,框心離主源最近只能到 half+1 —— 這已經是「緊貼源邊」。
+    # --- the ring just outside the source: the crime scene of over-subtraction ---
+    # The box lies entirely in blank, so the closest the box centre can get to the
+    # main source group is half+1 -- that already counts as "hugging the source edge".
     cand = np.flatnonzero(in_blank.ravel())
     dm   = d_main.ravel()[cand]
     for t in edge_targets:
         j = int(cand[np.argmin(np.abs(dm - t))])
         add(f"src edge d={d_main.ravel()[j]:.0f}px", *divmod(j, seg.shape[1]))
 
-    # --- 其他源:兩個最亮的非主源,看改善是不是只發生在 Haro 11 身上 ---
+    # --- other sources: the two brightest non-main sources, to see whether the
+    #     improvement happens only on Haro 11 ---
     others = [i for i in np.unique(seg[seg > 0]) if i not in ids]
     flux   = {i: float(np.nansum(np.where(seg == i, white, 0))) for i in others}
     n_added = 0
@@ -150,12 +183,13 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
             break
         m = (seg == i) & valid
         k = np.unravel_index(np.nanargmax(np.where(m, white, -np.inf)), seg.shape)
-        if d_edge[k] <= half + margin:            # 同樣避開視野邊緣
+        if d_edge[k] <= half + margin:      # avoid the edge of the field of view too
             continue
         add(f"source #{int(i)}", int(k[0]), int(k[1]))
         n_added += 1
 
-    # --- blank:沿離主源的距離均勻取,對照「距離越遠越乾淨」的趨勢 ---
+    # --- blank: sampled uniformly along the distance from the main source group, to
+    #     check the trend "the farther away, the cleaner" ---
     lo, hi = float(dm.min()), float(dm.max())
     for q in np.linspace(0.25, 1.0, n_blank):
         j = int(cand[np.argmin(np.abs(dm - (lo + q * (hi - lo))))])
@@ -164,7 +198,8 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
 
 
 def draw_map(white, seg, s_hat, boxes, out_path, title):
-    """方框畫在白光圖與 s 場上 —— 只報座標的話看不出那是天上的哪一塊。"""
+    """The boxes drawn on the white light image and on the s field -- reporting only
+    the coordinates would not show which patch of the sky that is."""
     n = 1 if s_hat is None else 2
     fig, axes = plt.subplots(1, n, figsize=(8.5 * n, 8), squeeze=False)
     q0 = max(float(np.nanpercentile(white[white != 0], 20)), 1e-3)
@@ -174,9 +209,10 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
                       vmax=float(np.nanpercentile(d, 99.7)))
     axes[0][0].set_title("whitelight", fontsize=10)
     if s_hat is not None:
-        # 色階以 1.0 為中心、半寬 3 x 穩健散布。改用分位數的話上下不對稱、
-        # 範圍又更窄,同一張 s 場會看起來條紋強得多 —— 那是色階的差別,
-        # 不是資料變了。
+        # The colour scale is centred on 1.0 with a half width of 3 x the robust
+        # spread. Switching to percentiles would be asymmetric about the centre and
+        # narrower as well, and the same s field would look far more strongly
+        # striped -- that is a difference of the colour scale, not of the data.
         v = 3 * scale(s_hat[np.isfinite(s_hat)])
         im = axes[0][1].imshow(s_hat, origin="lower", cmap="RdBu_r",
                                vmin=1 - v, vmax=1 + v)
@@ -188,7 +224,8 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
         for i, (nm, (y0, y1, x0, x1)) in enumerate(boxes.items()):
             c = cmap[i % 10]
             if y0 == y1 and x0 == x1:
-                # 單一 spaxel 畫成方框的話只有 1 px,在 320 px 的視場上看不見
+                # a single spaxel drawn as a box is only 1 px, invisible in a 320 px
+                # field of view
                 ax.plot(x0, y0, "+", color=c, ms=13, mew=2.2)
             else:
                 ax.add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), x1 - x0 + 1,
@@ -208,16 +245,22 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
 
 
 def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
-    """一頁一個方框,上下兩格 —— 判斷「扣得好不好」不能只看殘差。
+    """One box per page, two panels stacked -- judging "how well it was subtracted"
+    cannot be done from the residual alone.
 
-    把源扣光也會讓殘差變小,所以殘差小本身不是好消息。要三條一起看:
+    Subtracting the source away also makes the residual smaller, so a small residual
+    is not good news by itself. The three have to be looked at together:
 
-        上格   raw 與 model 同尺度疊在一起。天空模型有沒有貼上去,看這格。
-        下格   resid = raw − model,尺度放大。blank 的框應該只剩雜訊;
-               源上的框應該留著星系/恆星的光譜形狀,被壓平就是 over-subtraction。
+        upper panel   raw and model overplotted on the same scale. Whether the sky
+                      model sits on top of the data is read from this panel.
+        lower panel   resid = raw − model, on an enlarged scale. A box in blank
+                      should be left with nothing but noise; a box on a source should
+                      keep the spectral shape of the galaxy/star, and being flattened
+                      is over-subtraction.
 
-    上下不共用 y 尺度是刻意的:天空連續譜比殘差大好幾個數量級,同尺度的話殘差
-    會是一條貼在 0 上的直線,什麼都看不出來。
+    Not sharing the y scale between the two panels is deliberate: the sky continuum is
+    several orders of magnitude larger than the residual, so on a common scale the
+    residual would be a straight line stuck on 0 and nothing could be seen.
     """
     from matplotlib.backends.backend_pdf import PdfPages
     with PdfPages(out_path) as pdf:
@@ -226,9 +269,12 @@ def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
             fig, ax = plt.subplots(2, 1, figsize=(13, 7.2), sharex=True,
                                    gridspec_kw={"height_ratios": [1.25, 1],
                                                 "hspace": 0.08})
-            # raw 畫粗、model 畫細疊在上面。同粗細的話兩條在 blank 完全重合,
-            # 看圖的人分不出「黑線藏在紅線底下」還是「黑線根本沒畫出來」——
-            # 而那正是這一格要回答的問題。粗細差開之後,重合處會露出灰色邊。
+            # raw is drawn thick and model thin on top of it. With the same line
+            # width the two would coincide exactly in blank, and the reader could not
+            # tell "the black line is hidden under the red one" from "the black line
+            # was never drawn at all" -- which is exactly the question this panel is
+            # there to answer. Once the widths differ, a grey rim shows through where
+            # they coincide.
             ax[0].plot(wl, smooth(raw, smooth_w), lw=1.4, color="0.45",
                        label="raw (wsky)")
             ax[0].plot(wl, smooth(mod, smooth_w), lw=0.5, color="#d62728",
@@ -266,7 +312,8 @@ def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
 
 
 def smooth(a, w):
-    """畫圖用的移動平均。只是為了看得清楚,右邊表格的數字都沒有平滑過。"""
+    """Moving average used for plotting. Purely to make things legible; none of the
+    numbers in the table on the right have been smoothed."""
     if w <= 1:
         return a
     k = np.ones(w) / w
@@ -275,51 +322,59 @@ def smooth(a, w):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="方框裡的平均光譜(新 basis + s 場)")
+    ap = argparse.ArgumentParser(description="Mean spectrum inside a box (new basis + s field)")
     ap.add_argument("--work", required=True,
-                    help="pointing 的工作區,例如 results/skymodel/p01")
+                    help="pointing work directory, e.g. results/skymodel/p01")
     ap.add_argument("--run", default=None,
-                    help="要看的 step05 輸出目錄名;預設取唯一的 *_sfield")
+                    help="alternative run directory under step05; default is the "
+                         "pipeline's own step05/step06")
     ap.add_argument("--ref-run", default="none",
-                    help="對照的舊 run;none = 不畫")
+                    help="another run directory under step05 to compare against; "
+                         "none = do not draw")
+    ap.add_argument("--ref-label", default="s per-spaxel (old)",
+                    help="legend label for the --ref-run line. This script compares "
+                         "any two runs, not just old vs new, so a hard-coded label "
+                         "would be misleading")
+    ap.add_argument("--run-label", default="ours",
+                    help="legend label for the --run line")
     ap.add_argument("--eso", default=None,
-                    help="外部基準;預設由 pNN 的編號推出該顆自己的 ESO nosky。"
-                         "none = 不畫")
-    ap.add_argument("--half", type=int, default=6, help="方框半寬,框寬 = 2*half+1")
+                    help="external reference; defaults to the ESO nosky derived "
+                         "from the pNN number. none = do not draw")
+    ap.add_argument("--half", type=int, default=6, help="box half-width; box width = 2*half+1")
     ap.add_argument("--n-blank", type=int, default=4)
     ap.add_argument("--edge", type=float, nargs="+", default=[7, 20],
-                    help="源外方框的目標距離(px,離主源)")
+                    help="target distance (px) from the main source for outer boxes")
     ap.add_argument("--margin", type=float, default=10,
-                    help="方框要離視野邊緣這麼遠(px)。邊緣曝光少,step5 還會把覆蓋率 "
-                         "< 90%% 的 spaxel 寫成 NaN")
-    ap.add_argument("--smooth", type=int, default=1, help="畫圖用的移動平均寬度(通道)")
+                    help="minimum distance (px) from the field-of-view edge. Edges "
+                         "have low exposure, and step5 writes NaN for spaxels with "
+                         "coverage < 90%%")
+    ap.add_argument("--smooth", type=int, default=1, help="moving-average width for plotting (channels)")
     ap.add_argument("--pdf", action="store_true",
-                    help="改出 PDF:一頁一個方框,上格 raw vs sky model、下格殘差。"
-                         "這個模式只看**這一個 run 自己**(raw / model / resid),"
-                         "不需要 ESO 或舊 run 當對照,所以每顆 pointing 都畫得出來。"
-                         "raw 的路徑從 run 的 meta.json 讀 —— 手打的話遲早會拿錯一顆")
+                    help="output PDF: one page per box, upper panel raw vs sky "
+                         "model, lower panel residual. Uses only this run's own files "
+                         "(raw / model / resid), no ESO or old run needed, so it works "
+                         "for every pointing. The raw path is read from the run's "
+                         "meta.json")
     ap.add_argument("--out", default=None,
-                    help="輸出**目錄**;預設 results/skymodel/evaluation/pNN/box/。"
-                         "一個方框一張圖,檔名由方框名稱轉成")
+                    help="output directory; default results/skymodel/evaluation/"
+                         "pNN/box/. One figure per box, filenames derived from "
+                         "box names")
     args = ap.parse_args()
 
     W    = ROOT / args.work
-    # 預設值一律由工作區推出來 —— 寫死的話換一顆 pointing 就會拿另一顆的 cube
-    # 當基準,而圖看起來完全正常。
-    runs = sorted((W / "step05").glob("*_sfield"))
-    if not args.run and len(runs) != 1:
-        raise SystemExit(f"★ {W/'step05'} 底下有 {len(runs)} 個 *_sfield,請用 --run 指定")
-    args.run = args.run or runs[0].name
+    # The defaults are always derived from the working directory -- hard-coding them
+    # would mean that switching to another pointing takes a different pointing's cube
+    # as the reference, while the figure looks perfectly normal.
     if args.eso is None:
         args.eso = f"data/nosky/DATACUBE_FINAL_ESOSKY_{int(W.name[1:])}.fits"
     seg, white, _ = load_field(W)
-    run   = W / "step05" / args.run
+    s_dir, run = fit_dirs(W, args.run)
     wl    = np.load(W / "step03/wavelength.npy")
-    s_hat = np.load(run / "s_hat.npy") if (run / "s_hat.npy").exists() else None
+    s_hat = np.load(s_dir / "s_hat.npy") if (s_dir / "s_hat.npy").exists() else None
 
     boxes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
                                    args.edge, args.margin, W / "step04")
-    print(f"主源 {int(main.sum()):,} px,最亮像素 (y, x) = {peak}")
+    print(f"main source {int(main.sum()):,} px, brightest pixel (y, x) = {peak}")
     for nm, (y0, y1, x0, x1) in boxes.items():
         print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}")
 
@@ -332,12 +387,12 @@ def main():
             for nm, b in boxes.items():
                 tri.setdefault(nm, {})[tag] = box_mean(hdu, *b)
             h.close()
-            print(f"讀完 {tag}  {p.name}")
+            print(f"loaded {tag}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
         out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
                else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
-        draw_pdf(boxes, wl, tri, out, f"{args.work}  [{args.run}]", args.smooth)
+        draw_pdf(boxes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
         draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
                  f"{'box' if args.half else 'point'} locations   {W.name}")
         return
@@ -346,8 +401,8 @@ def main():
     if args.eso.lower() != "none":
         srcs["ESO nosky"] = ROOT / args.eso
     if args.ref_run.lower() != "none":
-        srcs["s per-spaxel (old)"] = W / "step05" / args.ref_run / "sky_subtracted.fits"
-    srcs["ours"] = run / "sky_subtracted.fits"
+        srcs[args.ref_label] = fit_dirs(W, args.ref_run)[1] / "sky_subtracted.fits"
+    srcs[args.run_label] = run / "sky_subtracted.fits"
     srcs = {k: v for k, v in srcs.items() if v.exists()}
 
     curves = {nm: {} for nm in boxes}
@@ -356,47 +411,61 @@ def main():
         for nm, b in boxes.items():
             curves[nm][m] = box_mean(hdu, *b)
         h.close()
-        print(f"讀完 {m}")
+        print(f"loaded {m}")
 
-    # half=0 的「方框」就是單一 spaxel,那是另一種取樣(誠實但很吵),兩者的圖
-    # 不能混在同一個目錄裡 —— 檔名相同,後跑的會蓋掉先跑的。
+    # A "box" with half=0 is a single spaxel, which is a different kind of sampling
+    # (honest but very noisy), and the two sets of figures must not be mixed in the
+    # same directory -- the filenames are identical, so whichever runs later would
+    # overwrite the earlier one.
     kind = "box" if args.half else "point"
     outdir = Path(args.out) if args.out else pointing_dir(W.name, kind)
     outdir.mkdir(parents=True, exist_ok=True)
     keys = ("mean", "sigma", "rms_from_zero")
-    # 統計欄的版面用**字元數**算,不用寫死的座標:欄數會隨 --eso / --ref-run
-    # 開不開而變,寫死的位置只在某一種組合下不重疊。
-    NW, VW = len(max(keys, key=len)) + 2, 10        # 標籤欄寬、每個數值欄寬
+    # The layout of the statistics column is computed from a **character count**, not
+    # from hard-coded coordinates: the number of columns changes with whether --eso /
+    # --ref-run are switched on, and a hard-coded position would fail to overlap only
+    # for one particular combination.
+    NW, VW = len(max(keys, key=len)) + 2, 10   # label column width, value column width
     ncol   = len(srcs)
     span   = NW + VW * ncol
     for nm, b in boxes.items():
-        # core 畫大張。3801 個通道在 15 in x 135 dpi 下是 2.5 個通道擠 1 個螢幕
-        # 像素,而 MUSE 的線寬只有約 1.8 個通道 —— 線比一個像素還窄,細節在畫之前
-        # 就被抽掉了。core 是發射線最密、最需要看細節的地方,所以只有它放大;
-        # 其餘位置以雜訊為主,放大不會多出資訊,只會多出檔案大小。
+        # core is drawn large. At 15 in x 135 dpi, 3801 channels means 2.5 channels
+        # squeezed into 1 screen pixel, while MUSE's line width is only about 1.8
+        # channels -- the line is narrower than a pixel, so the detail is thrown away
+        # before it is even drawn. core is where the emission lines are densest and
+        # where the detail matters most, so it is the only one enlarged; the other
+        # positions are dominated by noise, and enlarging them adds no information,
+        # only file size.
         big = nm in BIG_BOXES
         w, h, dpi = (BIG_FIG + (BIG_DPI,)) if big else (15, 4.2, 135)
-        sc = w / 15.0                       # 字級跟著畫布放大,否則大圖上小到看不見
+        sc = w / 15.0        # font size scales with the canvas, otherwise it would be
+                             # too small to read on the large figure
         fig = plt.figure(figsize=(w, h))
-        # 0.04 是「一個字元佔多少寬度比例」,由 fontsize 8.5 的等寬字元量出來的:
-        # 欄位靠 span 換算成軸內比例,軸本身太窄會截斷、太寬會把數字推到天邊。
+        # 0.04 is "what fraction of the width one character takes", measured from a
+        # monospace character at fontsize 8.5: the columns are converted into
+        # axes-relative fractions via span, and an axis that is too narrow truncates
+        # while one that is too wide pushes the numbers off to the far side.
         gs  = fig.add_gridspec(1, 2, width_ratios=[6, 0.04 * span], wspace=0.02,
                                left=0.055, right=0.985,
                                top=1 - 0.59 / h, bottom=0.55 / h)
         ax = fig.add_subplot(gs[0, 0])
         ax.axhline(0, color="0.5", lw=0.6)
         for lab, y in curves[nm].items():
-            ax.plot(wl, smooth(y, args.smooth), lw=0.5, color=COL[lab],
-                    alpha=0.8, label=lab)
-        # y 範圍不對稱 —— 源上的格整條都在 0 以上,硬要對稱的話一半的畫布是空的,
-        # 曲線被壓成一條。用 0.5/99.5 分位切掉少數尖峰,再確保 0 一定在範圍內
-        # (0 是「天空扣乾淨」的基準線,看不到它就沒得判斷)。
+            ax.plot(wl, smooth(y, args.smooth), lw=0.5, alpha=0.8, label=lab,
+                    color=COL.get(lab, REF_FALLBACK if lab == args.ref_label
+                                  else RUN_FALLBACK))
+        # The y range is asymmetric -- on a source pixel the whole spectrum is above
+        # 0, and forcing symmetry would leave half the canvas empty with the curve
+        # squashed into a single line. The 0.5/99.5 percentiles cut off the few
+        # spikes, and then 0 is guaranteed to stay inside the range (0 is the
+        # reference line of "the sky was removed cleanly", and without seeing it there
+        # is nothing to judge by).
         v = np.concatenate([y[np.isfinite(y)] for y in curves[nm].values()])
         lo, hi = (float(x) for x in np.percentile(v, [0.5, 99.5]))
         pad = 0.30 * max(hi - lo, 1e-9)
         ax.set_ylim(min(lo - pad, 0.0), max(hi + pad, 0.0))
         ax.set_xlim(wl[0], wl[-1])
-        for lname, lam in LINES:                      # 紅移後的位置,天空模型扣不掉
+        for lname, lam in LINES:        # redshifted; the sky model cannot remove these
             ax.axvline(lam * (1 + Z_HARO), color="0.75", lw=0.5, ls=":")
         ax.set_ylabel("flux", fontsize=9 * sc)
         ax.set_xlabel("wavelength [$\\AA$]", fontsize=9 * sc)
@@ -411,9 +480,12 @@ def main():
         for j, (lab, y) in enumerate(curves[nm].items()):
             st = spectrum_stats(y)
             sax.text((NW + VW * (j + 1)) / span, 0.98,
-                     "\n".join([SHORT[lab]] + [f"{st[k]:.3f}" for k in keys]),
+                     "\n".join([SHORT.get(lab, lab[:9])]
+                               + [f"{st[k]:.3f}" for k in keys]),
                      va="top", ha="right", family="monospace", fontsize=8.5 * sc,
-                     color=COL[lab], transform=sax.transAxes)
+                     color=COL.get(lab, REF_FALLBACK if lab == args.ref_label
+                                   else RUN_FALLBACK),
+                     transform=sax.transAxes)
         npx = (b[1] - b[0] + 1) * (b[3] - b[2] + 1)
         where = (f"y {b[0]}  x {b[2]}" if npx == 1 else
                  f"y {b[0]}-{b[1]}  x {b[2]}-{b[3]}")
