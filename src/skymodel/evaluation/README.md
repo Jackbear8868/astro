@@ -35,9 +35,7 @@ results/skymodel/evaluation/
 
 | 檔案 | 回答什麼 |
 |---|---|
-| `check_pointing.py` | 驗收：天空扣乾淨了嗎、源有沒有被扣掉 |
 | `box_spectra.py` | 方框裡的平均光譜，和 ESO nosky 並排 |
-| `zone_spectra.py` | 同一個環上，ESO 與我們各扣出什麼 |
 | `s_shape_map.py` | 天空連續譜係數 s 的空間形狀 |
 | `whitelight_wsky.py` | 輸入 cube（含天空）的白光影像 |
 | `whitelight_compare.py` | 扣完天空的白光影像，ESO 與我們並排 |
@@ -46,6 +44,10 @@ results/skymodel/evaluation/
 | `prof_seg_maps.py` | 教授的 14 份 segmentation 長什麼樣 |
 | `seg_id_map.py` | 任一份 segmentation 的 source ID 對照圖 |
 | `plot_basis.py` | step3 學到的每一條天空 basis 長什麼樣 |
+
+已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
+`zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`
+的逐方框光譜取代。
 
 `ROOT` 與 `import utils` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
 `experiments/` 在同一層，所以搬動不需要改路徑。

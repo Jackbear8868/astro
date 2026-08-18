@@ -1,6 +1,8 @@
-"""從 blank spaxels 學出天空模型的兩個成分:連續譜 C_sky 與 K 條天光線 basis。
+"""Learn the two components of the sky model from blank spaxels: the sky continuum
+C_sky and K sky-line basis vectors.
 
-輸出供 step4b 的模板擬合使用。天光線 basis 的分解方法可替換。
+Output is consumed by step4's template fitting. The decomposition method for
+the sky-line basis is interchangeable.
 """
 from pathlib import Path
 import numpy as np
@@ -15,54 +17,24 @@ import sys
 import subprocess
 import time
 
-SEED       = 0           # 所有分解共用的亂數種子,確保 basis 可重現
-K          = 25          # basis 條數 = 天空模型的自由度
-WINDOW     = 300         # 連續譜 running median 視窗 (px)
-THRESHOLDS = (1, 2)      # 線偵測門檻 (正, 負)
-MAX_ITER   = 5           # estimate_continuum 迭代上限
-CLIP_SIGMA = 30          # mean_sky 的 sigma-clip 門檻,單位是穩健散布 sg。
-                         # 目標只是擋掉壞像素等級的離群值,不是修剪跨 spaxel 的
-                         # 真實變化,所以門檻要遠高於後者的自然幅度
+SEED       = 0           # random seed shared by all decompositions, ensures reproducibility
+K          = 25          # number of basis vectors = degrees of freedom in the sky model
+WINDOW     = 300         # running-median window for the continuum (px)
+THRESHOLDS = (1, 2)      # line-detection thresholds (positive, negative)
+MAX_ITER   = 5           # maximum iterations for estimate_continuum
+CLIP_SIGMA = 30          # sigma-clip threshold for mean_sky, in units of robust spread sg.
+                         # The goal is only to reject bad-pixel-level outliers, not to trim
+                         # the real cross-spaxel variation, so the threshold must be far
+                         # above the natural amplitude of the latter.
 METHODS    = ["pca", "svd"]
-
-def zap_k(var, nsigma=5):
-    """ZAP 的成分數判準。照抄 libs/zap/zap/zap.py:926 的 `_compute_deriv`。
-
-    回傳 (K, deriv, mn1, std1),後三個是畫圖用的中間量。
-
-    想法:把特徵值曲線(降冪)的一階差分看成「每多一條成分,還能再解釋掉多少
-    變異數」。曲線一開始陡降 —— 那些成分描述的是天光線殘差,是我們要的;
-    降幅逐漸趨於**線性**(二階導數歸零)之後,再往下就只是在移除雜訊與天體
-    訊號。所以要找的是「降幅第一次回到平坦區水準」的那個位置。
-
-        ① 只看前 25% 的成分 —— 後面早就進入平坦區,納進來只會稀釋統計
-        ② deriv = diff(var[:npix])
-        ③ 平坦區的基準取 deriv 的後 85%(跳過最前面 15% 的陡降段)
-               mn1 = mean(deriv[ind:])   std1 = nsigma * std(deriv[ind:])
-        ④ K = 第一個滿足 deriv >= mn1 - std1 的位置
-           也就是降幅第一次不再顯著陡於平坦區
-
-    nsigma=5 是 ZAP 的預設值,不是我們調的。門檻越鬆(nsigma 越大)K 越小。
-
-    注意 ZAP 是**逐波長區段**各自做這件事(它把光譜切成數段,每段自己選 K),
-    我們是全波段一組,所以兩邊的數字不能互相引用。
-    """
-    npix  = int(0.25 * var.shape[0])
-    deriv = np.diff(var[:npix])
-    ind   = int(0.15 * deriv.size)
-    mn1   = deriv[ind:].mean()
-    std1  = deriv[ind:].std() * nsigma
-    # 第一個元素補 False:deriv[i] 描述的是「從第 i 條到第 i+1 條」的降幅,
-    # 所以位置要往後挪一格才對得上成分編號。
-    hit   = np.flatnonzero(np.append([False], deriv >= (mn1 - std1)))
-    return (int(hit[0]) if hit.size else -1), deriv, mn1, std1
 
 
 def learn_sky_basis(residual, K=10, method="pca"):
-    """從 blank spaxels 的殘差學出 K 條天光線 basis。
+    """Learn K sky-line basis vectors from the residuals of blank spaxels.
 
-    所有方法都回傳 (K, nz),也就是設計矩陣裡固定 K 個自由參數,
-    這樣不同方法的 chi-square 才有可比性。
+    All methods return shape (K, nz), i.e. the design matrix always has
+    exactly K free parameters, so chi-square values from different methods
+    are directly comparable.
 
     Parameters
     ----------
@@ -73,13 +45,14 @@ def learn_sky_basis(residual, K=10, method="pca"):
     Returns
     -------
     basis : ndarray, shape (K, nz)
-        K 條天光線 basis。列的順序即下游係數的順序。
+        K sky-line basis vectors. Row order matches downstream coefficient order.
     """
     X = np.nan_to_num(residual.T).astype(np.float32)     # (n_blank, nz)
 
-    # random_state=SEED 是必要的,不是保險:兩者的預設演算法都是隨機化的
-    # (TruncatedSVD/PCA 走 randomized SVD),不指定的話每次跑出來的 basis
-    # 都不同,下游結果無法追溯。
+    # random_state=SEED is essential, not just a precaution: the default
+    # algorithm of both TruncatedSVD and PCA is randomized SVD. Without a
+    # fixed seed the basis changes on every run and downstream results
+    # become irreproducible.
     if method == "pca":
         p = PCA(n_components=K - 1, random_state=SEED).fit(X)
         return np.vstack([p.mean_[None, :], p.components_])
@@ -89,43 +62,46 @@ def learn_sky_basis(residual, K=10, method="pca"):
 
     raise ValueError(f"unknown method: {method}")
 
-ROOT = Path(__file__).resolve().parents[2]
-# 預設的工作區與 cube。--work / --cube 可以換掉,讓同一支程式跑不同的 pointing:
-# 每個 cube 一個工作區資料夾,底下的 step01/step02/... 結構完全相同。
+ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored relative to this
 
 
 
 def main():
-    ap = argparse.ArgumentParser(description="從 blank spaxels 學天空連續譜與天光線 basis")
+    ap = argparse.ArgumentParser(description="Learn sky continuum and sky-line basis from blank spaxels")
     ap.add_argument("--methods", nargs="+", default=["pca", "svd"],
-                    choices=METHODS, help="要跑哪些分解方法")
+                    choices=METHODS, help="which decomposition methods to run")
     ap.add_argument("-K", type=int, required=True,
-                    help="天光線 basis 條數。必填 —— 三個 step 必須用同一個 K,而各自帶一個預設值時,漏給的那一步會安靜地讀到另一組 basis")
+                    help="number of sky-line basis vectors; required -- all three steps must use the same K; with separate defaults a missed step silently reads a different basis")
     ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
-                    help="只用這個 x 範圍(像素,含 LO 不含 HI)的 blank spaxel 學天空。"
-                         "用途:主源的延展暈會滲進附近的 blank 樣本,限制在遠離它的"
-                         "一條裡,樣本變少但更乾淨。代價是天空的空間變化只由視場的"
-                         "一部分決定")
+                    help="use only blank spaxels in this x range (pixels, includes LO, excludes HI) "
+                         "to learn the sky. The main source's extended halo leaks into nearby "
+                         "blank samples; restricting to a strip far from it yields fewer but "
+                         "cleaner samples. Trade-off: sky spatial variation is determined by "
+                         "only part of the field of view")
     ap.add_argument("--ylim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
-                    help="同 --xlim,但限制 y")
+                    help="same as --xlim but restricts y")
     ap.add_argument("--exclude-box", type=int, nargs=4, default=None,
                     metavar=("Y0", "Y1", "X0", "X1"),
-                    help="這個框裡的 blank 不當天空的訓練樣本(含端點)。--xlim/--ylim "
-                         "只能切邊,做不到「挖中間、留外圈」。用途:鑲嵌視場裡曝光數"
-                         "不足的高雜訊區塊。框內的 spaxel 仍然會被扣天空,只是不參與"
-                         "訓練")
+                    help="exclude blank spaxels inside this box from sky training samples "
+                         "(endpoints inclusive). --xlim/--ylim can only trim edges, not cut "
+                         "out an interior region. Purpose: high-noise patches in a mosaic "
+                         "field with insufficient exposure. Spaxels inside the box are still "
+                         "sky-subtracted, just not used for training")
     ap.add_argument("--seg", default=None,
-                    help="用哪一份 segmentation 界定 blank。預設是 SExtractor 的 "
-                         "step01/seg.fits;指到 experiments/dilate_seg.py 產生的 seg_dil{r}.fits 就是"
-                         "「把源外圍漏出來的光排除在天空樣本外」的版本")
+                    help="which segmentation map to use for defining blank. Default is "
+                         "SExtractor's step01/seg.fits; pointing to seg_dil{r}.fits from "
+                         "experiments/dilate_seg.py uses a version that excludes leaked "
+                         "source light from the sky samples")
     ap.add_argument("--work", required=True,
-                    help="這顆 cube 的工作區(底下有 step01/step02/...)。"
-                         "一個 pointing 一個工作區,結構相同、彼此不干擾")
+                    help="working directory for this cube (contains step01/step02/...); "
+                         "one per pointing, same structure, independent of each other")
     ap.add_argument("--cube", required=True,
-                    help="要學天空的 cube。**必須是含天空的 wsky** —— 已經被 ESO "
-                         "扣過天空的 nosky 沒有天空可學,只會灌雜訊")
+                    help="the cube to learn the sky from. **Must be the sky-included wsky** "
+                         "-- the nosky cube already has ESO sky subtracted, so there is no "
+                         "sky to learn, only noise")
     ap.add_argument("--out", default=None,
-                    help="輸出目錄。省略時寫到 {work}/step03(會覆蓋);做實驗時務必指定")
+                    help="output directory; if omitted writes to {work}/step03 (overwrites); "
+                         "specify explicitly for experiments")
     args = ap.parse_args()
 
     work   = Path(args.work)
@@ -133,12 +109,12 @@ def main():
     out_dir = Path(args.out) if args.out else work / "step03"
     out_dir.mkdir(parents=True, exist_ok=True)
     WSKY = Path(args.cube)
-    print(f"工作區 {work}   cube {WSKY.name}")
+    print(f"workdir {work}   cube {WSKY.name}")
 
     white  = fits.getdata(STEP01 / "whitelight.fits")
     seg_f  = Path(args.seg) if args.seg else STEP01 / "seg.fits"
     seg    = fits.getdata(seg_f)
-    print(f"segmentation: {seg_f.name}  源 spaxel {int((seg > 0).sum()):,}")
+    print(f"segmentation: {seg_f.name}  source spaxels {int((seg > 0).sum()):,}")
 
     valid_mask = white != 0
     blank_mask = valid_mask & ~((seg > 0) & valid_mask)
@@ -149,7 +125,7 @@ def main():
             blank_mask &= (xx >= args.xlim[0]) & (xx < args.xlim[1])
         if args.ylim:
             blank_mask &= (yy >= args.ylim[0]) & (yy < args.ylim[1])
-        print(f"空間限制 x={args.xlim} y={args.ylim}:"
+        print(f"spatial restriction x={args.xlim} y={args.ylim}: "
               f"blank {n_all:,} -> {int(blank_mask.sum()):,}"
               f" ({100 * blank_mask.sum() / max(n_all, 1):.1f}%)")
 
@@ -175,30 +151,37 @@ def main():
             d = np.asarray(hdul["DATA"].data[j:j+200], np.float32)
             blank[j:j+200] = d[:, blank_mask]
 
-    # 只留光譜完整的 spaxel。大氣色散讓有效視野逐波長平移,視野邊緣因此有一圈
-    # spaxel 只在部分波長被覆蓋。learn_sky_basis 會把缺失通道 nan_to_num 成 0
-    # —— 那是捏造的資料,SVD 會認真去擬合它,所以直接要求 100% 覆蓋。
+    # Keep only spectrally complete spaxels. Differential atmospheric refraction
+    # shifts the effective field of view with wavelength, so spaxels near the
+    # edge are only covered at some wavelengths. learn_sky_basis nan_to_num's
+    # missing channels to 0 -- that is fabricated data that the SVD would
+    # earnestly fit, so we require 100% coverage instead.
     complete = np.isfinite(blank).all(axis=0)
-    print(f"完整光譜 {int(complete.sum()):,} / {blank.shape[1]:,} "
-          f"({100*complete.mean():.1f}%),其餘為視野邊緣的部分覆蓋 spaxel,不採用")
+    print(f"spectrally complete {int(complete.sum()):,} / {blank.shape[1]:,} "
+          f"({100*complete.mean():.1f}%), remainder are partially covered spaxels at field edges, excluded")
     blank = blank[:, complete]
 
-    # 逐通道 sigma-clip 之後再平均。平均數的崩潰點是 0% —— 單一通道裡只要有幾個
-    # 極端負值,就足以把該通道的平均拉低,於是 estimate_continuum 把它判成一條
-    # 「負的線」遮掉,是看不見的資料損失。
+    # Sigma-clip per channel before averaging. The breakdown point of the mean
+    # is 0% -- a handful of extreme negative values in a single channel is
+    # enough to pull the channel mean down, and estimate_continuum would then
+    # flag it as a "negative line" and mask it, causing invisible data loss.
     #
-    # 剪的方向是「同一通道、跨 spaxel」,不是沿波長:一條天光線在每個 spaxel 都亮,
-    # 它的亮度就在該通道的中位數裡,不會被剪掉。
+    # Clipping is done within one channel across spaxels, not along wavelength:
+    # a sky emission line is bright in every spaxel, so its brightness sits
+    # inside that channel's median and is never clipped.
     #
-    # 中心與散布用穩健的量,但平均那一步仍用平均數:跨 spaxel 的分布在亮線通道
-    # 右偏,中位數會系統性偏低,那是偏差,樣本再多也不會消失。
+    # The centre and spread use robust estimators, but the final step still
+    # takes the mean: the cross-spaxel distribution is right-skewed in bright-
+    # line channels, so the median would be systematically biased low -- a bias
+    # that does not shrink with more samples.
     p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
     sg   = np.maximum((p84 - p16) / 2, 1e-6)
     keep = np.abs(blank - med[:, None]) <= CLIP_SIGMA * sg[:, None]
-    # dtype=float64:blank 是 float32,累加上萬項會累積出可觀的捨入誤差
+    # dtype=float64: blank is float32; summing tens of thousands of terms
+    # accumulates significant rounding error without the promotion.
     mean_sky = (blank * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1)
-    print(f"mean_sky: sigma-clip {CLIP_SIGMA} sigma 剔除 {int((~keep).sum()):,} / "
-          f"{keep.size:,} 個元素 ({100*(~keep).mean():.6f}%)")
+    print(f"mean_sky: sigma-clip {CLIP_SIGMA} sigma rejected {int((~keep).sum()):,} / "
+          f"{keep.size:,} elements ({100*(~keep).mean():.6f}%)")
     C_sky, sigma, line_mask, history = estimate_continuum(
         mean_sky, thresholds=THRESHOLDS, window=WINDOW, max_iter=MAX_ITER)
     print(f"line_mask: {100*line_mask.mean():.1f}% of channels  "
@@ -211,29 +194,36 @@ def main():
     np.save(out_dir / "sky_sigma.npy",     sigma)
     np.save(out_dir / "line_mask.npy",     line_mask)
 
-    # 每一輪的中間結果。遮罩不是逐輪累加的 —— 每輪都用原始 mean_sky 重算,
-    # 上一輪只透過「把線挖成 NaN 再估連續譜」間接影響門檻,所以少數邊緣
-    # 通道會被放回來。要判讀遮罩為何一路成長,必須連續譜與 sigma 一起看。
+    # Per-iteration intermediate results. The mask is not cumulative -- each
+    # iteration recomputes from the original mean_sky; the previous iteration
+    # affects the threshold only indirectly (lines replaced with NaN before
+    # re-estimating the continuum), so a small number of marginal channels can
+    # drop back out. To understand why the mask grows, the continuum and sigma
+    # must be examined alongside it.
     np.save(out_dir / "iter_continuum.npy", np.array([h[0] for h in history]))
     np.save(out_dir / "iter_sigma.npy",     np.array([h[1] for h in history]))
     np.save(out_dir / "iter_line_mask.npy", np.array([h[2] for h in history]))
 
-    # 同一個 keep 直接沿用。R = blank − C_sky 只差一個逐通道常數,而常數會同時
-    # 平移 x 和它的中位數,所以 |x − med| / sg 完全不變 —— 兩處是同一個不等式。
+    # Reuse the same keep mask. R = blank - C_sky differs by only a per-channel
+    # constant, and a constant shifts both x and its median by the same amount,
+    # so |x - med| / sg is unchanged -- the same inequality applies.
     #
-    # 被剔除的位置填該通道的典型殘差 med − C_sky,而不是 0:在天光線通道上
-    # 填 0 等於宣稱那裡沒有線,med 是比較誠實的說法。
+    # Rejected positions are filled with the channel's typical residual
+    # med - C_sky, not 0: filling 0 on a sky-line channel amounts to claiming
+    # there is no line there; med is the more honest value.
     residual = np.where(keep, blank - C_sky[:, None], (med - C_sky)[:, None])
 
     for method in args.methods:
         t0 = time.time()
         basis = learn_sky_basis(residual, K=args.K, method=method)
-        np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # 檔名帶 K,不同 K 可並存
+        np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # filename includes K so different K values can coexist
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
-    # 產物的 provenance。檔名只帶 method 與 K,學天空的範圍、用了哪份 seg、
-    # 哪顆 cube 都不在檔名裡 —— 換一組 REGION 重跑會靜默覆蓋,而下游只記得
-    # 「sky_dir = .../step03」,看不出換過。這一份就是那個唯一的紀錄。
+    # Provenance of the products. Only method and K appear in the filename;
+    # the spatial range, the segmentation map, and the cube are not encoded --
+    # re-running with a different REGION silently overwrites, and downstream
+    # only remembers "sky_dir = .../step03" with no way to tell. This JSON is
+    # the sole record of those choices.
     def rel(q):
         q = Path(q)
         try:

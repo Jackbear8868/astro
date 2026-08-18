@@ -1,13 +1,16 @@
-"""任一份 segmentation 的 source ID map —— 沿用 utils.id_map 的畫法。
+"""The source ID map of any segmentation -- drawn the same way as utils.id_map.
 
-utils.id_map() 的 rows 需要帶著 group、
-紅移那些欄位)。但有時候我們只想看「這份遮罩把哪些東西圈成源」,和擬合無關 ——
-例如比較教授給的 1 sigma 與 2 sigma 兩份 segmentation。
+The rows of utils.id_map() need to carry the group,
+redshift and similar fields). But sometimes all we want to see is "which things does
+this mask circle as sources", with nothing to do with the fitting -- for instance when
+comparing the professor's 1 sigma and 2 sigma segmentations.
 
-這支只做一件事:從一張 seg 圖組出 id_map() 要的 rows(id 與形心),
-其餘的繪製完全交給 utils.id_map,不另外寫一套。同一張圖在專案裡
-只能有一種畫法,否則兩份圖擺在一起會因為拉伸、配色、標號規則不同而看起來
-像不同的資料。
+This script does one thing only: assemble the rows id_map() needs (id and centroid)
+from one seg image, and leave the rest of the drawing entirely to utils.id_map, with
+no second implementation. One figure can only have one way of being drawn in this
+project, otherwise putting two of them side by side would make them look like
+different data merely because the stretch, the colours, or the labelling rules
+differ.
 
     conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
         --work results/skymodel/p01
@@ -30,19 +33,20 @@ FIGURES = EVAL / "masking"
 
 
 def main():
-    ap = argparse.ArgumentParser(description="任一份 segmentation 的 source ID map")
+    ap = argparse.ArgumentParser(description="Source ID map for any segmentation")
     ap.add_argument("--work", required=True,
-                    help="pointing 的工作區,例如 results/skymodel/p01。"
-                         "seg 與底圖預設都取自它的 step01/")
+                    help="pointing work directory, e.g. results/skymodel/p01. "
+                         "seg and background default to its step01/")
     ap.add_argument("--seg", default=None,
-                    help="要畫的 segmentation 圖;預設為工作區的 step01/seg.fits")
+                    help="segmentation image to plot; defaults to step01/seg.fits in the work directory")
     ap.add_argument("--white", default=None,
-                    help="底圖;預設為工作區的 step01/whitelight.fits。"
-                         "指到別份 seg 時底圖仍要是**那一顆自己的**白光 —— "
-                         "配錯底圖會看到對不齊的錯覺,而那不是資料的問題")
+                    help="background image; defaults to step01/whitelight.fits. "
+                         "when using a different seg, the background must still be "
+                         "that pointing's own whitelight -- a mismatched background "
+                         "creates a false impression of misalignment")
     ap.add_argument("--min-area", type=int, default=1,
-                    help="只畫面積 >= 這個值的源;"
-                         "小到幾個像素的標上去只會互相蓋住")
+                    help="only plot sources with area >= this value; "
+                         "tiny sources overlap when labeled")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -52,7 +56,7 @@ def main():
     seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
     seg   = fits.getdata(seg_path)
     if seg.shape != white.shape:
-        raise SystemExit(f"seg {seg.shape} 與白光圖 {white.shape} 尺寸不同")
+        raise SystemExit(f"seg {seg.shape} and whitelight {white.shape} have different dimensions")
 
     ids, cnt = np.unique(seg[seg > 0], return_counts=True)
     rows = []
@@ -60,18 +64,20 @@ def main():
         if c < args.min_area:
             continue
         y, x = np.nonzero(seg == i)
-        # group 欄位 id_map 只在 by_group=True 時用到,這裡一律 by_group=False,
-        # 但 rows 的欄位要齊全,否則 utils 那邊的 GROUP_COLOR 會 KeyError。
+        # id_map only uses the group field when by_group=True, and here it is always
+        # by_group=False, but the fields of rows have to be complete, otherwise
+        # GROUP_COLOR over in utils raises KeyError.
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 
-    # 檔名帶工作區名稱:14 顆的 step01/seg.fits 同名,只用 seg 的檔名會互相覆蓋。
+    # the filename carries the working directory name: step01/seg.fits has the same
+    # name for all 14 pointings, so using only the seg filename would overwrite.
     name = f"{Path(args.work).name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     id_map(seg, white, rows, out, by_group=False)
-    print(f"{name}: {len(ids)} 個源,畫出 {len(rows)} 個 (面積 >= {args.min_area} px)")
-    print(f"  源 spaxel {int((seg > 0).sum()):,}  ({100 * (seg > 0).mean():.1f}% of field)")
+    print(f"{name}: {len(ids)} sources, plotted {len(rows)} (area >= {args.min_area} px)")
+    print(f"  source spaxels {int((seg > 0).sum()):,}  ({100 * (seg > 0).mean():.1f}% of field)")
     print(f"saved -> {out}")
 
 

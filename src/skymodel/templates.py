@@ -4,11 +4,14 @@ from astropy.io import fits
 from scipy.interpolate import make_interp_spline
 
 def load_sdss_template(path):
-    """讀一條 SDSS spDR2 模板,回傳靜止波長上的三次 B-spline。
+    """Read one SDSS spDR2 template and return a cubic B-spline in rest
+    wavelength.
 
-    模板為 log 波長等比取樣,在紅端比 MUSE 格點粗。線性內插的誤差隨 z
-    週期性振盪,週期等於模板的取樣間距,會在 χ²(z) 上造成假的局部極大值。
-    樣條只需在靜止波長上建一次,紅移只改變求值的位置。
+    The template is sampled uniformly in log wavelength, which is coarser
+    than the MUSE grid at the red end. Linear interpolation error oscillates
+    periodically with z at the template's sampling interval, creating
+    spurious local maxima in chi2(z). A spline is built once in rest
+    wavelength; redshifting only changes the evaluation positions.
     """
     with fits.open(path) as hdul:
         header   = hdul[0].header
@@ -21,33 +24,38 @@ def load_sdss_template(path):
     return make_interp_spline(lam_rest[good], spectrum[good], k=3)
 
 def _eigen_spline(lam_rest, F):
-    """把 (n_comp, n_wave) 的本徵譜做成「批次」spline。
+    """Turn (n_comp, n_wave) eigenspectra into a "batch" spline.
 
-    兩端的常數是填充,不是資料 —— 檔案把最後一個真值一直重複到邊界。
-    建 spline 時包含進去,模板在那裡會變成一條假的水平線,擬合會很樂意
-    用它去吸收殘差。所有成分同時停止變化的地方就是真實資料的邊界。
+    The constant padding at both ends is filler, not data -- the file repeats
+    the last real value all the way to the boundary. Including it in the
+    spline would produce an artificial flat line there, which the fit would
+    happily use to absorb residuals. The boundary of the real data is where
+    all components simultaneously stop changing.
 
-    y 傳入 (n_wave, n_comp),求值一次就回傳全部成分。spline 的成本主要
-    在「二分搜尋找區間」,那一步和成分數無關,所以拿 4 條和拿 1 條一樣快,
-    比逐條求值省下重複的搜尋。
+    y is passed as (n_wave, n_comp), so a single evaluation returns all
+    components. The cost of a spline is dominated by the binary search for
+    the knot interval, which is independent of the number of components, so
+    evaluating 4 components is as fast as 1 and avoids repeating the search.
 
     Returns
     -------
     BSpline
-        求值後的形狀是 (n_out, n_comp);覆蓋不到的位置為 NaN。
+        Evaluated shape is (n_out, n_comp); positions not covered are NaN.
     """
     d = np.abs(np.diff(F, axis=1)).max(axis=0)
     i = np.flatnonzero(d > 0)
-    g = slice(i[0], i[-1] + 2)                  # +2:diff 少一個,且要含右端點
+    g = slice(i[0], i[-1] + 2)                  # +2: diff is one shorter, and the right endpoint must be included
     return make_interp_spline(lam_rest[g], F[:, g].T, k=3)
 
 
 def load_eigen_galaxy(path):
-    """Bolton et al. 2012 的星系本徵譜(FITS bintable)→ 批次 spline。
+    """Bolton et al. 2012 galaxy eigenspectra (FITS bintable) -> batch spline.
 
-    真實資料 1183 – 9840 A(靜止),4 條成分。chi2 那一欄裝的是未初始化的
-    記憶體(1e-310 到 1e307),不要碰。同目錄的 .spec 是同一份資料的文字版,
-    只保留 4 位小數 —— 高階成分會跨過零點,截斷後相對誤差發散,用 FITS。
+    Real data covers 1183-9840 A (rest), 4 components. The chi2 column
+    contains uninitialised memory (1e-310 to 1e307) -- do not touch. The
+    .spec file in the same directory is a text version of the same data,
+    kept to only 4 decimal places -- higher-order components cross zero,
+    so truncation causes divergent relative error; use the FITS version.
     """
     d = fits.open(path)[1].data
     lam = np.asarray(d["wave"], np.float64)
@@ -56,32 +64,35 @@ def load_eigen_galaxy(path):
 
 
 def load_eigen_qso(path):
-    """QSO 本徵譜(文字檔:第 1 欄波長,其餘為成分)→ 批次 spline。
+    """QSO eigenspectra (text file: column 1 = wavelength, rest = components)
+    -> batch spline.
 
-    真實資料 605 – 8356 A(靜止),4 條成分。檔名寫 linear,但波長格點其實
-    和星系檔、SDSS 模板一樣是等比的(dlog10 = 1e-4)。
+    Real data covers 605-8356 A (rest), 4 components. The filename says
+    "linear", but the wavelength grid is actually logarithmic like the galaxy
+    file and SDSS templates (dlog10 = 1e-4).
     """
     q = np.loadtxt(path)
     return _eigen_spline(q[:, 0], q[:, 1:].T)
 
 
 def redshift_to_grid(spline, z, lam_muse):
-    """把模板紅移到 z、重採樣到 lam_muse。
+    """Redshift the template to z and resample onto lam_muse.
 
-    模板覆蓋不到的通道回傳 NaN。單一模板回傳 (nz,);本徵譜的批次 spline
-    回傳 (nz, n_comp)。
+    Channels not covered by the template are NaN. A single template returns
+    shape (nz,); the batch spline of eigenspectra returns (nz, n_comp).
     """
     return spline(lam_muse / (1.0 + z), extrapolate=False)
     
 def template_on_grid(path, z, lam_muse):
-    """讀檔 + 紅移 + 重採樣(單次使用的便利版)。"""
+    """Read + redshift + resample (convenience wrapper for single use)."""
     return redshift_to_grid(load_sdss_template(path), z, lam_muse)
     
 def air_to_vacuum(lam_air):
-    """把空氣波長轉成真空波長(Morton 2000,IAU 標準)。
+    """Convert air wavelengths to vacuum (Morton 2000, IAU standard).
 
-    MUSE cube 的 CTYPE3 = AWAV(空氣波長),SDSS 模板是真空波長。
-    不轉換會造成約 83 km/s 的系統性紅移偏差。
+    The MUSE cube's CTYPE3 = AWAV (air wavelength), while SDSS templates
+    use vacuum wavelength. Without conversion there is a systematic redshift
+    offset of ~83 km/s.
     """
     s2 = (1e4 / lam_air) ** 2
     n = (1.0

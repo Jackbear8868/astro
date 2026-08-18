@@ -1,17 +1,22 @@
-"""畫出 step3 學到的 K 條天空 basis,一條一張圖,全部存進一個資料夾。
+"""Plot the K sky basis vectors learned by step3, one figure each, all saved into one
+folder.
 
-回答的問題:
-  - 每條 basis 的結構落在哪些波長(和 mean_sky.png 對照)
-  - 條數夠不夠(後面幾條若只剩雜訊,代表超過真實自由度)
-  - 有沒有 basis 被浪費掉(能量全集中在單一通道 = 壞畫素,不是天光線)
-  - 不同分解法的差異:svd 的右奇異向量單位正交(每條 norm = 1),
-    pca 的第 0 條是平均光譜(未正規化),其餘才是主成分
+Questions it answers:
+  - at which wavelengths the structure of each basis vector lies (compare with
+    mean_sky.png)
+  - whether the number of vectors is enough (if the later ones are nothing but noise,
+    that means going beyond the true degrees of freedom)
+  - whether any basis vector is wasted (all the energy concentrated in a single
+    channel = a bad pixel, not a sky emission line)
+  - the difference between the decompositions: svd's right singular vectors are
+    orthonormal (each has norm = 1), while pca's vector 0 is the mean spectrum (not
+    normalised) and only the rest are principal components
 
-輸出 results/skymodel/evaluation/sky_basis/basis_{方法}/ 底下:
-    mean_sky.png   平均天空與連續譜,對照用
-    e00.png …      每條 basis 一張
+Written under results/skymodel/evaluation/sky_basis/basis_{method}/:
+    mean_sky.png   the mean sky and the continuum, for comparison
+    e00.png ...    one figure per basis vector
 
-用法:
+Usage:
     conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis svd
     conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis svd --ylim -0.1 0.3
     conda run -n astro python src/skymodel/evaluation/plot_basis.py --basis pca --ylim-sky 0 60
@@ -27,17 +32,19 @@ from common import ROOT, pointing_dir
 
 
 def main():
-    ap = argparse.ArgumentParser(description="畫 step3 學到的天空 basis")
-    # 工作區必須指定。原本寫死在 ne_pointing,那個目錄已經刪掉,而且更重要的是:
-    # 寫死之後圖上畫的永遠是同一顆,和「這一顆的 basis 長什麼樣」對不起來。
+    ap = argparse.ArgumentParser(description="Plot sky basis vectors learned by step3")
+    # The working directory has to be specified. It used to be hard-coded to
+    # ne_pointing, that directory has been deleted, and more importantly: once it is
+    # hard-coded the figure always shows the same pointing, which does not match "what
+    # this pointing's basis looks like".
     ap.add_argument("--work", required=True,
-                    help="pointing 的工作區,例如 results/skymodel/p01")
+                    help="pointing work directory, e.g. results/skymodel/p01")
     ap.add_argument("--basis", default="svd", help="pca / svd")
-    ap.add_argument("-K", type=int, default=30, help="basis 條數;要和 step3 相同")
+    ap.add_argument("-K", type=int, default=30, help="number of basis vectors; must match step3")
     ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
-                    help="basis 圖的 y 軸範圍;不給則每張自動縮放")
+                    help="y-axis range for basis plots; auto-scaled per figure if omitted")
     ap.add_argument("--ylim-sky", type=float, nargs=2, metavar=("LO", "HI"), default=None,
-                    help="mean_sky 圖的 y 軸範圍;不給則 0 到 99.5 百分位")
+                    help="y-axis range for mean_sky plot; defaults to 0 to 99.5 percentile")
     ap.add_argument("--dpi", type=int, default=140)
     args = ap.parse_args()
 
@@ -47,14 +54,15 @@ def main():
     B  = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
     C  = np.load(STEP03 / "sky_continuum.npy")
     lm = np.load(STEP03 / "line_mask.npy")
-    K  = B.shape[0]          # 不寫死 10 —— step3 的 -K 可以改條數
+    K  = B.shape[0]          # not hard-coded to 10 -- step3's -K can change the count
 
-    # --- 診斷:能量集中度揭露被浪費在壞畫素上的 basis ---
+    # --- diagnostic: the energy concentration exposes basis vectors wasted on bad
+    #     pixels ---
     print(f"basis={args.basis}   K={K}   {wl.size} channels "
           f"({wl.min():.1f}-{wl.max():.1f} A air)")
     print(f"line_mask {lm.sum()}/{lm.size} ({100*lm.mean():.1f}%)\n")
-    print(f"{'條':>3}{'L2 norm':>11}{'峰值':>10}{'負值':>8}"
-          f"{'90% 能量所在通道數':>20}{'峰值波長':>12}")
+    print(f"{'#':>3}{'L2 norm':>11}{'peak':>10}{'neg%':>8}"
+          f"{'chan for 90% energy':>20}{'peak wl':>12}")
     print("-" * 66)
     for k in range(K):
         e   = np.sort(B[k] ** 2)[::-1]
@@ -62,21 +70,22 @@ def main():
         i   = int(np.argmax(np.abs(B[k])))
         print(f"{k:>3}{np.linalg.norm(B[k]):>11.4g}{np.abs(B[k]).max():>10.4g}"
               f"{100.0 * (B[k] < 0).mean():>7.0f}%{n90:>16}{wl[i]:>12.1f}")
-    print("\n90% 能量只落在個位數通道 = 那條 basis 被單一壞畫素佔走,不是天光線。")
+    print("\n90% energy in only a few channels = that basis vector is dominated by a single bad pixel, not a sky line.")
 
-    # ---------------- 圖:一條 basis 一張,全部進同一個資料夾 ----------------
+    # ------- figures: one per basis vector, all into the same folder -------
     ms  = np.load(STEP03 / "mean_sky.npy")
     out = pointing_dir(W.name, "basis")
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):
         fig.savefig(out / name, dpi=args.dpi, bbox_inches="tight")
-        plt.close(fig)                       # 不關會累積,K 大時吃光記憶體
+        plt.close(fig)      # they pile up if not closed, eating all memory for big K
 
     fig, a = plt.subplots(figsize=(15, 4))
     a.plot(wl, ms, lw=0.4, color="0.3", label="mean sky (blank)")
     a.plot(wl, C,  lw=0.8, color="#d62728", label="continuum $C_{sky}$")
-    # 天光線峰值比連續譜高幾十倍,自動範圍會把 18-30 的連續譜壓成一條線
+    # the sky emission line peaks are tens of times higher than the continuum, so an
+    # automatic range would squash the continuum at 18-30 into a single line
     a.set_ylim(*(args.ylim_sky if args.ylim_sky else (0, np.percentile(ms, 99.5))))
     a.set_xlabel("observed wavelength (air) [$\\AA$]")
     a.set_ylabel("flux")
@@ -87,17 +96,19 @@ def main():
 
     for k in range(K):
         b    = B[k].astype(np.float64)
-        flat = b.mean() ** 2 * b.size / (b ** 2).sum()   # 一個常數能解釋多少能量
+        flat = b.mean() ** 2 * b.size / (b ** 2).sum()   # energy a constant explains
 
         fig, a = plt.subplots(figsize=(15, 4))
         a.plot(wl, b, lw=0.5, color="#1f77b4")
-        a.axhline(0, color="0.6", lw=0.5)    # 零線:一眼看出這組 basis 跨不跨零
+        a.axhline(0, color="0.6", lw=0.5)    # zero line: at a glance, does this basis
+                                             # cross zero
         # if args.ylim:
         #     a.set_ylim(*args.ylim)
         a.set_ylim(np.min(b), np.max(b)*1.1)
         a.set_xlabel("observed wavelength (air) [$\\AA$]")
         a.set_ylabel(f"$e_{{{k}}}$")
-        # 標題只用 ASCII —— DejaVu Sans 沒有中日韓字形,中文會變成方框
+        # the title uses ASCII only -- DejaVu Sans has no CJK glyphs, and Chinese
+        # would turn into boxes
         save(fig, f"e{k:02d}.png")
 
     print(f"\nsaved {K + 1} figures -> {out}")

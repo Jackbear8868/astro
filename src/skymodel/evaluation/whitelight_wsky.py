@@ -1,27 +1,35 @@
-"""輸入 cube(含天空)的白光影像 —— 天空長什麼樣、遮罩有沒有蓋住星系。
+"""The white light image of the input cube (with sky) -- what the sky looks like, and
+whether the mask covers the galaxy.
 
-這張畫的是**還沒扣天空的原始資料**,不是我們的產品。它回答兩個進入 pipeline
-之前就該確認的問題:
+What this draws is **the raw data before any sky subtraction**, not our product. It
+answers two questions that should be settled before entering the pipeline:
 
-    天空的空間結構    平不平?有沒有條紋?振幅多大?
-    遮罩夠不夠大      seg 的輪廓有沒有蓋住星系實際延伸到的範圍 ——
-                      沒蓋到的部分會被當成 blank 拿去學天空,等於把星系
-                      自己的光學成天空再扣掉
+    the spatial structure   is it flat? is there striping? how large is the
+    of the sky              amplitude?
+    is the mask big         does the outline of seg cover the range the galaxy
+    enough                  actually extends to -- the part it does not cover gets
+                            taken as blank and used to learn the sky, which amounts
+                            to learning the galaxy's own light as sky and then
+                            subtracting it
 
-對比度怎麼來的
---------------
-天空連續譜是一個約 52 的底座,而我們要看的結構只有它的 1%。直接對原值拉伸的話
-底座會把整條色階用掉,圖上就是一片均勻的顏色 —— 不是資料平,是色階被浪費了。
+Where the contrast comes from
+-----------------------------
+The sky continuum is a pedestal of about 52, while the structure we want to look at is
+only 1% of it. Stretching the raw values directly, the pedestal would use up the whole
+colour scale and the figure would be a uniform colour -- not because the data are
+flat, but because the colour scale was wasted.
 
-所以先扣掉 blank 的中位、除以 blank 的穩健散布,再做 asinh:
+So the blank median is subtracted first, then it is divided by the robust spread of
+blank, and only then asinh is applied:
 
     z = (flux − sky) / sigma_blank
 
-0 就是天空,色階的單位變成「高過天空幾個 sigma」,天空的條紋(約 1 sigma)、
-暗源(2-4)、星系核心(約 9)三個量級同時看得見。
+0 is the sky, the unit of the colour scale becomes "how many sigma above the sky", and
+the three levels -- the striping of the sky (about 1 sigma), the faint sources (2-4)
+and the core of the galaxy (about 9) -- are all visible at the same time.
 
-壞 voxel 用 common.collapse 剔除(跨 spaxel 的 sigma-clip,只剪 blank),
-所以宇宙射線不會在圖上留下假的亮點。
+Bad voxels are rejected by common.collapse (a sigma-clip across spaxels, clipping only
+blank), so cosmic rays do not leave spurious bright spots on the figure.
 
     conda run -n astro python src/skymodel/evaluation/whitelight_wsky.py --work results/skymodel/p01
 """
@@ -40,13 +48,13 @@ from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
 
 
 def main():
-    ap = argparse.ArgumentParser(description="含天空的輸入 cube 的白光影像")
+    ap = argparse.ArgumentParser(description="White light image of the input cube (with sky)")
     ap.add_argument("--work", required=True)
     ap.add_argument("--cube", default=None,
-                    help="輸入 cube;預設由 pNN 的編號推出 data/wshy/DATACUBE_FINAL_N.fits")
+                    help="input cube; defaults to data/wshy/DATACUBE_FINAL_N.fits inferred from pNN")
     ap.add_argument("--band", type=float, nargs=2, default=(4600, 9350))
     ap.add_argument("--vmin-sigma", type=float, default=-3.0,
-                    help="色階下界,單位是 blank 的 sigma")
+                    help="colour scale lower bound, in units of blank sigma")
     args = ap.parse_args()
 
     W = ROOT / args.work
@@ -61,14 +69,16 @@ def main():
 
     blank = valid & (seg == 0)
     sky = float(np.nanmedian(img[blank]))
-    # 散布用分位數而不是標準差:星系溢出遮罩的部分也落在 blank 裡,
-    # 標準差會被它拉大,色階跟著變鬆,條紋就看不見了。
+    # The spread uses percentiles rather than the standard deviation: the part of the
+    # galaxy spilling outside the mask also falls inside blank, and it would inflate
+    # the standard deviation, loosening the colour scale with it until the striping is
+    # no longer visible.
     sig = float(np.nanpercentile(img[blank], 84)
                 - np.nanpercentile(img[blank], 16)) / 2
     z = (img - sky) / sig
-    print(f"  {cube.name}  剔除壞 voxel {nbad:,}/{ntot:,} ({100*nbad/ntot:.3f}%)")
-    print(f"  天空 {sky:.2f}   blank 散布 {sig:.3f} ({100*sig/sky:.2f}% of sky)"
-          f"   峰值 {np.nanmax(img):.0f} = 天空的 {np.nanmax(img)/sky:.1f} 倍")
+    print(f"  {cube.name}  rejected bad voxels {nbad:,}/{ntot:,} ({100*nbad/ntot:.3f}%)")
+    print(f"  sky {sky:.2f}   blank spread {sig:.3f} ({100*sig/sky:.2f}% of sky)"
+          f"   peak {np.nanmax(img):.0f} = {np.nanmax(img)/sky:.1f}x sky")
 
     fig, ax = plt.subplots(figsize=(9.5, 9))
     im = ax.imshow(np.arcsinh(z), origin="lower", cmap="magma",

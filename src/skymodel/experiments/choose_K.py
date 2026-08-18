@@ -19,7 +19,6 @@
     conda run -n astro python src/skymodel/experiments/choose_K.py --work results/skymodel/p01
 """
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -29,10 +28,40 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# 判準的實作在 pipeline 裡(step3_sky_basis.zap_k),這裡只是呼叫它。
-# 各留一份的話,改了 pipeline 而診斷程式還在用舊版,兩邊會靜靜地不一致。
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from step3_sky_basis import zap_k
+# 判準本體放在這裡。它曾經住在 step3_sky_basis.py,但 step3 從來不呼叫它 ——
+# 留在 pipeline 主檔裡只會讓人以為 step3 是用 ZAP 的方式選 K 的。唯一的使用者
+# 就是這支診斷程式,所以搬過來,和它畫的圖放在一起。
+def zap_k(var, nsigma=5):
+    """ZAP 的成分數判準。照抄 libs/zap/zap/zap.py:926 的 `_compute_deriv`。
+
+    回傳 (K, deriv, mn1, std1),後三個是畫圖用的中間量。
+
+    想法:把特徵值曲線(降冪)的一階差分看成「每多一條成分,還能再解釋掉多少
+    變異數」。曲線一開始陡降 —— 那些成分描述的是天光線殘差,是我們要的;
+    降幅逐漸趨於**線性**(二階導數歸零)之後,再往下就只是在移除雜訊與天體
+    訊號。所以要找的是「降幅第一次回到平坦區水準」的那個位置。
+
+        ① 只看前 25% 的成分 —— 後面早就進入平坦區,納進來只會稀釋統計
+        ② deriv = diff(var[:npix])
+        ③ 平坦區的基準取 deriv 的後 85%(跳過最前面 15% 的陡降段)
+               mn1 = mean(deriv[ind:])   std1 = nsigma * std(deriv[ind:])
+        ④ K = 第一個滿足 deriv >= mn1 - std1 的位置
+           也就是降幅第一次不再顯著陡於平坦區
+
+    nsigma=5 是 ZAP 的預設值,不是我們調的。門檻越鬆(nsigma 越大)K 越小。
+
+    注意 ZAP 是**逐波長區段**各自做這件事(它把光譜切成數段,每段自己選 K),
+    我們是全波段一組,所以兩邊的數字不能互相引用。
+    """
+    npix  = int(0.25 * var.shape[0])
+    deriv = np.diff(var[:npix])
+    ind   = int(0.15 * deriv.size)
+    mn1   = deriv[ind:].mean()
+    std1  = deriv[ind:].std() * nsigma
+    # 第一個元素補 False:deriv[i] 描述的是「從第 i 條到第 i+1 條」的降幅,
+    # 所以位置要往後挪一格才對得上成分編號。
+    hit   = np.flatnonzero(np.append([False], deriv >= (mn1 - std1)))
+    return (int(hit[0]) if hit.size else -1), deriv, mn1, std1
 
 ROOT    = Path(__file__).resolve().parents[3]
 FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"

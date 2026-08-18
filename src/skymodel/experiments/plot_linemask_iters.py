@@ -6,7 +6,8 @@
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
 需要 step3 存下的 iter_*.npy。若還沒有,重跑一次 step3 即可:
-    python src/skymodel/step3_sky_basis.py --methods svd --work <工作區>
+    python src/skymodel/step3_sky_basis.py --methods svd -K 30 \
+        --work <工作區> --cube <wsky cube> <該顆的 REGION>
 
 輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
     iter{N}.png          被判成線的通道(橘)
@@ -48,7 +49,8 @@ def main():
         raise SystemExit(
             f"{STEP03} 缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
             f"  conda run -n astro python src/skymodel/step3_sky_basis.py "
-            f"--methods svd --work {args.work}")
+            f"--methods svd -K 30 --work {args.work} --cube <wsky cube>\n"
+            "  (學天空的空間範圍要一併帶上,見 run_pointing.sh 的 REGION)")
 
     wl = np.load(STEP03 / "wavelength.npy")
     ms = np.load(STEP03 / "mean_sky.npy")

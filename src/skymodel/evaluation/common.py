@@ -1,60 +1,77 @@
-"""evaluation 底下的腳本共用的東西 —— 路徑、讀檔、環的定義、顯示拉伸。
+"""Things shared by the scripts under evaluation -- paths, file loading, display
+stretch, colour scales.
 
-放進來的條件只有一個:**兩支以上的腳本在做同一件事**。同一件事各留一份的話,
-改了其中一份、另一份沒跟著改,兩張圖就會在看不出來的地方不一致 —— 例如環的
-半徑差 1 px、底圖的拉伸不同,而圖上看起來只像是資料變了。
+There is only one condition for putting something here: **two or more scripts are
+doing the same thing**. If the same thing is kept as a separate copy in each script,
+then editing one copy without editing the other makes the two figures inconsistent in
+a place nobody can see -- e.g. one background image uses a different stretch, or one
+colour scale is centred differently, while the figure merely looks as if the data had
+changed.
 
-只有一支腳本用得到的東西留在那支腳本裡。搬進來的話,讀那支腳本的人要跨兩個
-檔案才看得懂它在做什麼。
+Anything only one script needs stays in that script. Moving it here means whoever
+reads that script has to cross two files to see what it is doing.
 
-檔名不能叫 utils.py:這裡的腳本用 sys.path 指到上一層去 import
-`src/skymodel/utils.py`,同名的檔案會把它蓋掉。
+The file must not be named utils.py: the scripts here point sys.path at the level
+above in order to import `src/skymodel/utils.py`, and a file with the same name would
+shadow it.
 """
 import re
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
-from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放各自的工作區裡的話,要比較幾顆
-# 就得開幾個目錄,而且檔名相同排不到一起。
+# Figures and measured values always go to one central place, with the pointing in
+# the filename -- if they lived in each working directory, comparing N pointings would
+# mean opening N directories, and identical filenames would never sort together.
 EVAL = ROOT / "results/skymodel/evaluation"
 
-# 跨 spaxel 剔除壞 voxel 的門檻,沿用 step3_sky_basis.py 的 mean_sky。
+# Threshold for rejecting bad voxels across spaxels, following mean_sky in
+# step3_sky_basis.py.
 CLIP_SIGMA = 30
 
-# s 的空間圖一律用同一組色階。RdBu_r 是發散色階,中心點兩側分成兩個顏色 ——
-# 「比典型值高還是低」一眼可分,而連續色階只能分出「深淺」。
+# The spatial maps of s always use the same colour scale. RdBu_r is a diverging scale,
+# splitting the two sides of the centre into two colours -- "higher or lower than the
+# typical value" is visible at a glance, whereas a sequential scale only separates
+# "light or dark".
 S_CMAP = "RdBu_r"
 
 
 def pointing_dir(name, *sub):
-    """一顆 pointing 的圖放哪 —— evaluation/pNN/[子目錄…],並確保目錄存在。
+    """Where one pointing's figures go -- evaluation/pNN/[subdir...], creating the
+    directory if needed.
 
-    一顆一個目錄,而不是把 14 顆的圖混在同一層用檔名區分:看某一顆的時候,
-    要的是那一顆的全部,不是在幾百個檔名裡挑出帶 pNN 的那些。
+    One directory per pointing, rather than mixing the figures of all 14 into one
+    level and telling them apart by filename: when looking at one pointing, what you
+    want is everything about that one, not picking the ones carrying pNN out of
+    several hundred filenames.
     """
     d = EVAL.joinpath(name, *sub)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-# 疊在 magma 底圖上的輪廓顏色。magma 走「黑 -> 紫 -> 橘 -> 淡黃」,所以輪廓不能
-# 用黑、橘、黃 —— 那些是色帶本身的顏色,線和暗處/亮處的資料分不開。亮綠落在色帶
-# 之外,疊上去一定看得見。
+# Colour of the contour drawn over a magma background image. magma runs
+# "black -> purple -> orange -> pale yellow", so the contour must not be black,
+# orange or yellow -- those are colours of the colour map itself, and the line could
+# not be told apart from the data in the dark/bright regions. Bright green falls
+# outside the colour map, so it is always visible on top.
 SEG_COLOR = "#39ff14"
 
 
 def asinh_bar(fig, im, ax, label, lo, hi):
-    """asinh 拉伸的色階條 —— 刻度標在原本的物理值上,不是拉伸後的數字。
+    """Colour bar for an asinh stretch -- ticks labelled with the original physical
+    values, not with the stretched numbers.
 
-    影像畫的是 arcsinh(z),所以色階條的預設刻度是 0、2、4… 那些是壓縮過的數字,
-    讀不出「這裡比天空亮多少」。把刻度放到 arcsinh(z) 的位置、標上 z 本身,
-    色階就能直接當成 z 讀,而影像仍然享有 asinh 的動態範圍。
+    The image shows arcsinh(z), so the colour bar's default ticks are 0, 2, 4... which
+    are compressed numbers, from which "how much brighter than the sky is this" cannot
+    be read. Putting the ticks at the arcsinh(z) positions and labelling them with z
+    itself lets the colour bar be read directly as z, while the image still enjoys the
+    dynamic range of asinh.
 
-    lo/hi 是 z(不是 arcsinh(z))的範圍,用來決定哪些刻度落得進去。
+    lo/hi are the range of z (not of arcsinh(z)), used to decide which ticks fall
+    inside.
     """
     ticks = [-3, -1, 0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000]
     t = [v for v in ticks if lo <= v <= hi]
@@ -66,19 +83,24 @@ def asinh_bar(fig, im, ax, label, lo, hi):
 
 
 def slug(name):
-    """區域名稱 -> 檔名。"src edge d=7px" -> "src_edge_d_7px"。
+    """Region name -> filename. "src edge d=7px" -> "src_edge_d_7px".
 
-    只留字母數字,其餘一律換成底線再收斂重複的底線 —— 空白、'='、'#' 在 shell
-    和路徑裡都要跳脫,而這些名稱是自動組出來的,遲早會出現。
+    Keep only alphanumerics, turn everything else into an underscore and then collapse
+    repeated underscores -- spaces, '=' and '#' all have to be escaped in the shell and
+    in paths, and since these names are assembled automatically they will show up
+    sooner or later.
     """
     return re.sub(r"_+", "_", re.sub(r"[^0-9A-Za-z]+", "_", name)).strip("_")
 
 
 def diverging_range(a, centre=None, pct=2.0):
-    """發散色階的 (中心, vmin, vmax) —— 對稱,而且對離群格穩健。
+    """(centre, vmin, vmax) for a diverging colour scale -- symmetric, and robust
+    against outlier pixels.
 
-    範圍取分位數而不是最大最小值:少數幾個壞格就能把 min/max 拉到讓其餘部分
-    全部擠成同一個顏色。中心不給的話用中位數,結構的對比最大。
+    The range is taken from percentiles rather than from the min and max: a handful of
+    bad pixels is enough to drag min/max out until everything else is squeezed into a
+    single colour. If no centre is given the median is used, which gives the structure
+    the largest contrast.
     """
     v = a[np.isfinite(a)]
     c = float(np.median(v)) if centre is None else float(centre)
@@ -87,70 +109,37 @@ def diverging_range(a, centre=None, pct=2.0):
 
 
 def load_field(work):
-    """一顆 pointing 的 step01 產物 —— 回傳 (seg, 白光圖, 有效視野遮罩)。
+    """One pointing's step01 products -- returns (seg, white light image, valid field
+    of view mask).
 
-    白光圖轉成 float,後面拿它算分位數與 nanmean 時才不受原始 dtype 影響。
-    視野外的 spaxel 在白光圖上是 0,valid 就是「這一格有資料」。
+    The white light image is converted to float so that computing percentiles and
+    nanmean from it later is unaffected by the original dtype. Spaxels outside the
+    field of view are 0 in the white light image, so valid means "this pixel has
+    data".
     """
     seg   = fits.getdata(work / "step01/seg.fits").astype(int)
     white = np.asarray(fits.getdata(work / "step01/whitelight.fits"), float)
     return seg, white, white != 0
 
 
-def zones(seg, white, main):
-    """四個環的遮罩,回傳 {名稱: 布林圖}。
-
-        far          離所有源都遠。那裡沒有源,殘差的真值是 0。
-        small 1-3    小源足跡外 1-3 px。
-        main 1-3     主源足跡外 1-3 px。
-        main 3-10    主源足跡外 3-10 px,延展的暈。
-
-    四個環一律取 seg == 0 的格 —— 偵測不到的地方不代表沒有源的光,而那正是
-    最容易被過度扣除的位置。視野邊緣 15 px 以內全部排除:那裡曝光次數少,量到
-    的是拼接的邊界效應。
-
-    main 由呼叫端給,不在這裡算 —— 要不要拿 step04 的紅移去篩成員,是呼叫端
-    的決定。
-    """
-    edge   = ndimage.distance_transform_edt(white != 0)
-    d_all  = ndimage.distance_transform_edt(seg == 0)
-    d_main = ndimage.distance_transform_edt(~main)
-    others = (seg > 0) & ~main
-    # 沒有其他源時,「離其他源的距離」設成一個大到不會擋掉任何格的值
-    d_oth  = (ndimage.distance_transform_edt(~others) if others.any()
-              else np.full(seg.shape, 1e9))
-    base = (seg == 0) & (white != 0) & (edge > 15)
-    return {"far":       base & (d_all > 30) & (d_main > 110),
-            "small 1-3": base & (d_oth > 1) & (d_oth <= 3) & (d_main > 30),
-            "main 1-3":  base & (d_main > 1) & (d_main <= 3) & (d_oth > 6),
-            "main 3-10": base & (d_main > 3) & (d_main <= 10) & (d_oth > 6)}
-
-
-def arcsinh_stretch(img, valid=None, soft=0.02):
-    """底圖的 asinh 拉伸 —— 回傳 (拉伸後的影像, vmax),vmin 一律用 0。
-
-    白光的動態範圍跨好幾個量級(主星系本體 vs 暗源),線性顯示會讓本體以外的
-    東西全黑。asinh 在亮處是對數、暗處是線性。軟閾值取 99.5 分位的 soft 倍,
-    所以 vmax 恆為 arcsinh(1 / soft),換一份底圖仍然是同一組刻度。
-
-    valid 給了的話,視野外的格填 NaN(畫出來是空白);不給就照原值畫。
-    """
-    m = np.isfinite(img) & (img != 0)
-    v = np.nanpercentile(img[m], 99.5)
-    a = img if valid is None else np.where(valid, img, np.nan)
-    return np.arcsinh(a / (soft * v)), np.arcsinh(1 / soft)
+from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
 
 
 def collapse(path, band, wl, seg):
-    """把 cube 在指定波段壓成一張影像 —— 回傳 (影像, 剔除數, 參與剔除的元素數)。
+    """Collapse the cube over the given band into a single image -- returns (image,
+    number rejected, number of elements taking part in the rejection).
 
-    壞 voxel 先剔除再平均,做法與門檻沿用 step3_sky_basis.py 的 mean_sky:
-    同一通道、跨 spaxel,中心取中位數、散布取 (p84 - p16) / 2(對離群值穩健),
-    偏離超過 CLIP_SIGMA 倍的剔掉。這樣就不必另外挑一個絕對門檻。
+    Bad voxels are rejected before averaging, with the same procedure and threshold as
+    mean_sky in step3_sky_basis.py: within one channel, across spaxels, the centre is
+    the median and the spread is (p84 - p16) / 2 (robust against outliers), and
+    anything deviating by more than CLIP_SIGMA times that is rejected. This way no
+    separate absolute threshold has to be chosen.
 
-    但**只剪 blank**。一條天光線在每個 spaxel 都亮,它的亮度就在該通道的中位數
-    裡,不會被剪掉;源不是這樣 —— 源只在少數 spaxel 亮,跨 spaxel 看它本來就是
-    離群值,用同一把尺會把源的 spaxel 整條剪光,nanmean 之後變成 NaN。
+    But **only blank is clipped**. A sky emission line is bright in every spaxel, so
+    its brightness is inside that channel's median and it does not get clipped; a
+    source is not like that -- a source is bright in only a few spaxels, so seen
+    across spaxels it is an outlier by construction, and using the same ruler would
+    clip the whole spectrum of the source spaxels away, leaving NaN after nanmean.
     """
     m = (wl >= band[0]) & (wl < band[1])
     with fits.open(path, memmap=True) as h:

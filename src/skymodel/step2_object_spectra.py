@@ -4,49 +4,57 @@ from astropy.io import fits
 
 
 def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
-    """把屬於同一個 segmentation ID 的所有 spaxel 光譜加總。
+    """Sum the spectra of all spaxels belonging to the same segmentation ID.
 
     Parameters
     ----------
     cube_path : path-like
-        MUSE cube;需要 DATA extension。
+        MUSE cube; requires a DATA extension.
     var_path : path-like or None
-        STAT(variance)從哪個檔案讀,預設和 cube_path 同一個。扣過天空的 cube
-        只有 DATA,沒有 STAT —— 扣掉一個確定性的天空模型不改變像素的變異數,
-        所以直接沿用原始 cube 的 STAT 是對的。
+        Where to read the STAT (variance) from; defaults to cube_path. A
+        sky-subtracted cube has only DATA, no STAT -- subtracting a
+        deterministic sky model does not change the pixel variance, so
+        re-using the original cube's STAT is correct.
     seg : ndarray, shape (ny, nx)
-        segmentation map,每格存所屬源的 ID,0 表示不屬於任何源。
-        呼叫前必須先把視場外歸 0,否則視場外的像素會被一起加進來。
+        Segmentation map; each pixel stores its source ID, 0 means no source.
+        Pixels outside the field of view must be set to 0 before calling,
+        otherwise they will be included in the summation.
     ids : ndarray, shape (n_ids,)
-        要處理的 ID 清單。
+        List of IDs to process.
     chunk : int
-        一次讀入幾個波長平面。只影響記憶體與速度,不改變結果。
+        Number of wavelength planes to read at once. Affects only memory and
+        speed, not the result.
 
     Returns
     -------
     flux : ndarray, shape (n_ids, nz)
-        加總光譜。
+        Summed spectra.
     var : ndarray, shape (n_ids, nz)
-        加總 variance。獨立像素相加時可加的是 variance 而不是 sigma,
-        所以這裡直接相加;開根號之後才是加總光譜的雜訊。
+        Summed variance. For independent pixels the additive quantity is
+        variance, not sigma; take the square root to get the noise of the
+        summed spectrum.
     nspax : ndarray, shape (n_ids, nz)
-        每個 ID 在每個波長「實際有資料」的 spaxel 數。cube 中存在壞 spaxel
-        與波長邊界的缺值,所以這個數字會低於該 ID 的總 spaxel 數,而且隨波長
-        變動。下游若要把加總換算成平均,除數必須用它而不是總 spaxel 數:
+        Number of spaxels with valid data per ID per wavelength channel.
+        Bad spaxels and edge-of-band NaNs make this lower than the total
+        spaxel count for each ID, and it varies with wavelength. Downstream
+        conversions from sum to mean must divide by this, not by the total
+        spaxel count:
 
             mean_flux = flux / nspax
             mean_var  = var / nspax**2
 
-        其中 variance 除的是 nspax 的平方,因為平均值的變異數是總和的 1/n²。
+        Variance is divided by nspax squared because the variance of the
+        mean is 1/n^2 times the variance of the sum.
 
     Notes
     -----
-    flux、var、nspax 三者計數的必定是同一批 spaxel:先用 ok 遮罩把不可用的
-    位置清成 0,再直接相加。若改用 np.nansum 分別處理 flux 與 var,兩者會各自
-    獨立跳過不同的位置(例如 flux 有值但 variance 是 NaN 的像素會進 flux 卻不
-    進 var),使 variance 與 flux 不對應。
+    flux, var, and nspax are guaranteed to count the same set of spaxels:
+    the ok mask zeros out unusable positions before summing. Using np.nansum
+    on flux and var separately would let each skip different positions
+    independently (e.g. a pixel with valid flux but NaN variance would enter
+    flux but not var), making variance and flux inconsistent.
     """
-    seg_flat = seg.ravel() # 2D -> 1D
+    seg_flat = seg.ravel()                                    # 2D -> 1D
     members  = [np.flatnonzero(seg_flat == i) for i in ids]
 
     with fits.open(cube_path, memmap=True) as hdul, \
@@ -74,28 +82,32 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
 
 def main():
     import argparse
-    ap = argparse.ArgumentParser(description="按 segmentation ID 加總源光譜")
+    ap = argparse.ArgumentParser(description="sum source spectra by segmentation ID")
     ap.add_argument("--cube", required=True,
-                    help="要萃取的 cube(取它的 DATA)。要含天光的原始 cube;"
-                         "分類要用扣過天空的版本(step05 的 sky_subtracted.fits)")
+                    help="cube to extract (reads its DATA). Classification needs a "
+                         "sky-subtracted version; run_pointing.sh passes the ESO "
+                         "nosky cube. Passing our own step05/sky_subtracted.fits "
+                         "also works, but that feeds step5 output back into step2, "
+                         "creating a 5->2->4->5 loop")
     ap.add_argument("--var-cube", default=None,
-                    help="STAT 從哪裡讀,預設同 --cube。我們自己扣天空的 cube 只有 "
-                         "DATA,要用這個指到原始 cube")
-    ap.add_argument("--work", required=True, help="這顆 cube 的工作區")
-    ap.add_argument("--out", required=True, help="輸出目錄")
+                    help="where to read STAT from; defaults to --cube. Our own "
+                         "sky-subtracted cube only has DATA, so use this to point "
+                         "to the original cube")
+    ap.add_argument("--work", required=True, help="working directory for this cube")
+    ap.add_argument("--out", required=True, help="output directory")
     args = ap.parse_args()
     work   = Path(args.work)
     STEP01 = work / "step01"
     out    = Path(args.out) if args.out else work / "step02"
     out.mkdir(parents=True, exist_ok=True)
-    print(f"工作區 {work}   cube {Path(args.cube).name}")
+    print(f"workspace {work}   cube {Path(args.cube).name}")
 
     white = fits.getdata(STEP01 / "whitelight.fits")
     seg   = fits.getdata(STEP01 / "seg.fits")
 
     valid_mask  = white != 0
     source_mask = (seg > 0) & valid_mask
-    seg_valid   = np.where(valid_mask, seg, 0)      # 視場外一律歸 0,不參與加總
+    seg_valid   = np.where(valid_mask, seg, 0)      # outside FoV -> 0, excluded from sum
 
     ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
     print(f"{len(ids)} sources, {counts.sum()} source spaxels")

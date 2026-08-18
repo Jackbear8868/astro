@@ -262,7 +262,7 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
     print("-" * 61)
     for t in ids:
         if t not in idx:
-            print(f"{t:>4}   best 檔裡沒有這個源,跳過")
+            print(f"{t:>4}   source not found in best file, skipping")
             continue
         k = idx[t]
         group, tpl = str(best["group"][k]), str(best["template"][k])
@@ -283,7 +283,7 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
               f"{max(r1, r2) / min(r1, r2):>8.2f}x{mark}")
 
     if not rows:
-        raise SystemExit("沒有任何源,不寫分類檔")
+        raise SystemExit("no sources found; classification file not written")
 
     out = out_dir / f"classification_{tag}.npz"
     np.savez(out,
@@ -293,73 +293,81 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
              z=np.array([r["z"] for r in rows]),
              A=np.vstack([r["A"] for r in rows]))
     ns = sum(1 for r in rows if r["group"] == "star")
-    print(f"\n{len(rows)} 個源:{ns} 恆星 / {len(rows) - ns} 星系")
-    print("margin = 兩個模型的 reduced chi2 比值,越接近 1 代表分類越沒有裕度")
+    print(f"\n{len(rows)} sources: {ns} stars / {len(rows) - ns} galaxies")
+    print("margin = ratio of the two models' reduced chi2; closer to 1 means less classification confidence")
     print(f"saved -> {out}")
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="單階段源模板擬合(固定視窗 + 天光線遮罩)")
-    ap.add_argument("--id",    default="all",           help="segmentation ID,或 all")
+    ap = argparse.ArgumentParser(description="single-stage source template fitting (fixed window + sky-line mask)")
+    ap.add_argument("--id",    default="all",           help="segmentation ID, or all")
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, required=True,
-                    help="天光線 basis 條數。必填 —— 三個 step 必須用同一個 K,而各自帶一個預設值時,漏給的那一步會安靜地讀到另一組 basis")
+                    help="number of sky-line basis vectors. Required -- all three steps must use the same K; separate defaults would silently read a different basis set")
     ap.add_argument("--star-window", type=float, nargs=2, default=STAR_WINDOW,
-                    metavar=("LO", "HI"), help="恆星模板的擬合視窗 (A, air);須與 --gal-window 相同")
+                    metavar=("LO", "HI"), help="stellar template fitting window (A, air); must match --gal-window")
     ap.add_argument("--gal-window", type=float, nargs=2, default=GAL_WINDOW,
-                    metavar=("LO", "HI"), help="星系本徵譜的擬合視窗 (A, air);須與 --star-window 相同")
+                    metavar=("LO", "HI"), help="galaxy eigenspectrum fitting window (A, air); must match --star-window")
     ap.add_argument("--full-range", action="store_true",
-                    help=f"兩段都改用 MUSE 全波段 {FULL_RANGE[0]:.0f}-{FULL_RANGE[1]:.0f} A "
-                         "當對照組。注意:恆星模板靜止只到約 9200 A,全波段下不同模板"
-                         "覆蓋到的通道數不再相同,chi2 之間的比較會被通道數影響。")
+                    help=f"use full MUSE range {FULL_RANGE[0]:.0f}-{FULL_RANGE[1]:.0f} A "
+                         "as a control. Note: stellar templates extend to ~9200 A at rest; "
+                         "under full range different templates cover different channel counts, "
+                         "so chi2 comparisons are affected by channel count.")
     ap.add_argument("--line-mask-iter", type=int, nargs="+", default=[1, 2, 3, 4],
-                    help="用 step3 的第幾輪天光線遮罩,可給多個,每一輪各存一份結果。"
-                         "1 最鬆(只標最強的線),輪次越後面涵蓋的通道越多。"
-                         "預設四輪全跑。")
+                    help="which step3 sky-line mask iteration(s) to use; can specify "
+                         "multiple, each produces a separate result. Iter 1 is the loosest "
+                         "(only the strongest lines); higher iterations mask more channels. "
+                         "Default: all four.")
     ap.add_argument("--sky-basis", action="store_true",
-                    help="把天光線 basis 也放進源的擬合。預設不放:"
-                         "天光線通道已經排除在 chi2 之外,basis 在剩下的通道上幾乎"
-                         "沒有能量,那 K 個弱約束的參數只會吸走源訊號。"
-                         "不放的話源的模型只有 1 個自由參數 A。")
+                    help="include sky-line basis in the source fit. Off by default: "
+                         "sky-line channels are already excluded from chi2, the basis has "
+                         "almost no power in the remaining channels, and those K weakly "
+                         "constrained parameters only absorb source signal. Without it the "
+                         "source model has only 1 free parameter A.")
     ap.add_argument("--zmin",  type=float, default=0.0)
     ap.add_argument("--zmax",  type=float, default=1.5)
     ap.add_argument("--zstep", type=float, default=1e-4)
     ap.add_argument("--star-dz", type=float, default=0.005,
-                    help="恆星的 z 掃描半寬(±1500 km/s)。能被解析成點源的星必定是"
-                         "銀河系前景星,沒有哈伯流,只有本動速度。")
+                    help="half-width of z scan for stars (+-1500 km/s). Resolved point "
+                         "sources must be Milky Way foreground stars with no Hubble flow, "
+                         "only peculiar velocity.")
     ap.add_argument("--aperture", action="store_true",
-                    help="改讀 step02b/ 的圓形孔徑光譜(experiments/step2b_aperture.py 產生),"
-                         "而不是 step02/ 的 segmentation footprint")
+                    help="read circular aperture spectra from step02b/ (produced by "
+                         "experiments/step2b_aperture.py) instead of segmentation footprint "
+                         "from step02/")
     ap.add_argument("--allow-partial", action="store_true",
-                    help="允許模板只覆蓋部分視窗的候選進入比較。預設不允許 ——"
-                         "chi2 是加總,通道少的候選天生就小,掃描會被推向模板"
-                         "剛好蓋不住的那個 z。只有在明確知道自己在做什麼時才開。")
+                    help="allow candidates where the template covers only part of the "
+                         "window. Off by default -- chi2 is a sum, so candidates with fewer "
+                         "channels are inherently smaller, biasing the scan toward z values "
+                         "where the template barely covers the window. Enable only when you "
+                         "know what you are doing.")
     ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
-                    help="用哪種星系模型。eigen = Bolton 2012 的 4 條本徵譜"
-                         "(在星系族群裡連續內插);sdss = spDR2-023..028 "
-                         "那 6 條星系模板(各自是一條完整光譜,挑最像的一條,"
-                         "而且可以施加 A >= 0)")
+                    help="which galaxy model to use. eigen = Bolton 2012 4 eigenspectra "
+                         "(continuous interpolation across galaxy populations); "
+                         "sdss = 6 galaxy templates spDR2-023..028 (each a full spectrum, "
+                         "picks the best match, and can enforce A >= 0)")
     ap.add_argument("--spec-dir", default=None,
-                    help="源光譜的目錄,覆蓋 --aperture。分類要用扣過天空的版本,"
-                         "例如 results/skymodel/ne_pointing/step02_ours(我們自己扣的)或 "
-                         "step02_eso(ESO 扣的)。目錄名會編進輸出的 tag,"
-                         "不同來源的結果各存各的")
+                    help="directory of source spectra, overrides --aperture. Classification "
+                         "requires sky-subtracted spectra, e.g. .../step02_ours (our subtraction) "
+                         "or step02_eso (ESO subtraction). Directory name is encoded in the "
+                         "output tag so different sources are stored separately")
     ap.add_argument("--raw-mask", action="store_true",
-                    help="四輪遮罩各自獨立使用,不累加。預設累加 —— step3 的原始"
-                         "四列不是嚴格巢狀的(有通道會掉出),累加後才是乾淨的"
-                         "「遮得越來越多」序列。")
+                    help="use each mask iteration independently without accumulation. "
+                         "Default is cumulative -- step3's raw iterations are not strictly "
+                         "nested (some channels drop out); cumulative mode produces a clean "
+                         "'progressively more masked' sequence.")
     ap.add_argument("--s-fix", type=float, default=1.0)
     ap.add_argument("--s-free", action="store_true")
     ap.add_argument("--ids", type=int, nargs="+", default=None,
-                    help="分類檔只收錄這些 seg ID。省略 = 擬合到的全部源")
+                    help="classification file includes only these seg IDs. Omit = all fitted sources")
     ap.add_argument("--z-override", nargs="*", default=[], metavar="ID=Z",
-                    help="把某個源的紅移改成指定值,只用來做敏感度測試 —— "
-                         "正式的記錄檔不該有手動指定的數字。振幅會在該 z 上"
-                         "重新取最佳解,不會沿用原本的")
+                    help="override a source's redshift to a specified value, for sensitivity "
+                         "testing only -- production records should not contain manually set "
+                         "values. Amplitude is re-solved at the overridden z, not carried over")
     ap.add_argument("--num-workers", type=int, default=0)
     ap.add_argument("--work", required=True,
-                    help="這顆 cube 的工作區(底下有 step02/step03/step04)")
+                    help="working directory for this cube (contains step02/step03/step04)")
     args = ap.parse_args()
     over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
     work    = Path(args.work)
@@ -369,7 +377,7 @@ def main():
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
     STEP04 = work / "step04"
-    print(f"工作區 {work}")
+    print(f"workspace {work}")
     s_fix = None if args.s_free else args.s_fix
     if args.full_range:
         args.star_window = args.gal_window = FULL_RANGE
@@ -379,7 +387,7 @@ def main():
     # 源光譜的來源必須明講。沒有可用的預設 —— 用含天空的光譜去分類,結果看起來
     # 完全正常,只是每個源的模板和紅移都是錯的。
     if not args.spec_dir and not args.aperture:
-        raise SystemExit("★ 需要 --spec-dir(例如 {work}/step02_eso)或 --aperture")
+        raise SystemExit(f"requires --spec-dir (e.g. {work}/step02_eso) or --aperture")
     src = Path(args.spec_dir) if args.spec_dir else STEP02B
     # 光譜來源不同 = 不同的科學產物,tag 必須分得開,否則會靜靜蓋掉上一次。
     # 光譜來源編進 tag —— 同一個工作區裡若有多種來源(例如 ne_pointing 的
@@ -420,7 +428,7 @@ def main():
 
     targets = ids.tolist() if args.id == "all" else [int(args.id)]
     if args.id != "all" and targets[0] not in ids:
-        raise SystemExit(f"ID {targets[0]} 不存在。可用:{ids.min()}–{ids.max()}")
+        raise SystemExit(f"ID {targets[0]} does not exist. Available: {ids.min()}-{ids.max()}")
 
     n_workers = args.num_workers or max(1, len(os.sched_getaffinity(0)) // 3)
     n_workers = min(n_workers, len(targets))
@@ -429,23 +437,23 @@ def main():
     # 視窗不同時 n_good 不同,reduced chi2 的分母不同,比出來的大小沒有意義。
     if tuple(args.star_window) != tuple(args.gal_window):
         raise SystemExit(
-            f"恆星視窗 {args.star_window} 與星系視窗 {args.gal_window} 不同。"
-            "單階段擬合是直接比兩者的 reduced chi2,通道集合必須一致 —— "
-            "請把 --star-window 與 --gal-window 設成相同的範圍。")
+            f"star window {args.star_window} and galaxy window {args.gal_window} differ. "
+            "Single-stage fitting directly compares their reduced chi2, so the channel set "
+            "must be identical -- set --star-window and --gal-window to the same range.")
 
-    print(f"恆星  {args.star_window[0]:.0f}-{args.star_window[1]:.0f} A  "
-          f"視窗 {int(win_star.sum())} 通道   {len(star_jobs)} 條恆星模板 × "
-          f"{z_star.size} 個 z")
-    print(f"星系  {args.gal_window[0]:.0f}-{args.gal_window[1]:.0f} A  "
-          f"視窗 {int(win_gal.sum())} 通道   星系本徵譜 × {z_exg.size} 個 z")
-    print("分類 = 同一組通道上 reduced chi2 較低者(無絕對門檻)")
-    print("s 為自由參數" if s_fix is None else f"天空連續譜固定為 {s_fix} × C_sky,先扣掉")
-    print("源的模型 = A × 模板" + ("  + 天光線 basis" if args.sky_basis
-                                   else "   (1 個自由參數)"))
-    print(f"光譜來源 {src.name}"
-          + ("  (圓形孔徑 r=6 px)" if args.aperture else "  (segmentation footprint)"))
+    print(f"star  {args.star_window[0]:.0f}-{args.star_window[1]:.0f} A  "
+          f"window {int(win_star.sum())} channels   {len(star_jobs)} stellar templates x "
+          f"{z_star.size} z values")
+    print(f"galaxy  {args.gal_window[0]:.0f}-{args.gal_window[1]:.0f} A  "
+          f"window {int(win_gal.sum())} channels   galaxy eigenspectra x {z_exg.size} z values")
+    print("classification = lower reduced chi2 on the same channel set (no absolute threshold)")
+    print("s is a free parameter" if s_fix is None else f"sky continuum fixed to {s_fix} x C_sky, subtracted first")
+    print("source model = A x template" + ("  + sky-line basis" if args.sky_basis
+                                          else "   (1 free parameter)"))
+    print(f"spectra from {src.name}"
+          + ("  (circular aperture r=6 px)" if args.aperture else "  (segmentation footprint)"))
     print(f"{len(targets)} object(s)   {n_workers} workers   "
-          f"遮罩輪次 {args.line_mask_iter}")
+          f"mask iterations {args.line_mask_iter}")
 
     KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2", "chi2_all",
             "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
@@ -462,9 +470,9 @@ def main():
                        args.aperture, suffix)
 
         print(f"\n{'=' * 112}")
-        print(f"遮罩 iter{it}{'(累加)' if not args.raw_mask else '(獨立)'}:全波段標了 {int(line.sum()):,} / {line.size} 通道"
+        print(f"mask iter{it}{'(cumulative)' if not args.raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"
               f" ({100 * line.mean():.1f}%)   "
-              f"擬合用的乾淨通道 {int(fit_star.sum())}")
+              f"clean channels for fitting {int(fit_star.sum())}")
         print(f"{'=' * 112}")
         print(f"{'ID':>5}{'nspax':>8}{'group':>8}{'tpl':>7}{'z':>10}{'A':>12}"
               f"{'n':>7}{'chi2':>14}{'chi2/dof':>10}{'star chi2/dof':>15}"
@@ -482,7 +490,7 @@ def main():
         with Pool(n_workers) as pool:
             for t, row in pool.imap(_scan_one, targets):
                 if row is None:
-                    print(f"{t:>5}   (全部擬合失敗,跳過)")
+                    print(f"{t:>5}   (all fits failed, skipping)")
                     continue
                 summary.append(row)
                 print(f"{t:>5}{row['nspax']:>8}{row['group']:>8}{row['template']:>7}"
@@ -499,29 +507,29 @@ def main():
         if out.exists():
             old = np.load(out, allow_pickle=False)
             if set(old.files) != set(KEYS):
-                print(f"  ★ {out.name} 的欄位和現行格式不同,整份捨棄不併入。"
-                      f"\n    舊 {sorted(set(old.files) - set(KEYS))}"
-                      f"  缺 {sorted(set(KEYS) - set(old.files))}")
+                print(f"  * {out.name} fields differ from current format, discarding entire file."
+                      f"\n    extra {sorted(set(old.files) - set(KEYS))}"
+                      f"  missing {sorted(set(KEYS) - set(old.files))}")
             if set(old.files) == set(KEYS):
                 keep = ~np.isin(old["id"], new["id"])
                 if keep.any():
                     new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
-                    print(f"併入既有的 {int(keep.sum())} 個源")
+                    print(f"merged {int(keep.sum())} existing sources")
         o = np.argsort(new["id"])
         np.savez(out, **{k: v[o] for k, v in new.items()})
         write_classification(STEP04, tag, np.load(out), args.ids, over)
         outs.append((it, out, summary))
 
-    print(f"\n{'=' * 60}\n各輪比較")
-    print(f"{'iter':>6}{'乾淨通道':>10}{'恆星':>7}{'星系':>7}"
-          f"{'star chi2/dof 中位':>20}{'負流量源數':>12}")
-    print("-" * 62)
+    print(f"\n{'=' * 60}\ncross-iteration comparison")
+    print(f"{'iter':>6}{'clean ch':>10}{'stars':>7}{'galaxies':>9}"
+          f"{'star chi2/dof med':>20}{'neg-flux src':>13}")
+    print("-" * 65)
     for it, out, summary in outs:
         ns = sum(1 for r in summary if r["group"] == "star")
         med = float(np.median([r["star_red_chi2"] for r in summary]))
         neg = sum(1 for r in summary if r["src_min"] < 0)
         print(f"{it:>6}{int((win_star & ~line_masks[it-1]).sum()):>10}"
-              f"{ns:>7}{len(summary) - ns:>7}{med:>20.2f}{neg:>12}")
+              f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
     print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
 
 

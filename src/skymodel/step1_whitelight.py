@@ -1,19 +1,21 @@
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
+from astropy.wcs import WCS
 import argparse
 
 import matplotlib
-matplotlib.use("Agg")              # 關鍵：先設定「畫到檔案」模式
-import matplotlib.pyplot as plt    # 畫圖的主介面，慣例縮寫成 plt
+matplotlib.use("Agg")              # must be set before importing pyplot: render to file, not screen
+import matplotlib.pyplot as plt
 
 
 def main():
-    ap = argparse.ArgumentParser(description="cube → 白光影像（whitelight.fits + 預覽 png）")
-    ap.add_argument("cube", type=Path, help="輸入 cube（.fits）")
-    # --out 沒有預設值。原本會用 cube 的檔名開一個新目錄 —— 那讓「餵錯一個 cube」
-    # 的代價變成「results/ 底下多一個沒人知道是什麼的資料夾」,而且不會有任何提示。
-    ap.add_argument("--out", type=Path, required=True, help="輸出資料夾")
+    ap = argparse.ArgumentParser(description="cube -> whitelight image (whitelight.fits + preview png)")
+    ap.add_argument("cube", type=Path, help="input cube (.fits)")
+    # --out has no default. The alternative would be to derive a directory name from
+    # the cube filename, but that means feeding the wrong cube silently creates an
+    # unrecognisable directory under results/ with no warning.
+    ap.add_argument("--out", type=Path, required=True, help="output directory")
     args = ap.parse_args()
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -26,14 +28,20 @@ def main():
         data = hdul["DATA"].data
         white = np.nanmean(data, axis=0)
         white = np.nan_to_num(white, nan=0.0)
-        fits.writeto(WHITE_LIGHT_CUBE, white, overwrite=True)
+        # Carry over the celestial WCS from the cube. Without it the white light
+        # image is a bare array -- downstream checks that the segmentation map and
+        # the white light sit on the same pixel grid can only compare shapes, and
+        # matching shapes do not guarantee alignment. celestial extracts the two sky
+        # axes and drops the wavelength axis.
+        hdr = WCS(hdul["DATA"].header).celestial.to_header()
+        fits.writeto(WHITE_LIGHT_CUBE, white, hdr, overwrite=True)
 
-        plt.figure(figsize=(6, 6))                              # 開一張畫布，6x6 吋
+        plt.figure(figsize=(6, 6))
         plt.imshow(white, origin="lower", cmap="gray",
                 vmin=np.nanpercentile(white, 5),
-                vmax=np.nanpercentile(white, 99))            # 把 2D 陣列畫成灰階影像
-        plt.colorbar()                                          # 旁邊加一條顏色對照尺
-        plt.savefig(WHITE_LIGHT_IMAGE, dpi=130)                 # 把畫布存成 PNG
+                vmax=np.nanpercentile(white, 99))
+        plt.colorbar()
+        plt.savefig(WHITE_LIGHT_IMAGE, dpi=130)
 
 
 if __name__ == "__main__":
