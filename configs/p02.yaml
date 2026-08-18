@@ -1,0 +1,59 @@
+# Haro 11 sky reconstruction -- pointing 2.
+# One config per pointing; paths are relative to the repository root.
+
+pointing: 2
+
+input:
+  cube:  data/wshy/DATACUBE_FINAL_2.fits           # sky included: the sky is learned and subtracted here
+  nosky: data/nosky/DATACUBE_FINAL_ESOSKY_2.fits   # ESO-subtracted: white light and the spectra used for classification
+  seg:   data/wsky_seg/DATACUBE_FINAL_2_seg.fits   # segmentation delivered by the professor
+
+output: results/skymodel/p02
+
+# The part of the field the sky is learned from, written as one box in pixel
+# coordinates. Ranges are half-open, lo <= i < hi, and null means no bound on
+# that side. include: true keeps only what is inside the box, false keeps only
+# what is outside it. apply_to names the steps the box restricts:
+#   basis    step3, which spaxels the sky basis is learned from
+#   s_field  step5, which spaxels train the spatial field of s
+sky_region:
+  x: [0, 160]
+  y: [null, null]
+  include: true
+  apply_to: [basis]
+
+# The sky model: one continuum shape plus K line-basis vectors, learned from
+# the blank spaxels of the wsky cube.
+sky_line_basis:
+  method: svd               # svd or pca
+  K: 30                     # number of line-basis vectors
+  seed: 0                   # random seed; both PCA and TruncatedSVD are randomized
+  continuum_window: 300     # running-median window for the continuum (channels)
+  line_thresholds: [1, 2]   # line detection, (positive, negative) sigma
+  max_iter: 5               # iterations of the continuum / line-mask loop
+  clip_sigma: 30            # sigma clip applied to the mean sky spectrum
+
+# Fitting a template to every detected source, which gives it a class and a
+# redshift.
+source_fit:
+  fit_window: [4600, 8000]  # A, air; the same window for stellar templates and galaxy eigenspectra
+  line_mask_iter: [1]       # which sky-line mask iteration is excluded from the fit
+  s_fix: 0.0                # sky continuum amplitude held at this value while classifying
+  z_min: 0.0                # redshift grid
+  z_max: 1.5
+  z_step: 0.0001
+  star_dz: 0.005            # half-width of the redshift scan for stars
+  num_workers: 0            # 0 = one third of the available cores
+
+# The spatial field that the sky continuum amplitude s is forced onto, fitted
+# to the freely solved blank spaxels.
+s_field:
+  r_far: 15                 # a training spaxel must be at least this far (px) from any source
+  r_far_main: 50            # extra exclusion radius around the main source; 0 disables it
+  clip: 8                   # reject training points beyond this x the robust scatter
+  main_dz_max: 0.005        # largest redshift difference still counted as the same source
+
+# Applying the model to every spaxel.
+spaxel_fit:
+  blank_region: all         # all or line1: which channels solve the blank coefficients
+  min_coverage: 0.9         # fraction of channels with data required before a spaxel is fitted

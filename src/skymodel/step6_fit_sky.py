@@ -69,6 +69,9 @@ def main():
                     help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
     ap.add_argument("--blank-region", choices=["all", "line1"], default="all",
                     help="channels used to solve blank coefficients")
+    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE,
+                    help="fraction of wavelength channels that must carry data before "
+                         "a spaxel is fitted; the field-of-view edge ring falls below it")
     ap.add_argument("--work", required=True,
                     help="working directory (contains step01/step03/step04/step05)")
     ap.add_argument("--cube", required=True,
@@ -133,7 +136,7 @@ def main():
         raise SystemExit(f"s-field shape {s_hat_2d.shape} != cube spatial shape ({ny}, {nx})")
 
     coverage = np.isfinite(D).sum(axis=0) / nz
-    valid    = (white != 0).reshape(-1) & (coverage >= MIN_COVERAGE)
+    valid    = (white != 0).reshape(-1) & (coverage >= args.min_coverage)
     sky_model = np.full((nz, ny * nx), np.nan, np.float32)
     A_map     = np.full((N_SRC, ny * nx), np.nan, np.float32)
     s_map     = np.full(ny * nx, np.nan, np.float32)
@@ -188,7 +191,7 @@ def main():
         cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
         best=str(_rel(best_file)), basis=args.basis, K=args.K,
         s_field=str(_rel(Path(args.s_field))),
-        blank_region=args.blank_region,
+        blank_region=args.blank_region, min_coverage=args.min_coverage,
         n_blank=int(blank.sum()), n_source=n_src_tot,
         n_source_regions=len(rids), n_template_regions=len(templates),
         created=datetime.datetime.now().isoformat(timespec="seconds"),

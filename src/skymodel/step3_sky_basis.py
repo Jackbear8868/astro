@@ -18,7 +18,6 @@ import subprocess
 import time
 
 SEED       = 0           # random seed shared by all decompositions, ensures reproducibility
-K          = 25          # number of basis vectors = degrees of freedom in the sky model
 WINDOW     = 300         # running-median window for the continuum (px)
 THRESHOLDS = (1, 2)      # line-detection thresholds (positive, negative)
 MAX_ITER   = 5           # maximum iterations for estimate_continuum
@@ -29,7 +28,7 @@ CLIP_SIGMA = 30          # sigma-clip threshold for mean_sky, in units of robust
 METHODS    = ["pca", "svd"]
 
 
-def learn_sky_basis(residual, K=10, method="pca"):
+def learn_sky_basis(residual, K=10, method="pca", seed=SEED):
     """Learn K sky-line basis vectors from the residuals of blank spaxels.
 
     All methods return shape (K, nz), i.e. the design matrix always has
@@ -41,6 +40,8 @@ def learn_sky_basis(residual, K=10, method="pca"):
     residual : ndarray, shape (nz, n_blank)
     K : int
     method : {"pca", "svd"}
+    seed : int
+        random_state for the decomposition
 
     Returns
     -------
@@ -54,11 +55,11 @@ def learn_sky_basis(residual, K=10, method="pca"):
     # fixed seed the basis changes on every run and downstream results
     # become irreproducible.
     if method == "pca":
-        p = PCA(n_components=K - 1, random_state=SEED).fit(X)
+        p = PCA(n_components=K - 1, random_state=seed).fit(X)
         return np.vstack([p.mean_[None, :], p.components_])
 
     if method == "svd":
-        return TruncatedSVD(n_components=K, random_state=SEED).fit(X).components_
+        return TruncatedSVD(n_components=K, random_state=seed).fit(X).components_
 
     raise ValueError(f"unknown method: {method}")
 
@@ -87,6 +88,21 @@ def main():
                          "out an interior region. Purpose: high-noise patches in a mosaic "
                          "field with insufficient exposure. Spaxels inside the box are still "
                          "sky-subtracted, just not used for training")
+    ap.add_argument("--seed", type=int, default=SEED,
+                    help="random seed for the decomposition; both PCA and TruncatedSVD "
+                         "default to a randomized algorithm, so an unfixed seed gives a "
+                         "different basis on every run")
+    ap.add_argument("--continuum-window", type=int, default=WINDOW,
+                    metavar="CHANNELS",
+                    help="running-median window used to estimate the sky continuum")
+    ap.add_argument("--line-thresholds", type=float, nargs=2, default=list(THRESHOLDS),
+                    metavar=("POS", "NEG"),
+                    help="line detection thresholds in sigma, positive and negative side")
+    ap.add_argument("--max-iter", type=int, default=MAX_ITER,
+                    help="maximum iterations of the continuum / line-mask loop")
+    ap.add_argument("--clip-sigma", type=float, default=CLIP_SIGMA,
+                    help="sigma clip applied per channel across spaxels before averaging, "
+                         "in units of the robust spread")
     ap.add_argument("--seg", default=None,
                     help="which segmentation map to use for defining blank. Default is "
                          "SExtractor's step01/seg.fits; pointing to seg_dil{r}.fits from "
@@ -176,14 +192,15 @@ def main():
     # that does not shrink with more samples.
     p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
     sg   = np.maximum((p84 - p16) / 2, 1e-6)
-    keep = np.abs(blank - med[:, None]) <= CLIP_SIGMA * sg[:, None]
+    keep = np.abs(blank - med[:, None]) <= args.clip_sigma * sg[:, None]
     # dtype=float64: blank is float32; summing tens of thousands of terms
     # accumulates significant rounding error without the promotion.
     mean_sky = (blank * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1)
-    print(f"mean_sky: sigma-clip {CLIP_SIGMA} sigma rejected {int((~keep).sum()):,} / "
+    print(f"mean_sky: sigma-clip {args.clip_sigma:g} sigma rejected {int((~keep).sum()):,} / "
           f"{keep.size:,} elements ({100*(~keep).mean():.6f}%)")
     C_sky, sigma, line_mask, history = estimate_continuum(
-        mean_sky, thresholds=THRESHOLDS, window=WINDOW, max_iter=MAX_ITER)
+        mean_sky, thresholds=tuple(args.line_thresholds),
+        window=args.continuum_window, max_iter=args.max_iter)
     print(f"line_mask: {100*line_mask.mean():.1f}% of channels  "
           f"({len(history)} iterations: "
           f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
@@ -215,7 +232,7 @@ def main():
 
     for method in args.methods:
         t0 = time.time()
-        basis = learn_sky_basis(residual, K=args.K, method=method)
+        basis = learn_sky_basis(residual, K=args.K, method=method, seed=args.seed)
         np.save(out_dir / f"sky_basis_{method}_K{args.K}.npy", basis)   # filename includes K so different K values can coexist
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
@@ -237,7 +254,10 @@ def main():
                                   capture_output=True, text=True,
                                   cwd=ROOT).stdout.strip(),
         cube=rel(args.cube), seg=rel(seg_f), work=rel(work),
-        methods=list(args.methods), K=args.K,
+        methods=list(args.methods), K=args.K, seed=args.seed,
+        continuum_window=args.continuum_window,
+        line_thresholds=list(args.line_thresholds),
+        max_iter=args.max_iter, clip_sigma=args.clip_sigma,
         xlim=args.xlim, ylim=args.ylim, exclude_box=args.exclude_box,
         n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
         argv=sys.argv[1:],

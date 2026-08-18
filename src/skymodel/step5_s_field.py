@@ -57,6 +57,9 @@ def main():
                     help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
     ap.add_argument("--blank-region", choices=["all", "line1"], default="all",
                     help="channels used for the free blank solve")
+    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE,
+                    help="fraction of wavelength channels that must carry data before "
+                         "a spaxel is fitted; the field-of-view edge ring falls below it")
     ap.add_argument("--blank-s-fix", type=float, default=None,
                     help="fix s in the free blank solve (diagnostic use only)")
     ap.add_argument("--sf-r-far", type=float, default=15.0,
@@ -120,7 +123,7 @@ def main():
     D = D.reshape(nz, -1)
     seg_f = seg.reshape(-1)
     coverage = np.isfinite(D).sum(axis=0) / nz
-    valid = (white != 0).reshape(-1) & (coverage >= MIN_COVERAGE)
+    valid = (white != 0).reshape(-1) & (coverage >= args.min_coverage)
     blank = valid & (seg_f == 0)
 
     # free blank solve
@@ -186,6 +189,7 @@ def main():
         cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
         best=str(_rel(best_file)), basis=args.basis, K=args.K,
         blank_region=args.blank_region, blank_s_fix=args.blank_s_fix,
+        min_coverage=args.min_coverage,
         s_field_params=dict(r_far=args.sf_r_far, r_far_haro=args.sf_r_far_haro,
                             clip=args.sf_clip, exclude_box=args.sf_exclude_box,
                             xlim=args.sf_xlim, ylim=args.sf_ylim,

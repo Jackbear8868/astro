@@ -24,14 +24,13 @@ little source light, s gets propped up, the sky model grows with it, and subtrac
 it eats the source. So it has to back off further, and it has to reject the pixels
 where the fit failed.
 
-The single source of the region parameters is the case block of run_pointing.sh, and
-this script reads it directly rather than keeping a second copy.
+The region parameters come from step3's own meta.json, so the figure can never
+disagree with the settings that produced the products it is drawn from.
 
     conda run -n astro python src/skymodel/evaluation/sky_region_map.py --work results/skymodel/p01
 """
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -46,26 +45,15 @@ from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
 from utils import build_s_field, fit_dirs, main_source_group  # noqa: E402
 
 
-def region_args(n):
-    """Read the spatial restrictions of pointing n out of the case block of
-    run_pointing.sh.
+def region_args(step03):
+    """The spatial restrictions step3 actually applied, read from its meta.json.
 
-    No copy is kept here -- with a copy stored in each of the two places, editing one
-    side without editing the other makes the figure disagree with the settings
-    actually used, while the figure looks perfectly normal.
+    Nothing is copied here: a second copy of the numbers would let one side be
+    edited without the other, and the figure would then disagree with the settings
+    that produced the products, while looking perfectly normal.
     """
-    txt = (ROOT / "src/skymodel/run_pointing.sh").read_text()
-    m = re.search(rf"^\s*{n}\)\s*REGION=\((.*?)\)\s*;;", txt, re.M)
-    if not m:
-        raise SystemExit(f"run_pointing.sh case block has no entry for #{n}")
-    tok = m.group(1).split()
-    out = {}
-    for k in ("--xlim", "--ylim", "--exclude-box"):
-        if k in tok:
-            i = tok.index(k)
-            n_val = 4 if k == "--exclude-box" else 2
-            out[k.lstrip("-").replace("-", "_")] = [int(v) for v in tok[i + 1:i + 1 + n_val]]
-    return out
+    m = json.loads((step03 / "meta.json").read_text())
+    return {k: m[k] for k in ("xlim", "ylim", "exclude_box") if m.get(k)}
 
 
 def main():
@@ -76,11 +64,10 @@ def main():
     args = ap.parse_args()
 
     W = ROOT / args.work
-    n = int(W.name[1:])
     run, _ = fit_dirs(W, args.run)
 
     seg, white, valid = load_field(W)
-    reg = region_args(n)
+    reg = region_args(W / "step03")
 
     # --- step3: blank, then the spatial restrictions on top ---
     blank = valid & (seg == 0)

@@ -85,7 +85,7 @@ def main():
     ap = argparse.ArgumentParser(description="sum source spectra by segmentation ID")
     ap.add_argument("--cube", required=True,
                     help="cube to extract (reads its DATA). Classification needs a "
-                         "sky-subtracted version; run_pointing.sh passes the ESO "
+                         "sky-subtracted version; run_pipeline.py passes the ESO "
                          "nosky cube. Passing our own step05/sky_subtracted.fits "
                          "also works, but that feeds step5 output back into step2, "
                          "creating a 5->2->4->5 loop")

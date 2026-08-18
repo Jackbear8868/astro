@@ -39,7 +39,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 | `ring_consistency.py` | 逐圈問「這一圈還是不是同一個天體」,定逐源的 `r_stop` |
 | `curve_of_growth.py` | 累積 Δchi2 的成長曲線 —— 峰值就是最佳半徑,不需要門檻 |
 
-`run_pointing.sh` 的 `REGION` 是使用者看著 `sky_region_visual.py` 的輸出
+`configs/pNN.yaml` 的 `sky_region` 是使用者看著 `sky_region_visual.py` 的輸出
 (`evaluation/masking/prof_seg/visual_pNN.png`)親自定的,不是推導出來的值。
 
 `dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg`(界定 blank)、
@@ -170,7 +170,7 @@ repo 裡僅存的紀錄;鍵是 NE pointing 的 source ID,和教授新的 14 份 
 | 線偵測的 σ 估計 | **mean-spectrum σ**:先把所有 blank spaxel 平均成一條 mean sky,再在其上量 σ | 教授指示(2026-07-21) |
 | 線偵測門檻 | 雙向 `(1σ, 2σ)` | 教授指定 |
 | 天空連續譜 | **shared 形狀**(由大量 blank spaxel 合併內插取得),**振幅逐 spaxel 自由縮放** | 教授指示(2026-07-26) |
-| segmentation | 用教授交付的那一份,不自己跑 SExtractor | `run_pointing.sh` |
+| segmentation | 用教授交付的那一份,不自己跑 SExtractor | `configs/pNN.yaml` |
 | 分解方法 | 只留 `pca` / `svd`;NMF 與 RPCA 已退役 | `step3_sky_basis.METHODS` |
 
 天空連續譜的形式:

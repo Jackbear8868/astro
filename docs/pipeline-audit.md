@@ -1,6 +1,6 @@
 # pipeline 待決事項（審查於 2026-08-18）
 
-對 `run_pointing.sh`、`step1`–`step5`、`utils.py`、`templates.py` 與
+對 `run_pipeline.py`、`step1`–`step6`、`utils.py`、`templates.py` 與
 `src/skymodel/evaluation/` 的一次完整審查找出 25 項問題。**24 項已修並驗證**，
 每一項的理由寫在程式的註解裡。
 
@@ -19,7 +19,7 @@ git show 665d7a9:docs/pipeline-audit.md
 
 ### step3 與 step5 對「哪裡可以學天空」認定不一致 · 已驗證
 
-`run_pointing.sh` 的 `--xlim/--ylim/--exclude-box` **只**傳給 step3。step5 沒有收到；
+`configs/pNN.yaml` 的 `sky_region` 預設 `apply_to: [basis]`,**只**傳給 step3。step5 沒有收到；
 它的 s 場訓練樣本由 `utils.build_s_field` 決定，只看「離 seg 多遠」（`--sf-r-far`
 15 px、`--sf-r-far-haro` 50 px）。
 
@@ -42,7 +42,7 @@ s 場乘上 `C_sky` 之後扣在**每一個** spaxel 上（含源區）。這條
 `build_s_field`；兩個範圍都進 `meta.json` 的 `s_field_params`。驗證：p01 給
 `--sf-xlim 0 165` 之後訓練點 39,286 → 26,874，正好等於上表的 39,286 − 12,412。
 
-**沒有做的**：`run_pointing.sh` 刻意沒把 `REGION` 轉傳給 step5。那一步會改變科學結果。
+**沒有做的**：`apply_to` 刻意不含 `s_field`,沒把範圍轉傳給 step5。那一步會改變科學結果。
 現在「兩邊不一致」仍是預設值，差別在於它現在可以被寫出來、被 `meta.json` 記下來。
 
 要試就是在 step5 的指令加上和 `REGION` 同一組數字，並用 `--run` 給它自己的資料夾：
@@ -61,7 +61,7 @@ s 場乘上 `C_sky` 之後扣在**每一個** spaxel 上（含源區）。這條
 2. 參數本身：`-K = 30`、`--s-fix`、`--sf-r-far 15` / `--sf-r-far-haro 50` /
    `--sf-clip 8`、`MIN_COVERAGE = 0.9`、`CLIP_SIGMA = 30`、
    `--star-window/--gal-window 4600 8000`、`--line-mask-iter 1`、以及
-   `run_pointing.sh` 那 14 組 REGION。
+   `configs/pNN.yaml` 那 14 組 `sky_region`。
 3. `DV_MAX = 1468.0`（`utils.py`）**單獨列出來，因為它的性質和上面那些不同**。
    查證過（`git log -S "DV_MAX" --all`）：它在 `b147631`（2026-08-16，主源分組改用
    紅移判準）第一次出現，在那之前 repo 裡沒有 `1468` 也沒有 `DV_MAX`，**不是從別處

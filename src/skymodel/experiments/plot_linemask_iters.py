@@ -50,7 +50,7 @@ def main():
             f"{STEP03} 缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
             f"  conda run -n astro python src/skymodel/step3_sky_basis.py "
             f"--methods svd -K 30 --work {args.work} --cube <wsky cube>\n"
-            "  (學天空的空間範圍要一併帶上,見 run_pointing.sh 的 REGION)")
+            "  (學天空的空間範圍要一併帶上,見 configs/pNN.yaml 的 sky_region)")
 
     wl = np.load(STEP03 / "wavelength.npy")
     ms = np.load(STEP03 / "mean_sky.npy")
