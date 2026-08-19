@@ -32,10 +32,10 @@ from scipy.ndimage import binary_dilation
 from sklearn.decomposition import TruncatedSVD
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
+from templates import redshift_to_grid, air_to_vacuum
+from sdss_templates import TPL_DIR, load_sdss_template
 
 ROOT    = Path(__file__).resolve().parents[3]
-TPL_DIR = ROOT / "data/sdss_templates"
 
 SEED       = 0
 CLIP_SIGMA = 30         # 與 step3_sky_basis.CLIP_SIGMA 相同

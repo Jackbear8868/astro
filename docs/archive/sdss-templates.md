@@ -1,7 +1,12 @@
 # SDSS 光譜模板(spDR2)
 
-> 用於 sky reconstruction 中的**源模型** O(p, λ):以 SDSS 模板為基底、外加自由紅移 z
-> 與振幅 A,與天空項同時擬合。教授指定的資源(2026-07-26)。
+> **已歸檔 —— 這組模板不在流程裡。** 源模型 O(p, λ) 的恆星側改用
+> `data/stellar_templates`(見 `docs/stellar-templates.md`),星系側用 Bolton 2012
+> 本徵譜。本文保留下來,是因為取得方式、md5 與檔案格式只記在這裡,而
+> `src/skymodel/experiments/` 底下幾支診斷程式仍讀這組模板。
+>
+> 原始說明:用於 sky reconstruction 中的**源模型** O(p, λ):以 SDSS 模板為基底、
+> 外加自由紅移 z 與振幅 A,與天空項同時擬合。教授指定的資源(2026-07-26)。
 > 檔案位置:`data/sdss_templates/`(**已 gitignore,不在版控內**,需依下方指令重新下載)。
 
 ---

@@ -40,7 +40,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
+from templates import redshift_to_grid, air_to_vacuum
+from sdss_templates import TPL_DIR, load_sdss_template
 # 視窗常數與檔名規則都從 step4b 進口 —— 兩邊各寫一份的話,改了一邊忘了另一邊,
 # 圖上標的視窗就會和實際算 chi2 的視窗不一樣,而那種錯誤看不出來。
 from step4_fit_source import STAR_WINDOW, GAL_WINDOW, FULL_RANGE, make_tag
@@ -48,7 +49,6 @@ from utils import load_line_masks
 
 ROOT    = Path(__file__).resolve().parents[3]
 FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
-TPL_DIR = ROOT / "data/sdss_templates"
 
 # 工作區底下的四個 step 目錄,由 --work 經 set_work() 填進來 —— 和
 # step4_fit_source.py 用同一套 global 慣例。load_common() 會被 step4b_pdf
@@ -64,7 +64,7 @@ def set_work(work):
     STEP03, STEP04  = W / "step03", W / "step04"
     return W
 
-# docs/sdss-templates.md 第 2 節。分組是為了上色 —— 同一族的模板長得像,
+# docs/archive/sdss-templates.md 第 2 節。分組是為了上色 —— 同一族的模板長得像,
 # 分開上色才看得出「贏的是哪一族」,而不是「贏的是第幾號」。
 STAR_TYPE = {
     0: "O", 1: "O/B", 2: "B", 3: "A", 4: "A", 5: "F/A", 6: "F", 7: "F",

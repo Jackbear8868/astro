@@ -180,7 +180,6 @@ def run_pointing(cfg_path):
               "--star-window", *src["fit_window"],
               "--gal-window", *src["fit_window"],
               "--line-mask-iter", *src["line_mask_iter"],
-              "--star-library", src["star_library"], "--gal-model", "eigen",
               "--zmin", src["z_min"], "--zmax", src["z_max"],
               "--zstep", src["z_step"], "--star-dz", src["star_dz"],
               "--num-workers", src["num_workers"],
@@ -194,7 +193,7 @@ def run_pointing(cfg_path):
     tag = make_tag(basis["method"], basis["K"], src["s_fix"],
                    src["fit_window"], src["fit_window"], sky_basis=False,
                    line_iter=line_iter,
-                   suffix=make_suffix("step02", "eigen", src["star_library"]))
+                   suffix=make_suffix("step02"))
     best = out / "step04" / f"classification_{tag}.npz"
 
     print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")

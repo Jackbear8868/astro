@@ -19,14 +19,12 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import lsq_linear
 
-from templates import (load_ascii_template, load_sdss_template,
+from templates import (DWARF_DIR, STAR_LIBRARY, load_ascii_template,
                        load_eigen_galaxy, load_eigen_qso, redshift_to_grid)
 
 ROOT      = Path(__file__).resolve().parents[2]
-TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 EIGEN_QSO = ROOT / "data/qso_eigen_linear_55732.dat"
-DWARF_DIR = ROOT / "data/stellar_templates"
 
 N_SRC        = 4
 MIN_COVERAGE = 0.9
@@ -43,11 +41,11 @@ def build_templates(best, lam_vac):
     """Select the sources that receive a model and redshift each source model
     onto the MUSE wavelength grid.
 
-    Which library a stellar template name belongs to is read from the
-    classification file, not guessed from the name: the two libraries would
-    otherwise have to keep their naming distinguishable forever, and getting
-    it wrong means quietly reconstructing a source with the wrong spectrum.
-    Files written before the field existed came from the SDSS library.
+    The stellar library the classification was fitted with is checked
+    against the one available here rather than assumed: a template name says
+    nothing about which library it came from, so reconstructing a source from
+    the wrong library would be silent. Classifications produced by a library
+    that is no longer shipped are refused instead of reinterpreted.
 
     Returns
     -------
@@ -55,16 +53,17 @@ def build_templates(best, lam_vac):
         {segmentation ID: model redshifted to lam_vac, shape (nz, n_comp)}
     """
     eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
+    # 沒有這個欄位的檔案是在欄位存在之前寫的,一律出自 SDSS 恆星庫。
     lib   = str(best["star_library"]) if "star_library" in best.files else "sdss"
+    if lib != STAR_LIBRARY:
+        raise SystemExit(
+            f"★ this classification was fitted with the {lib!r} stellar library, "
+            f"which is no longer available; re-run step4 to refit it with "
+            f"{STAR_LIBRARY!r}")
     out   = {}
     for i in np.flatnonzero(np.nansum(np.abs(best["A"]), axis=1) > 0):
         g, name = str(best["group"][i]), str(best["template"][i])
-        if g in eigen:
-            spline = eigen[g]
-        elif lib == "sdss":
-            spline = load_sdss_template(TPL_DIR / f"spDR2-{name}.fit")
-        else:
-            spline = load_ascii_template(DWARF_DIR / f"{name}.dat")
+        spline = eigen[g] if g in eigen else load_ascii_template(DWARF_DIR / f"{name}.dat")
         T = redshift_to_grid(spline, float(best["z"][i]), lam_vac)
         out[int(best["id"][i])] = T if T.ndim == 2 else T[:, None]
     return out

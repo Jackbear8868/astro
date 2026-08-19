@@ -48,7 +48,8 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import lsq_linear
 
-from templates import (load_ascii_template, load_sdss_template, load_eigen_galaxy, redshift_to_grid,
+from templates import (DWARF_DIR, STAR_LIBRARY,
+                       load_ascii_template, load_eigen_galaxy, redshift_to_grid,
                        air_to_vacuum)
 from utils import load_line_masks
 
@@ -57,12 +58,8 @@ ROOT      = Path(__file__).resolve().parents[2]
 # 只看得到 fork 當下的模組全域,看不到 main() 的區域變數。
 # main() 依 --work 賦值,在開 Pool 之前。
 STEP02B = STEP03 = STEP04 = None
-TPL_DIR   = ROOT / "data/sdss_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
-DWARF_DIR = ROOT / "data/stellar_templates"     # 兩欄 ASCII,光度型 V 的主序模板
 
-STAR_IDX = range(0, 23)     # spDR2-000..022 是恆星(docs/sdss-templates.md 第 2 節)
-GAL_IDX  = range(23, 29)    # 023 早型、024-026、027 晚型、028 LRG,共 6 條星系模板
 N_SRC    = 4                # A 欄位固定寬度:本徵譜 4 條,恆星只用第 0 欄
 
 # 兩段各自的波長視窗 (A, 空氣波長)。改這裡就等於改預設值;
@@ -98,19 +95,19 @@ def make_tag(basis, K, s_fix, star_window, gal_window, sky_basis, line_iter,
             + ("_ap" if aperture else "") + suffix)
 
 
-def make_suffix(spec_dir_name, gal_model, star_library):
+def make_suffix(spec_dir_name):
     """tag 的後綴:凡是會改變結果、但沒有編進 make_tag 的設定都在這裡。
-
-    恆星庫一律編進去,兩邊都有自己的字樣 —— 如果讓其中一個「當預設所以不標」,
-    換預設的那一刻新舊兩種結果就會共用同一個檔名,靜靜蓋掉對方。
 
     光譜來源不同 = 不同的科學產物;預設來源 step02 不加後綴,後綴標記的是
     「偏離預設」,預設本身不必標。
+
+    _{STAR_LIBRARY}star 是恆星庫的字樣。現在只有一個庫,它是常數 —— 留著是
+    因為既有產物都叫這個名字,拿掉等於把每一份都改名;而且它讓「這批結果出自
+    哪一個庫」寫在檔名上,不必開檔才知道。
     """
     return (("" if spec_dir_name == "step02"
              else f"_{spec_dir_name.replace('step02', '')}")
-            + ("_galtpl" if gal_model == "sdss" else "")
-            + f"_{star_library}star")
+            + f"_{STAR_LIBRARY}star")
 
 
 def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
@@ -256,8 +253,7 @@ def _scan_one(t):
                    **{**best, "A": A})
 
 
-def write_classification(out_dir, tag, best, ids=None, over=None,
-                         star_library="sdss"):
+def write_classification(out_dir, tag, best, ids=None, over=None):
     """把擬合結果收斂成 step5 讀的那份清單。
 
     分類本身已經由上面的掃描決定 —— 恆星模板與星系本徵譜在同一組通道上競爭,
@@ -269,8 +265,8 @@ def write_classification(out_dir, tag, best, ids=None, over=None,
     over {id: z} 把某個源的紅移改成指定值,只用來做敏感度測試。振幅會在該 z 上
          重新取最佳解 —— 模板形狀隨 z 變,振幅不通用。
 
-    star_library 一起存進去:下游要用同一條模板把源重建出來,光憑名字猜不出
-    它出自哪一個庫。
+    恆星庫的名字一起存進去:下游要用同一條模板把源重建出來,光憑模板名字看
+    不出它出自哪一個庫,拿錯庫就會靜靜地用錯的光譜重建源。
     """
     over = over or {}
     idx  = {int(i): k for k, i in enumerate(best["id"])}
@@ -312,7 +308,7 @@ def write_classification(out_dir, tag, best, ids=None, over=None,
              template=np.array([r["template"] for r in rows]),
              z=np.array([r["z"] for r in rows]),
              A=np.vstack([r["A"] for r in rows]),
-             star_library=np.array(star_library))
+             star_library=np.array(STAR_LIBRARY))
     ns = sum(1 for r in rows if r["group"] == "star")
     print(f"\n{len(rows)} sources: {ns} stars / {len(rows) - ns} galaxies")
     print("margin = ratio of the two models' reduced chi2; closer to 1 means less classification confidence")
@@ -363,14 +359,6 @@ def main():
                          "channels are inherently smaller, biasing the scan toward z values "
                          "where the template barely covers the window. Enable only when you "
                          "know what you are doing.")
-    ap.add_argument("--star-library", choices=["sdss", "dwarf"], default="dwarf",
-                    help="恆星候選的來源:sdss = data/sdss_templates 的 spDR2-000..022;"
-                         "dwarf = data/stellar_templates 底下的兩欄 ASCII 主序模板")
-    ap.add_argument("--gal-model", choices=["eigen", "sdss"], default="eigen",
-                    help="which galaxy model to use. eigen = Bolton 2012 4 eigenspectra "
-                         "(continuous interpolation across galaxy populations); "
-                         "sdss = 6 galaxy templates spDR2-023..028 (each a full spectrum, "
-                         "picks the best match, and can enforce A >= 0)")
     ap.add_argument("--spec-dir", default=None,
                     help="directory of source spectra, overrides --aperture. Classification "
                          "requires sky-subtracted spectra, e.g. .../step02_ours (our subtraction) "
@@ -417,7 +405,7 @@ def main():
     # 光譜來源編進 tag —— 同一個工作區裡若有多種來源(例如 ne_pointing 的
     # step02_eso 與 step02_ours),不編進檔名就會靜靜蓋掉上一次。
     # 預設來源 step02 不加後綴:後綴標記的是「偏離預設」,預設本身不必標。
-    suffix = make_suffix(src.name, args.gal_model, args.star_library)
+    suffix = make_suffix(src.name)
     ids   = np.load(src / "object_ids.npy")
     flux  = np.load(src / "object_flux.npy")
     var   = np.load(src / "object_var.npy")
@@ -438,39 +426,30 @@ def main():
 
     z_exg  = np.arange(args.zmin, args.zmax + args.zstep / 2, args.zstep)
     z_star = np.arange(-args.star_dz, args.star_dz + args.zstep / 2, args.zstep)
-    if args.star_library == "sdss":
-        star_jobs = [("star", f"{i:03d}",
-                      load_sdss_template(TPL_DIR / f"spDR2-{i:03d}.fit"), z_star)
-                     for i in STAR_IDX]
-    else:
-        files = sorted(DWARF_DIR.glob("*.dat"))
-        if not files:
-            raise SystemExit(f"★ {DWARF_DIR} 底下沒有 .dat 模板")
-        # 模板的靜止波長範圍必須蓋住整個 MUSE 波段。step5/step6 是在全波段
-        # 評估模板的,設計矩陣裡有 NaN 的通道會對每一個 spaxel 都被丟掉,
-        # 那些通道就再也不參與求解。蓋不住的候選在這裡就排除。
-        need_lo = wl_vac.min() / (1 + z_star.max())
-        need_hi = wl_vac.max() / (1 + z_star.min())
-        star_jobs = []
-        for f in files:
-            sp = load_ascii_template(f)
-            lo, hi = float(sp.t[3]), float(sp.t[-4])
-            if lo > need_lo or hi < need_hi:
-                print(f"  略過 {f.stem}:靜止範圍 {lo:.0f}-{hi:.0f} A,"
-                      f"蓋不住需要的 {need_lo:.0f}-{need_hi:.0f} A")
-                continue
-            star_jobs.append(("star", f.stem, sp, z_star))
-        if not star_jobs:
-            raise SystemExit(f"★ {DWARF_DIR} 底下沒有蓋住 MUSE 波段的模板")
-    print(f"恆星候選 {len(star_jobs)} 條 ({args.star_library}): "
+    files = sorted(DWARF_DIR.glob("*.dat"))
+    if not files:
+        raise SystemExit(f"★ {DWARF_DIR} 底下沒有 .dat 模板")
+    # 模板的靜止波長範圍必須蓋住整個 MUSE 波段。step5/step6 是在全波段
+    # 評估模板的,設計矩陣裡有 NaN 的通道會對每一個 spaxel 都被丟掉,
+    # 那些通道就再也不參與求解。蓋不住的候選在這裡就排除。
+    need_lo = wl_vac.min() / (1 + z_star.max())
+    need_hi = wl_vac.max() / (1 + z_star.min())
+    star_jobs = []
+    for f in files:
+        sp = load_ascii_template(f)
+        lo, hi = float(sp.t[3]), float(sp.t[-4])
+        if lo > need_lo or hi < need_hi:
+            print(f"  略過 {f.stem}:靜止範圍 {lo:.0f}-{hi:.0f} A,"
+                  f"蓋不住需要的 {need_lo:.0f}-{need_hi:.0f} A")
+            continue
+        star_jobs.append(("star", f.stem, sp, z_star))
+    if not star_jobs:
+        raise SystemExit(f"★ {DWARF_DIR} 底下沒有蓋住 MUSE 波段的模板")
+    print(f"恆星候選 {len(star_jobs)} 條 ({STAR_LIBRARY}): "
           + ", ".join(n for _, n, _, _ in star_jobs))
-    eigen_gal = load_eigen_galaxy(EIGEN_GAL)
-    # 星系側的候選。本徵譜是「一條 4 成分的模型」;SDSS 星系模板是「6 條各自
-    # 獨立的候選」,所以後者要列成 6 個 job,掃描時各自求解、取最低。
-    gal_jobs = ([("galaxy", "eigen", eigen_gal, z_exg)] if args.gal_model == "eigen"
-                else [("galaxy", f"{i:03d}",
-                       load_sdss_template(TPL_DIR / f"spDR2-{i:03d}.fit"), z_exg)
-                      for i in GAL_IDX])
+    # 星系側的候選:本徵譜是「一條 4 成分的模型」,一個 job 就掃完整個星系族群,
+    # 成分的線性組合在族群之間連續內插,不必列出一堆離散的代表光譜。
+    gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
 
     targets = ids.tolist() if args.id == "all" else [int(args.id)]
     if args.id != "all" and targets[0] not in ids:
@@ -563,8 +542,7 @@ def main():
                     print(f"merged {int(keep.sum())} existing sources")
         o = np.argsort(new["id"])
         np.savez(out, **{k: v[o] for k, v in new.items()})
-        write_classification(STEP04, tag, np.load(out), args.ids, over,
-                             star_library=args.star_library)
+        write_classification(STEP04, tag, np.load(out), args.ids, over)
         outs.append((it, out, summary))
 
     print(f"\n{'=' * 60}\ncross-iteration comparison")

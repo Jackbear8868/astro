@@ -14,7 +14,7 @@
 
     conda run -n astro python src/skymodel/experiments/star_library_residual.py \
         --work results/skymodel/p01 --ids 22 50 \
-        --run default:"SDSS templates" dwarf:"dwarf templates"
+        --run default:"pipeline" alt:"alternative run"
 """
 import argparse
 import json
@@ -77,7 +77,7 @@ def main():
     ap = argparse.ArgumentParser(description="源區域殘差:wsky 扣掉預測的天空與源")
     ap.add_argument("--work", required=True)
     ap.add_argument("--ids", type=int, nargs="+", required=True)
-    ap.add_argument("--run", nargs="+", default=["default:SDSS templates"],
+    ap.add_argument("--run", nargs="+", default=["default:pipeline"],
                     help="要比的 run,寫成 名稱:標籤;default = pipeline 自己的 step05/step06")
     ap.add_argument("--band", type=float, nargs=2, default=None, metavar=("LO", "HI"),
                     help="統計量只算這一段;預設整個 cube")

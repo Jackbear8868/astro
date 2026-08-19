@@ -26,11 +26,11 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from templates import (air_to_vacuum, load_ascii_template,  # noqa: E402
-                       load_eigen_galaxy, load_sdss_template, redshift_to_grid)
+                       load_eigen_galaxy, redshift_to_grid)
+from sdss_templates import SDSS_DIR, load_sdss_template  # noqa: E402
 from utils import load_line_masks  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-SDSS_DIR  = ROOT / "data/sdss_templates"
 DWARF_DIR = ROOT / "data/stellar_templates"
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 

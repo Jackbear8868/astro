@@ -17,7 +17,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 METHODS  = ("svd", "pca")
-LIBRARIES = ("sdss", "dwarf")
 APPLY_TO = ("basis", "s_field")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit", "s_field",
             "spaxel_fit")
@@ -99,8 +98,5 @@ def load(path):
         _fail(f"source_fit.fit_window must increase, got {s['fit_window']}")
     if not isinstance(s.get("line_mask_iter"), list) or not s["line_mask_iter"]:
         _fail("source_fit.line_mask_iter must be a non-empty list of iteration numbers")
-    if s.get("star_library") not in LIBRARIES:
-        _fail(f"source_fit.star_library must be one of {list(LIBRARIES)}, "
-              f"got {s.get('star_library')!r}")
 
     return cfg

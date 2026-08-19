@@ -32,7 +32,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from templates import load_sdss_template, load_eigen_galaxy, redshift_to_grid
+from templates import load_eigen_galaxy, redshift_to_grid
+from sdss_templates import TPL_DIR, load_sdss_template
 from step4_fit_source import (STAR_WINDOW, GAL_WINDOW, make_tag,
                                EIGEN_GAL)
 # 圖的內容必須和 step4b_stage1.py 完全同源 —— 光譜怎麼算、遮罩怎麼定義都直接
@@ -43,14 +44,13 @@ ROOT    = Path(__file__).resolve().parents[3]
 # STEP01(白光圖 + segmentation map)與 STEP04 由 --work 決定,見 main()。
 STEP01 = STEP04 = None
 FIGURES = ROOT / "results/skymodel/evaluation/template_fit"
-TPL_DIR = ROOT / "data/sdss_templates"
 
 A4_LAND = (11.69, 8.27)     # A4 橫式(吋)
 # 恆星與星系兩個模型的顏色。光譜列和殘差列共用同一組 —— 同一個模型在兩個地方
 # 必須是同一個顏色,否則要在腦裡再做一次對應。
 STAR_COLOR = "#1f77b4"
 GAL_COLOR  = "#d62728"
-# spDR2-023..028 的星系模板(docs/sdss-templates.md 第 2 節)
+# spDR2-023..028 的星系模板(docs/archive/sdss-templates.md 第 2 節)
 GAL_TYPE = {23: "early-type", 24: "galaxy", 25: "galaxy", 26: "galaxy",
             27: "late-type", 28: "LRG"}
 

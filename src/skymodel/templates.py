@@ -3,25 +3,12 @@ import numpy as np
 from astropy.io import fits
 from scipy.interpolate import make_interp_spline
 
-def load_sdss_template(path):
-    """Read one SDSS spDR2 template and return a cubic B-spline in rest
-    wavelength.
+ROOT = Path(__file__).resolve().parents[2]
 
-    The template is sampled uniformly in log wavelength, which is coarser
-    than the MUSE grid at the red end. Linear interpolation error oscillates
-    periodically with z at the template's sampling interval, creating
-    spurious local maxima in chi2(z). A spline is built once in rest
-    wavelength; redshifting only changes the evaluation positions.
-    """
-    with fits.open(path) as hdul:
-        header   = hdul[0].header
-        spectrum = hdul[0].data[0].astype(np.float64)
-
-    spectrum[spectrum == 0] = np.nan
-    
-    lam_rest = 10.0 ** (header["COEFF0"] + header["COEFF1"] * np.arange(header["NAXIS1"]))
-    good = np.isfinite(spectrum)
-    return make_interp_spline(lam_rest[good], spectrum[good], k=3)
+# 恆星模板庫:檔案在哪裡,以及寫進產物的庫名。兩者綁在一起定義 —— 分開放的話
+# 產物可以宣稱出自某個庫、實際讀的卻是另一個目錄,而那種錯誤從輸出看不出來。
+DWARF_DIR    = ROOT / "data/stellar_templates"      # 兩欄 ASCII,光度型 V 的主序模板
+STAR_LIBRARY = "dwarf"
 
 AIR_MIN = 2000.0        # air wavelengths are undefined where air stops transmitting
 
@@ -97,7 +84,7 @@ def load_eigen_qso(path):
 
     Real data covers 605-8356 A (rest), 4 components. The filename says
     "linear", but the wavelength grid is actually logarithmic like the galaxy
-    file and SDSS templates (dlog10 = 1e-4).
+    file (dlog10 = 1e-4).
     """
     q = np.loadtxt(path)
     return _eigen_spline(q[:, 0], q[:, 1:].T)
@@ -111,16 +98,12 @@ def redshift_to_grid(spline, z, lam_muse):
     """
     return spline(lam_muse / (1.0 + z), extrapolate=False)
     
-def template_on_grid(path, z, lam_muse):
-    """Read + redshift + resample (convenience wrapper for single use)."""
-    return redshift_to_grid(load_sdss_template(path), z, lam_muse)
-    
 def air_to_vacuum(lam_air):
     """Convert air wavelengths to vacuum (Morton 2000, IAU standard).
 
-    The MUSE cube's CTYPE3 = AWAV (air wavelength), while SDSS templates
-    use vacuum wavelength. Without conversion there is a systematic redshift
-    offset of ~83 km/s.
+    The MUSE cube's CTYPE3 = AWAV (air wavelength), while the templates and
+    eigenspectra are all in vacuum wavelength. Without conversion there is a
+    systematic redshift offset of ~83 km/s.
 
     Valid above about 2000 A only. The two resonance terms have poles at
     1602.8 A and 876.7 A, so below that the result is neither correct nor

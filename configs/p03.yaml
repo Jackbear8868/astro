@@ -36,9 +36,6 @@ sky_line_basis:
 # Fitting a template to every detected source, which gives it a class and a
 # redshift.
 source_fit:
-  star_library: dwarf       # which stellar templates the star branch scans:
-                            #   dwarf = data/stellar_templates (covers all of MUSE)
-                            #   sdss  = data/sdss_templates spDR2-000..022
   fit_window: [4600, 8000]  # A, air; the same window for stellar templates and galaxy eigenspectra
   line_mask_iter: [1]       # which sky-line mask iteration is excluded from the fit
   s_fix: 0.0                # sky continuum amplitude held at this value while classifying

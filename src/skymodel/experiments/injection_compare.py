@@ -29,10 +29,10 @@ from scipy.optimize import lsq_linear
 from scipy.ndimage import binary_dilation
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from templates import load_sdss_template, redshift_to_grid, air_to_vacuum
+from templates import redshift_to_grid, air_to_vacuum
+from sdss_templates import TPL_DIR, load_sdss_template
 
 ROOT    = Path(__file__).resolve().parents[3]
-TPL_DIR = ROOT / "data/sdss_templates"
 
 BASIS    = "svd"
 TEMPLATE = "027"
