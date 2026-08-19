@@ -31,9 +31,11 @@ def fit_dirs(work, run=None):
     With no `run`, the two are step05 and step06. Giving `run` names a single
     directory under step05 that holds both kinds of product, which is how an
     alternative run is kept side by side with the pipeline's own output.
+    The name "default" also means step05 and step06, so that a comparison can
+    name the pipeline's own output explicitly instead of only by omission.
     """
     work = Path(work)
-    if run is None:
+    if run is None or run == "default":
         return work / "step05", work / "step06"
     d = work / "step05" / run
     if not d.is_dir():
@@ -309,19 +311,25 @@ C_KMS = 299792.458
 DZ_MAX = 0.005
 
 
-def galaxy_redshifts(step04, ids):
+def galaxy_redshifts(step04, ids, tag=None):
     """Best galaxy-branch redshift for each seg ID. Returns {id: z}.
 
     step4 stores the two branches separately; scan2 is the galaxy branch.
     The z from the classification file is not used -- that is the winning
     branch's value, and when the source is classified as a star it is a
     radial velocity, not a redshift.
+
+    tag names one step4 run, and is the part of the classification filename
+    after "classification_". Callers that hold a --best file know it and
+    should pass it; without it several matches are an error rather than a
+    silent pick.
     """
     out = {}
     for i in ids:
-        f = sorted(Path(step04).glob(f"scan2_id{i}_*.npz"))
+        pat = f"scan2_id{i}_*.npz" if tag is None else f"scan2_id{i}_{tag}.npz"
+        f = sorted(Path(step04).glob(pat))
         if not f:
-            raise SystemExit(f"scan2_id{i}_*.npz not found in {step04}")
+            raise SystemExit(f"{pat} not found in {step04}")
         # Multiple hits mean the directory contains results from several step4
         # runs (different windows, different mask iterations). Taking [0] picks
         # one by filename order, and since the redshift determines which members
@@ -331,13 +339,13 @@ def galaxy_redshifts(step04, ids):
             raise SystemExit(
                 f"id{i} has {len(f)} scan2 files in {step04}:\n  "
                 + "\n  ".join(x.name for x in f)
-                + "\n  redshift must come from the same fit as --best; remove the unwanted files first.")
+                + "\n  redshift must come from the same fit as --best; pass tag= to pick one.")
         d = np.load(f[0], allow_pickle=True)
         out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
     return out
 
 
-def main_source_group(seg, white, step04=None, dz_max=DZ_MAX):
+def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None):
     """Full footprint of the main galaxy -- the connected blob containing the
     brightest pixel, keeping only members with matching redshifts.
     Returns (mask, ID list, peak coordinates).
@@ -364,6 +372,9 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX):
         source's redshift is taken from the member containing the brightest
         pixel.
 
+    tag is passed through to galaxy_redshifts to name one step4 run when the
+    directory holds several.
+
     When step04 is omitted, only criterion (1) is applied. The professor's
     delivered seg has no corresponding template fit, so no redshift is
     available; returning the entire adjacent blob is the only honest choice.
@@ -381,7 +392,7 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX):
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
 
     if step04 is not None:
-        z = galaxy_redshifts(step04, ids)
+        z = galaxy_redshifts(step04, ids, tag)
         z0 = z[int(seg[k])]
         # Comparing |dz| and |c dz/(1+z0)| is the same criterion -- both sides
         # are multiplied by the same positive number. Using the redshift

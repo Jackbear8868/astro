@@ -29,7 +29,7 @@ from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
 
 from config import ROOT, load
-from step4_fit_source import make_tag
+from step4_fit_source import make_suffix, make_tag
 
 HERE = Path(__file__).resolve().parent
 
@@ -180,17 +180,22 @@ def run_pointing(cfg_path):
               "--star-window", *src["fit_window"],
               "--gal-window", *src["fit_window"],
               "--line-mask-iter", *src["line_mask_iter"],
+              "--star-library", src["star_library"], "--gal-model", "eigen",
               "--zmin", src["z_min"], "--zmax", src["z_max"],
               "--zstep", src["z_step"], "--star-dz", src["star_dz"],
               "--num-workers", src["num_workers"],
               "--spec-dir", out / "step02", "--work", out],
              out / "step4.log", tail=3)
 
-    # The classification filename is built by step4's own make_tag, so the two
-    # cannot drift apart. step4 writes one file per mask iteration; the last one
-    # asked for is the one carried downstream.
+    # The classification filename is built by step4's own make_tag/make_suffix,
+    # so the two cannot drift apart. step4 writes one file per mask iteration;
+    # the last one asked for is the one carried downstream.
     line_iter = src["line_mask_iter"][-1]
-    best = out / "step04" / f"classification_{make_tag(basis['method'], basis['K'], src['s_fix'], src['fit_window'], src['fit_window'], sky_basis=False, line_iter=line_iter)}.npz"
+    tag = make_tag(basis["method"], basis["K"], src["s_fix"],
+                   src["fit_window"], src["fit_window"], sky_basis=False,
+                   line_iter=line_iter,
+                   suffix=make_suffix("step02", "eigen", src["star_library"]))
+    best = out / "step04" / f"classification_{tag}.npz"
 
     print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")
     run_step("step5", "step5_s_field.py",

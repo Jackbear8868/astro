@@ -119,10 +119,10 @@ def box_mean(hdu, y0, y1, x0, x1):
         return np.nanmean(sub.reshape(sub.shape[0], -1), axis=1)
 
 
-def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
+def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None):
     """Pick the boxes by content, returning {name: (y0, y1, x0, x1)} (endpoints
     included)."""
-    main, ids, peak = main_source_group(seg, white, step04)
+    main, ids, peak = main_source_group(seg, white, step04, tag=tag)
     valid = white != 0
     size  = 2 * half + 1
 
@@ -372,22 +372,25 @@ def main():
     wl    = np.load(W / "step03/wavelength.npy")
     s_hat = np.load(s_dir / "s_hat.npy") if (s_dir / "s_hat.npy").exists() else None
 
+    # 主源分組要用的紅移必須出自畫的是哪一次擬合;工作區裡可能有好幾次 step4。
+    meta = json.loads((run / "meta.json").read_text())
+    tag  = Path(meta["best"]).stem.removeprefix("classification_")
     boxes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
-                                   args.edge, args.margin, W / "step04")
+                                   args.edge, args.margin, W / "step04", tag)
     print(f"main source {int(main.sum()):,} px, brightest pixel (y, x) = {peak}")
     for nm, (y0, y1, x0, x1) in boxes.items():
         print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}")
 
     if args.pdf:
-        cube_path = ROOT / json.loads((run / "meta.json").read_text())["cube"]
+        cube_path = ROOT / meta["cube"]
         tri = {}
-        for tag, p in (("raw", cube_path), ("mod", run / "sky_model.fits"),
-                       ("res", run / "sky_subtracted.fits")):
+        for kind, p in (("raw", cube_path), ("mod", run / "sky_model.fits"),
+                        ("res", run / "sky_subtracted.fits")):
             h, hdu = cube_data(p)
             for nm, b in boxes.items():
-                tri.setdefault(nm, {})[tag] = box_mean(hdu, *b)
+                tri.setdefault(nm, {})[kind] = box_mean(hdu, *b)
             h.close()
-            print(f"loaded {tag}  {p.name}")
+            print(f"loaded {kind}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
         out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
                else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")

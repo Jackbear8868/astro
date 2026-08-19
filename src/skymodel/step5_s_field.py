@@ -151,10 +151,12 @@ def main():
             sf_box |= (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
 
     # main source group
+    # 紅移必須出自 --best 那一次擬合;工作區裡可能同時有好幾次 step4 的結果。
+    tag = best_file.stem.removeprefix("classification_")
     mg, mids, mk = main_source_group(seg, white, best_file.parent,
-                                     args.main_dz_max)
+                                     args.main_dz_max, tag=tag)
     all_ids = main_source_group(seg, white)[1]
-    z0 = galaxy_redshifts(best_file.parent, [int(seg[mk])])[int(seg[mk])]
+    z0 = galaxy_redshifts(best_file.parent, [int(seg[mk])], tag)[int(seg[mk])]
     print(f"  main source (brightest pixel y={mk[0]}, x={mk[1]}): {len(mids)} IDs"
           f", {int(mg.sum()):,} px"
           f" (dz <= {args.main_dz_max:g},"
