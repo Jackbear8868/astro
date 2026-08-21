@@ -71,19 +71,11 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 
 | 檔案 | 問什麼 |
 |---|---|
-| `injection_K.py` | 注入-回收:K 對「源保不保得住」的影響 |
-| `injection_compare.py` | 現行 / 教授的兩階段 / 固定 s,用同一把尺比 |
 | `step2b_aperture.py` | 用固定圓形孔徑抽源光譜,取代 segmentation footprint |
-| `step4b_stage1.py` | 第 1 段(是不是恆星)的視覺化 —— 訂門檻用 |
-| `step4b_pdf.py` | 把每個源的光譜 + 最佳模板 + 殘差合成一份 PDF,寄給教授 |
-| `step4b_mismatch.py` | 紅移對不上的源:我們的解 vs 教授給的 z |
+| `star_library_residual.py` | 源模型有沒有把源解釋完 —— 逐源畫 `wsky − sky_model − source_model` |
 
-注入-回收是**唯一能造出真值的方法** —— 源區域沒有真值,blank 區的殘差只說得了
-天空扣得乾不乾淨,說不了源有沒有被吃掉(CLAUDE.md 原則 1 的第二半)。
-
-`step4b_mismatch.py` 裡的 `PROF_Z` 是**教授給的紅移**,而且它現在是這組數字在
-repo 裡僅存的紀錄;鍵是 NE pointing 的 source ID,和教授新的 14 份 segmentation
-對不起來,所以這支不能只換路徑就搬到 `pNN`。
+`star_library_residual.py` 一列一個 run,右邊是該列自己的統計量,所以不同 run 的
+源區殘差可以擺在同一張圖上讀。
 
 ---
 
