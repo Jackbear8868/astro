@@ -13,15 +13,20 @@
 
 ## 1. 取得方式
 
+模板不隨 repo 發佈(`data/` 全部 gitignore),需要時依下表重新下載:
+
 ```bash
-bash data/download_sdss_templates.sh
+mkdir -p data/sdss_templates
+curl -fsSL -o data/sdss_templates/spectemplatesDR2.tar.gz \
+    https://classic.sdss.org/dr7/algorithms/spectemplates/spectemplatesDR2.tar.gz
+md5sum data/sdss_templates/spectemplatesDR2.tar.gz   # 應為下表的 md5
+tar xzf data/sdss_templates/spectemplatesDR2.tar.gz -C data/sdss_templates
+ls data/sdss_templates/spDR2-*.fit | wc -l           # 應為 33
 ```
 
-腳本會下載 tarball、比對 md5、解壓到 `data/sdss_templates/`,並確認檔案數為 33。
-可重複執行:已備齊時直接結束,不重複下載;從任何目錄執行皆可。
-
-`data/` 底下的內容全部 gitignore,但這支腳本以 `.gitignore` 的
-`!data/download_sdss_templates.sh` 例外納入版控,因此 clone 之後即可據以重建資料。
+`curl -f` 是必要的:少了它,HTTP 404/500 的錯誤頁面會被原樣存成 tarball,
+要到解壓那一步才發現。md5 一定要比對 —— 半截的下載和鏡像換了內容都只有
+這一步看得出來。主站不通時把網址的 `dr7` 換成 `dr5`,是同一個檔案。
 
 | 項目 | 值 |
 |---|---|
