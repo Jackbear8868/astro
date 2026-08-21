@@ -12,7 +12,7 @@ inside the sky model and is preserved in the residual.
 
     conda run -n astro python src/skymodel/step5_s_field.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
-        --cube data/wshy/DATACUBE_FINAL_1.fits \\
+        --cube data/wsky/DATACUBE_FINAL_1.fits \\
         --best results/skymodel/p01/step04/classification_*.npz
 """
 import argparse

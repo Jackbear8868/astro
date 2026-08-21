@@ -51,7 +51,7 @@ def main():
     ap = argparse.ArgumentParser(description="White light image of the input cube (with sky)")
     ap.add_argument("--work", required=True)
     ap.add_argument("--cube", default=None,
-                    help="input cube; defaults to data/wshy/DATACUBE_FINAL_N.fits inferred from pNN")
+                    help="input cube; defaults to data/wsky/DATACUBE_FINAL_N.fits inferred from pNN")
     ap.add_argument("--band", type=float, nargs=2, default=(4600, 9350))
     ap.add_argument("--vmin-sigma", type=float, default=-3.0,
                     help="colour scale lower bound, in units of blank sigma")
@@ -59,7 +59,7 @@ def main():
 
     W = ROOT / args.work
     n = int(W.name[1:])
-    cube = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{n}.fits")
+    cube = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{n}.fits")
 
     seg, _, _ = load_field(W)
     wl = np.load(W / "step03/wavelength.npy")

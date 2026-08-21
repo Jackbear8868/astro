@@ -51,7 +51,7 @@ def main():
                     help="pointing 的工作區,例如 results/skymodel/p01")
     ap.add_argument("--cube", default=None,
                     help="含天空的 cube;預設由 pNN 的編號推出 "
-                         "data/wshy/DATACUBE_FINAL_N.fits")
+                         "data/wsky/DATACUBE_FINAL_N.fits")
     ap.add_argument("--seg", default=None,
                     help="segmentation;預設為工作區的 step01/seg.fits")
     ap.add_argument("--basis", default="svd")
@@ -64,7 +64,7 @@ def main():
 
     W = ROOT / args.work
     STEP01, STEP03 = W / "step01", W / "step03"
-    CUBE = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
+    CUBE = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{int(W.name[1:])}.fits")
     seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
 
     fig_dir = Path(args.figdir); fig_dir.mkdir(parents=True, exist_ok=True)

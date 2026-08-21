@@ -16,7 +16,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 ```
 
 需要 cube 的另外吃 `--cube`,省略時由 `pNN` 的編號推出
-`data/wshy/DATACUBE_FINAL_N.fits`。
+`data/wsky/DATACUBE_FINAL_N.fits`。
 
 輸出一律寫到 `results/skymodel/evaluation/` 底下,**檔名或目錄名帶 `pNN`**。
 14 顆的 step4 tag 與 step5 run 名字完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉

@@ -63,7 +63,7 @@ def load_all(ns):
                                         W / "step04")
         blank = valid & (seg == 0) & np.isfinite(s)
         M, _, _ = rowcol_field(s, blank)     # 各顆自己的條紋各自扣掉
-        h = fits.getheader(ROOT / f"data/wshy/DATACUBE_FINAL_{n}.fits", 1)
+        h = fits.getheader(ROOT / f"data/wsky/DATACUBE_FINAL_{n}.fits", 1)
         out[n] = dict(R=np.where(blank, s - M, np.nan), blank=blank, white=white,
                       crpix=(h["CRPIX1"], h["CRPIX2"]), peak=pk, main=mg)
     return out

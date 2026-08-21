@@ -4,7 +4,7 @@
 pointing: 9
 
 input:
-  cube:  data/wshy/DATACUBE_FINAL_9.fits           # sky included: the sky is learned and subtracted here
+  cube:  data/wsky/DATACUBE_FINAL_9.fits           # sky included: the sky is learned and subtracted here
   nosky: data/nosky/DATACUBE_FINAL_ESOSKY_9.fits   # ESO-subtracted: white light and the spectra used for classification
   seg:   data/wsky_seg/DATACUBE_FINAL_9_seg.fits   # segmentation delivered by the professor
 

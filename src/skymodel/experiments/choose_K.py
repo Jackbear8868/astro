@@ -75,13 +75,13 @@ def main():
                     help="pointing 的工作區,例如 results/skymodel/p01")
     ap.add_argument("--cube", default=None,
                     help="含天空的 cube;預設由 pNN 的編號推出 "
-                         "data/wshy/DATACUBE_FINAL_N.fits")
+                         "data/wsky/DATACUBE_FINAL_N.fits")
     ap.add_argument("--kmax", type=int, default=120, help="交叉驗證掃到多少")
     args = ap.parse_args()
 
     W = ROOT / args.work
     STEP01, STEP03 = W / "step01", W / "step03"
-    WSKY = ROOT / (args.cube or f"data/wshy/DATACUBE_FINAL_{int(W.name[1:])}.fits")
+    WSKY = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{int(W.name[1:])}.fits")
 
     seg   = fits.getdata(STEP01 / "seg.fits")
     white = fits.getdata(STEP01 / "whitelight.fits")

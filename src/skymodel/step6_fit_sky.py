@@ -12,7 +12,7 @@ subtracted; the source is preserved.
 
     conda run -n astro python src/skymodel/step6_fit_sky.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
-        --cube data/wshy/DATACUBE_FINAL_1.fits \\
+        --cube data/wsky/DATACUBE_FINAL_1.fits \\
         --best results/skymodel/p01/step04/classification_*.npz \\
         --s-field results/skymodel/p01/step05/s_hat.npy
 """
