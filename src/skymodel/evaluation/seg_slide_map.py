@@ -35,19 +35,49 @@ from common import EVAL, ROOT  # noqa: E402
 from utils import arcsinh_stretch  # noqa: E402
 
 FIGURES = EVAL / "masking"
+
+
+def qualitative(n):
+    """n colours that neighbouring sources will not be confused between.
+
+    The three tab20 families together give 60 before anything repeats, which
+    covers a MUSE pointing's source count. Past that the cycle restarts, and two
+    sources sharing a colour is only a problem if they are adjacent -- the ID
+    order is not spatial, so a repeat lands somewhere else in the field.
+    """
+    cols = (list(plt.get_cmap("tab20").colors)
+            + list(plt.get_cmap("tab20b").colors)
+            + list(plt.get_cmap("tab20c").colors))
+    return [cols[i % len(cols)] for i in range(n)]
 COLOR = "#4ade80"
 # At slide size the fill is there to say where the sources are, not to be read
 # through -- 0.25 marks the extent while leaving the body of Haro 11 visible
 # underneath. The IDs are off by default for the same reason: 60 numbers, many of
 # them overlapping along the field edge, are unreadable from the back of a room.
 ALPHA = 0.25
+# asinh softening. The percentile inside arcsinh_stretch sets what counts as the
+# bright end; this sets how far the faint end is pulled up, and it is the one that
+# decides whether the faint sources are visible at all. arcsinh_stretch's own
+# default is shared by every figure in the project, so it is passed in here rather
+# than changed there.
+SOFT = 0.01
 
 
 def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
-              ids=None, dpi=150):
+              ids=None, dpi=150, soft=SOFT, background=True, per_source=False):
     """Draw the map and write it to `out`.
 
     ids limits which sources are drawn; None draws every label in seg.
+
+    background=False drops the white light and leaves the mask alone on black --
+    the figure then says "these spaxels are source, those are not" and nothing
+    else. With nothing underneath to see through, the fill is drawn solid.
+
+    per_source=True gives each source its own colour from a qualitative palette,
+    so neighbouring sources stay apart from each other. It is for the mask figure,
+    where there is no background to separate them; over the white light the
+    contours already do that, and many colours there would read as if the colour
+    meant something about the source.
     """
     if ids is None:
         ids = np.unique(seg[seg > 0])
@@ -57,18 +87,28 @@ def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
     fig, ax = plt.subplots(figsize=(12, 12 * h / w))
     # The project's one stretch, the same one utils.id_map uses, so the two
     # figures of the same field cannot end up looking like different data.
-    bg, vmax = arcsinh_stretch(white)
-    ax.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
+    if background:
+        bg, vmax = arcsinh_stretch(white, soft=soft)
+        ax.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
+    else:
+        ax.imshow(np.zeros(seg.shape), origin="lower", cmap="gray", vmin=0, vmax=1)
+        alpha = 1.0
 
     # One fill for all sources, one contour per source: the fill shows extent and
     # the contour keeps small sources visible, but the fill does not need to be
     # drawn once per source the way the contour does.
+    palette = qualitative(len(ids)) if per_source else None
     rgba = np.zeros(seg.shape + (4,))
-    rgba[keep] = list(matplotlib.colors.to_rgb(color)) + [alpha]
+    if per_source:
+        for k, i in enumerate(ids):
+            rgba[seg == i] = list(palette[k % len(palette)]) + [alpha]
+    else:
+        rgba[keep] = list(matplotlib.colors.to_rgb(color)) + [alpha]
     ax.imshow(rgba, origin="lower")
-    for i in ids:
+    for k, i in enumerate(ids):
         m = seg == i
-        ax.contour(m, levels=[0.5], colors=color, linewidths=1.0)
+        c = palette[k % len(palette)] if per_source else color
+        ax.contour(m, levels=[0.5], colors=[c], linewidths=1.0)
         if labels:
             y, x = np.nonzero(m)
             ax.text(x.mean(), y.mean(), str(int(i)), color="white", fontsize=11,
@@ -96,6 +136,14 @@ def main():
                          "pointing's own whitelight, or the two look misaligned")
     ap.add_argument("--color", default=COLOR, help="source colour")
     ap.add_argument("--alpha", type=float, default=ALPHA, help="fill opacity")
+    ap.add_argument("--soft", type=float, default=SOFT,
+                    help="asinh softening of the background; smaller pulls the "
+                         "faint end up further. Ignored with --no-background")
+    ap.add_argument("--no-background", action="store_true",
+                    help="mask only, on black: which spaxels are source and nothing else")
+    ap.add_argument("--per-source-color", action="store_true",
+                    help="one colour per source instead of one for all, so "
+                         "neighbours stay apart with no background to separate them")
     ap.add_argument("--labels", action="store_true",
                     help="write each source's ID on it. Off by default -- see ALPHA")
     ap.add_argument("--min-x", type=int, default=None,
@@ -132,7 +180,9 @@ def main():
     out = Path(args.out) if args.out else FIGURES / f"slide_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     slide_map(seg, white, out, color=args.color, alpha=args.alpha,
-              labels=args.labels, ids=ids, dpi=args.dpi)
+              labels=args.labels, ids=ids, dpi=args.dpi, soft=args.soft,
+              background=not args.no_background,
+              per_source=args.per_source_color)
     print(f"{name}: {len(all_ids)} sources, drawn {len(ids)}")
     print(f"  source spaxels {int((seg > 0).sum()):,}  ({100 * (seg > 0).mean():.1f}% of field)")
     print(f"saved -> {out}")
