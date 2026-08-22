@@ -70,9 +70,11 @@ def main():
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 
-    # the filename carries the working directory name: step01/seg.fits has the same
-    # name for all 14 pointings, so using only the seg filename would overwrite.
-    name = f"{Path(args.work).name}_{seg_path.stem}"
+    # the filename carries the working directory name and the seg's own directory:
+    # step01/seg.fits has the same name for all 14 pointings, and two different
+    # segmentations of the same pointing are also both called seg.fits, so either
+    # part alone lets one figure silently overwrite another.
+    name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     id_map(seg, white, rows, out, by_group=False)
