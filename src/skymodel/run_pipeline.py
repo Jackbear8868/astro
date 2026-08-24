@@ -95,7 +95,13 @@ def run_step(label, script, argv, log_path, keep=None, tail=0):
         raise SystemExit(f"★ {label} failed (exit {code}); full output in {log_path}")
 
 
-def place_segmentation(seg_src, out):
+# How far apart the seg and white-light grids may be before the pointing is
+# refused, in pixels. The 13 pointings that pass sit at 0.000-0.020 px, so this is
+# loose by more than an order of magnitude and still catches a real mismatch.
+MAX_GRID_OFFSET = 0.1
+
+
+def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
     """Copy the professor's segmentation next to the white light and confirm the
     two share a pixel grid.
 
@@ -103,6 +109,11 @@ def place_segmentation(seg_src, out):
     does this pixel point", not a keyword-by-keyword comparison: the seg carries
     a CD matrix while the cube uses PC + CDELT, and their CRPIX differ by 0.01 px,
     both of which a literal comparison would report as a mismatch.
+
+    max_offset above the default is a decision to run anyway on a pointing whose
+    headers disagree. It is a parameter rather than something to edit in place so
+    that the raised limit is printed and lands in the step log: a bypass nobody can
+    see afterwards is worse than the mismatch it was working around.
     """
     dst = out / "step01/seg.fits"
     shutil.copy(seg_src, dst)
@@ -119,14 +130,21 @@ def place_segmentation(seg_src, out):
     ws, ww = WCS(hs).celestial, WCS(hw).celestial
     sep = ws.pixel_to_world(xx, yy).separation(ww.pixel_to_world(xx, yy)).arcsec
     off = sep.max() / (proj_plane_pixel_scales(ww)[0] * 3600)
-    if off > 0.1:
+    if off > max_offset:
         raise SystemExit(f"★ seg and white light grids are {off:.2f} px apart "
-                         "(largest of the four corners and the centre)")
+                         "(largest of the four corners and the centre); "
+                         f"the limit is {max_offset:g} px. Raise it with "
+                         "--max-grid-offset to run anyway")
     print(f"    {len(np.unique(s)) - 1} sources, mask {100 * (s > 0).mean():.1f}%, "
           f"grid offset {off:.3f} px")
+    if off > MAX_GRID_OFFSET:
+        print(f"    ! grid offset {off:.3f} px exceeds the usual limit "
+              f"{MAX_GRID_OFFSET:g} px and was allowed by --max-grid-offset "
+              f"{max_offset:g}. Anything this pointing produces from sky "
+              f"coordinates carries that offset.")
 
 
-def run_pointing(cfg_path):
+def run_pointing(cfg_path, max_grid_offset=MAX_GRID_OFFSET):
     cfg = load(cfg_path)
     out = cfg["output"]
     inp = cfg["input"]
@@ -155,7 +173,7 @@ def run_pointing(cfg_path):
              [inp["nosky"], "--out", out / "step01"], out / "step1.log")
 
     print("--- [2/7] the professor's segmentation")
-    place_segmentation(inp["seg"], out)
+    place_segmentation(inp["seg"], out, max_grid_offset)
 
     print("--- [3/7] step2 source spectra (nosky, for classification)")
     run_step("step2", "step2_object_spectra.py",
@@ -227,9 +245,14 @@ def main():
         description="Run the sky reconstruction pipeline for one or more pointings")
     ap.add_argument("config", nargs="+",
                     help="pointing config file(s), e.g. configs/p01.yaml")
+    ap.add_argument("--max-grid-offset", type=float, default=MAX_GRID_OFFSET,
+                    help=f"how far apart the seg and white-light grids may be, in "
+                         f"pixels, before the pointing is refused (default "
+                         f"{MAX_GRID_OFFSET:g}). Raising it runs a pointing whose "
+                         f"headers disagree; the offset is printed either way")
     args = ap.parse_args()
     for path in args.config:
-        run_pointing(path)
+        run_pointing(path, args.max_grid_offset)
 
 
 if __name__ == "__main__":
