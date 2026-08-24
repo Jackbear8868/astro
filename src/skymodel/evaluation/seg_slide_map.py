@@ -31,24 +31,11 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT  # noqa: E402
+from common import EVAL, ROOT, qualitative  # noqa: E402
 from utils import arcsinh_stretch  # noqa: E402
 
 FIGURES = EVAL / "masking"
 
-
-def qualitative(n):
-    """n colours that neighbouring sources will not be confused between.
-
-    The three tab20 families together give 60 before anything repeats, which
-    covers a MUSE pointing's source count. Past that the cycle restarts, and two
-    sources sharing a colour is only a problem if they are adjacent -- the ID
-    order is not spatial, so a repeat lands somewhere else in the field.
-    """
-    cols = (list(plt.get_cmap("tab20").colors)
-            + list(plt.get_cmap("tab20b").colors)
-            + list(plt.get_cmap("tab20c").colors))
-    return [cols[i % len(cols)] for i in range(n)]
 COLOR = "#4ade80"
 # At slide size the fill is there to say where the sources are, not to be read
 # through -- 0.25 marks the extent while leaving the body of Haro 11 visible

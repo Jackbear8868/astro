@@ -20,6 +20,9 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[3]
 # Figures and measured values always go to one central place, with the pointing in
@@ -58,6 +61,20 @@ def pointing_dir(name, *sub):
 # not be told apart from the data in the dark/bright regions. Bright green falls
 # outside the colour map, so it is always visible on top.
 SEG_COLOR = "#39ff14"
+
+
+def qualitative(n):
+    """n colours that neighbouring sources will not be confused between.
+
+    The three tab20 families together give 60 before anything repeats, which
+    covers a MUSE pointing's source count. Past that the cycle restarts, and two
+    sources sharing a colour is only a problem if they are adjacent -- the ID
+    order is not spatial, so a repeat lands somewhere else in the field.
+    """
+    cols = (list(plt.get_cmap("tab20").colors)
+            + list(plt.get_cmap("tab20b").colors)
+            + list(plt.get_cmap("tab20c").colors))
+    return [cols[i % len(cols)] for i in range(n)]
 
 
 def asinh_bar(fig, im, ax, label, lo, hi):
