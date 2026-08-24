@@ -10,6 +10,10 @@ check on whether the sky model is reasonable.
 What the two figures are (both are files step5 has already written; this script does
 not recompute them)
 ------------------------------------------------------------------------------------
+Written into results/skymodel/evaluation/{pNN}/ as s_free.png and s_hat.png, one
+each, on a colour scale they share. The figures carry no colour bar, so that scale
+is printed to the terminal instead -- read it from there when a number is needed.
+
     s_free   the free per-pixel solution in blank. Only blank has values, and the
              positions of the sources are holes.
              It carries the solving noise, and **next to a source it gets propped up
@@ -22,7 +26,9 @@ not recompute them)
              neighbourhood average).
 
 step5 also writes an s_map (the value actually used at each pixel), which is not drawn
-here -- it is identical to s_hat pixel by pixel.
+here: wherever it has a value it is s_hat exactly, and it is NaN on the spaxels step6
+did not solve (about 6% of the field -- the low-coverage border), so drawing it would
+show the same field with a piece missing.
 
     conda run -n astro python src/skymodel/evaluation/s_shape_map.py --work results/skymodel/p01
 """
@@ -45,6 +51,14 @@ def main():
     ap.add_argument("--work", required=True, help="pointing work directory, e.g. results/skymodel/p01")
     ap.add_argument("--run", default=None,
                     help="alternative run directory under step05; default is the pipeline's own step05/step06")
+    ap.add_argument("--half-width", type=float, default=None,
+                    help="half width of the colour scale, shared across pointings. "
+                         "Each map stays centred on its own median -- the pointings sit "
+                         "at different airglow levels, and forcing a common centre would "
+                         "colour whole fields uniformly -- so this makes the amplitude of "
+                         "the structure comparable, not the absolute value of s. Default "
+                         "is per-pointing, which gives each map the most contrast but no "
+                         "shared ruler")
     args = ap.parse_args()
 
     W = ROOT / args.work
@@ -63,24 +77,42 @@ def main():
     # raw measurement and s_hat is its fit, and letting the fit set the ruler would
     # hide the fit's own bias.
     c, lo, hi = diverging_range(s_free)
+    if args.half_width is not None:
+        lo, hi = c - args.half_width, c + args.half_width
 
-    fig, ax = plt.subplots(1, 2, figsize=(13.5, 6.2))
-    for a, arr, ttl in zip(ax, (s_free, s_hat),
-                           ("s solved per spaxel",
-                            "s fitted = mu + a(y) + b(x)")):
-        im = a.imshow(arr, origin="lower", cmap=S_CMAP, vmin=lo, vmax=hi)
+    # One file each. Side by side the two would have to share a canvas width, and
+    # the striping in s is only a couple of percent -- at half the width it is not
+    # resolved. The shared colour scale is what makes them comparable, not being
+    # printed next to each other.
+    # The run goes into the filename. A pointing can hold several step05 runs
+    # (p03 has three), they all write s_free.npy/s_hat.npy, and without this the
+    # second run's figures silently replace the first's.
+    out = pointing_dir(W.name)
+    tag = "" if args.run in (None, "default") else f"_{args.run}"
+    # --half-width changes the colour scale, which changes what the figure says, so
+    # it belongs in the filename for the same reason the run does.
+    if args.half_width is not None:
+        tag += f"_hw{args.half_width:g}"
+    written = []
+    for arr, name in ((s_free, f"s_free{tag}.png"), (s_hat, f"s_hat{tag}.png")):
+        fig, a = plt.subplots(figsize=(8.5, 7.6))
+        a.imshow(arr, origin="lower", cmap=S_CMAP, vmin=lo, vmax=hi)
         a.contour(seg > 0, levels=[0.5], colors="k", linewidths=0.4, alpha=.45)
         a.contour(main,    levels=[0.5], colors="k", linewidths=1.6)
-        a.set_title(ttl, fontsize=12); a.set_xticks([]); a.set_yticks([])
-        fig.colorbar(im, ax=a, fraction=0.046)
+        a.set_axis_off()
+        o = out / name
+        fig.savefig(o, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        written.append(o)
 
     d = (s_free - s_hat)[np.isfinite(s_free) & np.isfinite(s_hat)]
-    fig.suptitle(W.name, fontsize=14)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    o = pointing_dir(W.name) / "s_shape.png"
-    fig.savefig(o, dpi=125, bbox_inches="tight")
-    print(f"{W.name}  s_hat median {np.nanmedian(s_hat[valid]):.4f}   "
-          f"s_free-s_hat median {np.median(d):+.4f}  spread {np.std(d):.4f}   -> {o}")
+    # The figures carry no colour bar, so the scale they were drawn on exists
+    # nowhere else -- without this line the images cannot be read quantitatively.
+    print(f"{W.name}  colour scale {lo:.4f} to {hi:.4f} (centre {c:.4f})")
+    print(f"  s_hat median {np.nanmedian(s_hat[valid]):.4f}   "
+          f"s_free-s_hat median {np.median(d):+.4f}  spread {np.std(d):.4f}")
+    for o in written:
+        print(f"  -> {o}")
 
 
 if __name__ == "__main__":
