@@ -120,8 +120,16 @@ def box_mean(hdu, y0, y1, x0, x1):
 
 
 def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None):
-    """Pick the boxes by content, returning {name: (y0, y1, x0, x1)} (endpoints
-    included)."""
+    """Pick the boxes by content.
+
+    Returns ({name: (y0, y1, x0, x1)}, {name: note}) with the box endpoints included.
+
+    The blank boxes are numbered rather than named after their distance. The distance
+    is what picked them and it is worth knowing, but it is a different number in every
+    pointing, so "blank d=133px" cannot be looked up across the 14 and turns into a
+    different filename in each. The number is stable -- #1 is always the nearest -- and
+    the distance survives in the note, which the figure prints.
+    """
     main, ids, peak = main_source_group(seg, white, step04, tag=tag)
     valid = white != 0
     size  = 2 * half + 1
@@ -150,9 +158,11 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None
     in_blank = whole((seg == 0) & valid) & far_edge
 
     boxes = {}
+    notes = {}
 
-    def add(name, cy, cx):
+    def add(name, cy, cx, note=""):
         boxes[name] = (cy - half, cy + half, cx - half, cx + half)
+        notes[name] = note
 
     # --- main source group: the brightest core, and the faintest place whose box is
     #     still entirely inside the source (halo) ---
@@ -191,10 +201,11 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None
     # --- blank: sampled uniformly along the distance from the main source group, to
     #     check the trend "the farther away, the cleaner" ---
     lo, hi = float(dm.min()), float(dm.max())
-    for q in np.linspace(0.25, 1.0, n_blank):
+    for k, q in enumerate(np.linspace(0.25, 1.0, n_blank), start=1):
         j = int(cand[np.argmin(np.abs(dm - (lo + q * (hi - lo))))])
-        add(f"blank d={d_main.ravel()[j]:.0f}px", *divmod(j, seg.shape[1]))
-    return boxes, main, peak
+        add(f"blank #{k}", *divmod(j, seg.shape[1]),
+            note=f"d={d_main.ravel()[j]:.0f}px from the main source")
+    return boxes, notes, main, peak
 
 
 def draw_map(white, seg, s_hat, boxes, out_path, title):
@@ -244,7 +255,7 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
     print(f"saved -> {out_path}")
 
 
-def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
+def draw_pdf(boxes, notes, wl, tri, out_path, title, smooth_w):
     """One box per page, two panels stacked -- judging "how well it was subtracted"
     cannot be done from the residual alone.
 
@@ -301,10 +312,11 @@ def draw_pdf(boxes, wl, tri, out_path, title, smooth_w):
 
             st = spectrum_stats(res)
             fig.suptitle(
-                f"{title}\n{nm}   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
+                f"{title}\n{nm}{'  ' + notes[nm] if notes.get(nm) else ''}"
+                f"   y {b[0]}-{b[1]}  x {b[2]}-{b[3]}   "
                 f"{(b[1]-b[0]+1)*(b[3]-b[2]+1)} spaxels   |   residual: "
                 f"mean {st['mean']:+.3f}  sigma {st['sigma']:.3f}  "
-                f"rms {st['rms_from_zero']:.3f}", fontsize=11)
+                f"rms_from_zero {st['rms_from_zero']:.3f}", fontsize=11)
             fig.tight_layout(rect=(0, 0, 1, 0.94))
             pdf.savefig(fig)
             plt.close(fig)
@@ -348,6 +360,11 @@ def main():
                     help="minimum distance (px) from the field-of-view edge. Edges "
                          "have low exposure, and step5 writes NaN for spaxels with "
                          "coverage < 90%%")
+    ap.add_argument("--ypct", type=float, default=0.5,
+                    help="percentile that sets the y range; the range runs from this "
+                         "to 100 minus this. Smaller keeps more of the spikes")
+    ap.add_argument("--ypad", type=float, default=0.55,
+                    help="extra room above and below, as a fraction of that range")
     ap.add_argument("--smooth", type=int, default=1, help="moving-average width for plotting (channels)")
     ap.add_argument("--pdf", action="store_true",
                     help="output PDF: one page per box, upper panel raw vs sky "
@@ -375,11 +392,11 @@ def main():
     # 主源分組要用的紅移必須出自畫的是哪一次擬合;工作區裡可能有好幾次 step4。
     meta = json.loads((run / "meta.json").read_text())
     tag  = Path(meta["best"]).stem.removeprefix("classification_")
-    boxes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
-                                   args.edge, args.margin, W / "step04", tag)
+    boxes, notes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
+                                          args.edge, args.margin, W / "step04", tag)
     print(f"main source {int(main.sum()):,} px, brightest pixel (y, x) = {peak}")
     for nm, (y0, y1, x0, x1) in boxes.items():
-        print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}")
+        print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}   {notes.get(nm, '')}")
 
     if args.pdf:
         cube_path = ROOT / meta["cube"]
@@ -395,7 +412,7 @@ def main():
         out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
                else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
-        draw_pdf(boxes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
+        draw_pdf(boxes, notes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
         draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
                  f"{'box' if args.half else 'point'} locations   {W.name}")
         return
@@ -423,6 +440,10 @@ def main():
     kind = "box" if args.half else "point"
     outdir = Path(args.out) if args.out else pointing_dir(W.name, kind)
     outdir.mkdir(parents=True, exist_ok=True)
+    # The label is the key itself. "rms" alone would be shorter, and unambiguous next
+    # to sigma, but sigma is what a reader takes "rms" to mean when the two are not
+    # side by side -- on a number quoted out of the figure, or in a caption.
+    # rms_from_zero cannot be misread anywhere.
     keys = ("mean", "sigma", "rms_from_zero")
     # The layout of the statistics column is computed from a **character count**, not
     # from hard-coded coordinates: the number of columns changes with whether --eso /
@@ -459,13 +480,19 @@ def main():
                                   else RUN_FALLBACK))
         # The y range is asymmetric -- on a source pixel the whole spectrum is above
         # 0, and forcing symmetry would leave half the canvas empty with the curve
-        # squashed into a single line. The 0.5/99.5 percentiles cut off the few
-        # spikes, and then 0 is guaranteed to stay inside the range (0 is the
-        # reference line of "the sky was removed cleanly", and without seeing it there
-        # is nothing to judge by).
+        # squashed into a single line. Percentiles rather than min/max, because a
+        # handful of bad channels would otherwise set the range and flatten everything
+        # else onto the zero line. Whatever they give, 0 stays inside the range: 0 is
+        # the reference line of "the sky was removed cleanly", and without it on the
+        # canvas there is nothing to judge by.
+        #
+        # The padding is deliberately generous. The percentiles decide which channels
+        # are allowed to set the scale, not which are allowed to be seen -- a spike
+        # cut off at the frame is a measurement the reader cannot make, and here the
+        # spikes are the residual sky lines, which is what the figure is about.
         v = np.concatenate([y[np.isfinite(y)] for y in curves[nm].values()])
-        lo, hi = (float(x) for x in np.percentile(v, [0.5, 99.5]))
-        pad = 0.30 * max(hi - lo, 1e-9)
+        lo, hi = (float(x) for x in np.percentile(v, [args.ypct, 100 - args.ypct]))
+        pad = args.ypad * max(hi - lo, 1e-9)
         ax.set_ylim(min(lo - pad, 0.0), max(hi + pad, 0.0))
         ax.set_xlim(wl[0], wl[-1])
         for lname, lam in LINES:        # redshifted; the sky model cannot remove these
@@ -492,8 +519,10 @@ def main():
         npx = (b[1] - b[0] + 1) * (b[3] - b[2] + 1)
         where = (f"y {b[0]}  x {b[2]}" if npx == 1 else
                  f"y {b[0]}-{b[1]}  x {b[2]}-{b[3]}")
+        note = notes.get(nm, "")
         fig.suptitle(f"{W.name}  {nm}   {where}   "
-                     f"{npx} spaxel{'' if npx == 1 else 's'}", fontsize=12 * sc)
+                     f"{npx} spaxel{'' if npx == 1 else 's'}"
+                     + (f"   {note}" if note else ""), fontsize=12 * sc)
         o = outdir / f"{slug(nm)}.png"
         fig.savefig(o, dpi=dpi, bbox_inches="tight")
         plt.close(fig)
