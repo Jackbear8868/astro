@@ -1,7 +1,7 @@
 # The pipeline
 
 Six steps, run in order by `pipeline.py` from one pointing's config file. Reading
-`run_pointing()` is meant to be enough to know what the pipeline does; this file says
+`Pipeline.run()` is meant to be enough to know what the pipeline does; this file says
 what each step reads and writes, and why the shape is what it is.
 
     conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
@@ -35,7 +35,7 @@ produces output that looks entirely normal, with every template and redshift wro
 
 ## Why the products still go to disk
 
-A step hands its results to the next one in memory -- `run_pointing` is where you can
+A step hands its results to the next one in memory -- `Pipeline.run()` is where you can
 see what each produces and who reads it -- and writes them to `{output}/stepNN/` as
 well. The writing is not how the steps communicate; it is there because:
 
@@ -65,15 +65,21 @@ from skymodel import run_pointing
 run_pointing("configs/p01.yaml")
 ```
 
-The six steps are ordinary functions, but they are not exported and have no command
-lines of their own. Each expects a set of arguments that agree with each other -- the
-same K in steps 3, 4 and 6, an s-field solved against the sky basis step 6 reads, a
-`work` directory holding what the earlier steps wrote -- and the config file is what
-makes them agree.
+The six steps are methods of `Pipeline`, but they are not exported and have no command
+lines of their own. Each reads the values it needs from the config the object was built
+from, which is what makes them agree with each other -- the same K in steps 3, 4 and 6,
+an s-field solved against the sky basis step 6 reads, one output directory holding what
+the earlier steps wrote.
 
-The head of each `stepN.log` is the call that produced the products beside it, written
-out as Python. It is the record of what that run was given, since a config can be
-edited afterwards and then nothing else says; it is not a command to re-run.
+What that run was given is recorded twice, because a config file can be edited
+afterwards and then nothing else says:
+
+- `{output}/config.json` is the config as `config.load()` returned it -- every value
+  the run used, optional keys filled in, paths resolved. `run()` writes it before the
+  first step, whatever `keep_intermediate` says.
+- the head of each `stepN.log` is the call that produced the products beside it,
+  written out as Python: which earlier products that step was handed. It is not a
+  command to re-run.
 
 ## The modules
 
@@ -81,7 +87,7 @@ Four of them, plus an `__init__.py` that exports `run_pointing` and `load_config
 
 | file | holds |
 |---|---|
-| `pipeline.py` | `run_pointing`, the six steps and the segmentation check between the first two, in that order; the command line is at the end |
+| `pipeline.py` | `Pipeline`, whose methods are the six steps and the segmentation check between the first two, in that order; the products they hand each other are above the class and each step's helpers below it; `run_pointing` and the command line are at the end |
 | `config.py` | reads and checks a pointing config; every value the pipeline takes comes from there |
 | `utils.py` | everything the six steps share: the wavelength axis and the air-to-vacuum conversion, continuum estimation and line detection, the source templates (eigenspectra and the stellar library, read as splines), the per-spaxel solves steps 5 and 6 share, the main source group, the s-field construction, the figures the pipeline itself produces, and the one-thread BLAS limit the fitting steps run under |
 | `products.py` | reading a finished run back: where its products are, the settings recorded beside them, and the figures `evaluation/` and `experiments/` share. No step imports it |
