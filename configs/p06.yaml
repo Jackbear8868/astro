@@ -14,8 +14,8 @@ output: results/skymodel/p06
 # coordinates. Ranges are half-open, lo <= i < hi, and null means no bound on
 # that side. include: true keeps only what is inside the box, false keeps only
 # what is outside it. apply_to names the steps the box restricts:
-#   basis    step3, which spaxels the sky basis is learned from
-#   s_field  step5, which spaxels train the spatial field of s
+#   basis          step3, which spaxels the sky basis is learned from
+#   sky_amplitude  step5, which spaxels train the spatial field of s
 sky_region:
   x: [null, null]
   y: [170, null]
