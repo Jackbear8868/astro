@@ -10,8 +10,8 @@ The field is what step6 locks s to when fitting every spaxel. By replacing
 per-spaxel freedom with a smooth surface, source light has nowhere to hide
 inside the sky model and is preserved in the residual.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+fit_s_field() does the work and can be called directly; main() is the same
+thing driven from the command line.
 
     conda run -n astro python src/skymodel/step5_s_field.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
@@ -46,7 +46,7 @@ def _rel(p):
         return p
 
 
-def run(work, cube, best, K, basis="svd", seg=None, sky_dir=None,
+def fit_s_field(work, cube, best, K, basis="svd", seg=None, sky_dir=None,
         blank_region="all", min_coverage=MIN_COVERAGE, blank_s_fix=None,
         sf_r_far=15.0, sf_r_far_haro=50.0, sf_exclude_box=None,
         sf_xlim=None, sf_ylim=None, sf_clip=8.0, main_dz_max=DZ_MAX,
@@ -55,7 +55,7 @@ def run(work, cube, best, K, basis="svd", seg=None, sky_dir=None,
 
     argv is written into meta.json as the record of how the step was launched, and
     only main() can know it: called directly, sys.argv belongs to whatever called
-    run(), not to this step. It stays null in that case -- everything it would have
+    fit_s_field(), not to this step. It stays null in that case -- everything it would have
     carried is already written out under its own name.
     """
     work = Path(work)

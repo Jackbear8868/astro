@@ -4,8 +4,8 @@ C_sky and K sky-line basis vectors.
 Output is consumed by step4's template fitting. The decomposition method for
 the sky-line basis is interchangeable.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+sky_basis() does the work and can be called directly; main() is the same
+thing driven from the command line.
 """
 from pathlib import Path
 import numpy as np
@@ -70,7 +70,7 @@ ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored rel
 
 
 
-def run(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
+def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
         seed=SEED, continuum_window=WINDOW, line_thresholds=THRESHOLDS,
         max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA, seg=None, out=None, argv=None):
     """Write the sky continuum, line mask and sky-line basis into `out`; return that directory.
@@ -81,7 +81,7 @@ def run(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
 
     argv is written into meta.json as the record of how the step was launched, and
     only main() can know it: called directly, sys.argv belongs to whatever called
-    run(), not to this step. It stays null in that case -- everything it would have
+    sky_basis(), not to this step. It stays null in that case -- everything it would have
     carried is already written out under its own name.
     """
     work   = Path(work)

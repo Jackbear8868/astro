@@ -10,8 +10,8 @@ The output is two cubes: sky_subtracted (= data - sky_model) and sky_model
 itself. The source template term is NOT part of sky_model -- only sky is
 subtracted; the source is preserved.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+subtract_sky() does the work and can be called directly; main() is the same
+thing driven from the command line.
 
     conda run -n astro python src/skymodel/step6_fit_sky.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
@@ -56,13 +56,13 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
     fits.HDUList(hdus).writeto(path, overwrite=True)
 
 
-def run(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
+def subtract_sky(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
         blank_region="all", min_coverage=MIN_COVERAGE, out=None, argv=None):
     """Write the sky-subtracted and sky-model cubes into `out`; return that directory.
 
     argv is written into meta.json as the record of how the step was launched, and
     only main() can know it: called directly, sys.argv belongs to whatever called
-    run(), not to this step. It stays null in that case -- everything it would have
+    subtract_sky(), not to this step. It stays null in that case -- everything it would have
     carried is already written out under its own name.
     """
     work = Path(work)

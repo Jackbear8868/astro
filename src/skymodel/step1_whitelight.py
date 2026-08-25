@@ -5,8 +5,8 @@ rather than on the cube: the segmentation is checked against it, the main source
 the blob holding its brightest pixel, and the evaluation figures use it as their
 background.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+whitelight() does the work and can be called directly; main() is the same
+thing driven from the command line.
 
     conda run -n astro python src/skymodel/step1_whitelight.py \\
         data/nosky/DATACUBE_FINAL_ESOSKY_1.fits --out results/skymodel/p01/step01
@@ -23,7 +23,7 @@ matplotlib.use("Agg")              # must be set before importing pyplot: render
 import matplotlib.pyplot as plt
 
 
-def run(cube, out):
+def whitelight(cube, out):
     """Write whitelight.fits and its preview png into `out`; return the fits path.
 
     The path comes back rather than being rebuilt by the caller: the pipeline hands
@@ -68,7 +68,7 @@ def main():
     # unrecognisable directory under results/ with no warning.
     ap.add_argument("--out", type=Path, required=True, help="output directory")
     args = ap.parse_args()
-    run(args.cube, args.out)
+    whitelight(args.cube, args.out)
 
 
 if __name__ == "__main__":

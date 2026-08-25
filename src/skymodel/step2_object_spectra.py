@@ -5,8 +5,8 @@ variance and the number of contributing spaxels per channel. They come from a
 sky-subtracted cube -- classifying a spectrum that still holds the sky gives output
 that looks entirely normal with every template and redshift wrong.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+object_spectra() does the work and can be called directly; main() is the same
+thing driven from the command line.
 
     conda run -n astro python src/skymodel/step2_object_spectra.py \\
         --work results/skymodel/p01 --cube data/nosky/DATACUBE_FINAL_ESOSKY_1.fits \\
@@ -96,7 +96,7 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
     return flux, var, nspax
 
 
-def run(work, cube, out=None, var_cube=None, top=20):
+def object_spectra(work, cube, out=None, var_cube=None, top=20):
     """Write the summed spectra of `work`'s sources into `out`; return that directory.
 
     top only sets how many rows of the SNR table are printed. It changes nothing that
@@ -153,7 +153,7 @@ def main():
     ap.add_argument("--work", required=True, help="working directory for this cube")
     ap.add_argument("--out", required=True, help="output directory")
     args = ap.parse_args()
-    run(args.work, args.cube, out=args.out, var_cube=args.var_cube)
+    object_spectra(args.work, args.cube, out=args.out, var_cube=args.var_cube)
 
 
 if __name__ == "__main__":

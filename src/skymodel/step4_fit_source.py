@@ -42,8 +42,8 @@ The two windows have to be equal: reduced chi2 = chi2 / (n_good - n_param), and
 n_good in that denominator is set by the channel set. Different windows are not the
 same statistic, so comparing them means nothing. main() refuses a mismatched pair.
 
-run() does the work and can be called directly; main() is the same thing driven from
-the command line.
+classify_sources() does the work and can be called directly; main() is the same
+thing driven from the command line.
 
     conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
         --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
@@ -365,7 +365,7 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
     return out
 
 
-def run(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
+def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
         full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
         zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005, aperture=False,
         allow_partial=False, spec_dir=None, raw_mask=False, s_fix=1.0, s_free=False,
@@ -631,7 +631,7 @@ def main():
     ap.add_argument("--work", required=True,
                     help="working directory for this cube (contains step02/step03/step04)")
     args = ap.parse_args()
-    run(args.work, args.K, id=args.id, basis=args.basis,
+    classify_sources(args.work, args.K, id=args.id, basis=args.basis,
         star_window=args.star_window, gal_window=args.gal_window,
         full_range=args.full_range, line_mask_iter=args.line_mask_iter,
         sky_basis=args.sky_basis, zmin=args.zmin, zmax=args.zmax, zstep=args.zstep,

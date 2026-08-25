@@ -43,13 +43,13 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
 
-import step1_whitelight
-import step2_object_spectra
-import step3_sky_basis
-import step4_fit_source
-import step5_s_field
-import step6_fit_sky
 from config import MAX_GRID_OFFSET, ROOT, load
+from step1_whitelight import whitelight
+from step2_object_spectra import object_spectra
+from step3_sky_basis import sky_basis
+from step4_fit_source import classify_sources
+from step5_s_field import fit_s_field
+from step6_fit_sky import subtract_sky
 
 # Which lines of a step reach the terminal while it runs; the rest is in the log.
 KEEP = {
@@ -90,7 +90,7 @@ def region_kwargs(reg, prefix=""):
         lo(x[0]), BEYOND_EDGE if x[1] is None else x[1] - 1]}
 
 
-def call_repr(module, kwargs):
+def call_repr(fn, kwargs):
     """The step call written out as Python, for the head of its log.
 
     A log that records how the step was reached is what makes the step repeatable
@@ -106,7 +106,7 @@ def call_repr(module, kwargs):
                 return repr(str(v))
         return repr(v)
     args = ", ".join(f"{k}={show(v)}" for k, v in kwargs.items())
-    return f"{module.__name__}.run({args})"
+    return f"{fn.__module__}.{fn.__name__}({args})"
 
 
 class _Tee:
@@ -151,7 +151,7 @@ class _Tee:
         self.log.flush()
 
 
-def run_step(label, module, kwargs, log_path, keep=None, tail=0):
+def run_step(label, fn, kwargs, log_path, keep=None, tail=0):
     """Call one step in this process, sending its output to log_path.
 
     Whatever the step returns is passed back, so the pipeline uses the paths the step
@@ -160,12 +160,12 @@ def run_step(label, module, kwargs, log_path, keep=None, tail=0):
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w") as log:
-        log.write(call_repr(module, kwargs) + "\n\n")
+        log.write(call_repr(fn, kwargs) + "\n\n")
         log.flush()
         tee = _Tee(log, keep, tail)
         try:
             with contextlib.redirect_stdout(tee):
-                result = module.run(**kwargs)
+                result = fn(**kwargs)
         except BaseException:
             # The traceback goes to the log as well: the terminal only ever saw the
             # KEEP lines, so without this the log would end mid-step with no reason.
@@ -246,7 +246,7 @@ def run_pointing(cfg_path):
     t0 = time.time()
 
     print("--- [1/7] step1 white light (from the nosky cube)")
-    run_step("step1", step1_whitelight,
+    run_step("step1", whitelight,
              dict(cube=inp["nosky"], out=out / "step01"),
              out / "step1.log")
 
@@ -254,12 +254,12 @@ def run_pointing(cfg_path):
     place_segmentation(inp["seg"], out, cfg["max_grid_offset"])
 
     print("--- [3/7] step2 source spectra (nosky, for classification)")
-    run_step("step2", step2_object_spectra,
+    run_step("step2", object_spectra,
              dict(work=out, cube=inp["nosky"], out=out / "step02"),
              out / "step2.log")
 
     print("--- [4/7] step3 sky basis")
-    run_step("step3", step3_sky_basis,
+    run_step("step3", sky_basis,
              dict(work=out, cube=inp["cube"], K=basis["K"],
                   methods=[basis["method"]], seed=basis["seed"],
                   continuum_window=basis["continuum_window"],
@@ -272,7 +272,7 @@ def run_pointing(cfg_path):
     # step4 returns the classification file it wrote, for the last mask iteration
     # asked for. Rebuilding that name here from make_tag/make_suffix would be the
     # same naming rule written twice, and the two would drift.
-    best = run_step("step4", step4_fit_source,
+    best = run_step("step4", classify_sources,
                     dict(work=out, K=basis["K"], id="all", basis=basis["method"],
                          s_fix=src["s_fix"], s_free=src["s_fix"] is None,
                          star_window=src["fit_window"],
@@ -286,7 +286,7 @@ def run_pointing(cfg_path):
 
     line_iter = src["line_mask_iter"][-1]
     print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")
-    run_step("step5", step5_s_field,
+    run_step("step5", fit_s_field,
              dict(work=out, cube=inp["cube"], best=best, K=basis["K"],
                   basis=basis["method"],
                   blank_region=spx["blank_region"],
@@ -297,7 +297,7 @@ def run_pointing(cfg_path):
              out / "step5.log", keep=KEEP["step5"])
 
     print("--- [7/7] step6 final sky subtraction")
-    run_step("step6", step6_fit_sky,
+    run_step("step6", subtract_sky,
              dict(work=out, cube=inp["cube"], best=best, K=basis["K"],
                   basis=basis["method"],
                   s_field=out / "step05/s_hat.npy",
