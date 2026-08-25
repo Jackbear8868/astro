@@ -3,9 +3,10 @@
     conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
     conda run -n astro python src/skymodel/run_pipeline.py configs/p0[1-4].yaml
 
-run_pointing() below is the whole method in one place: seven calls in the order they
-happen, each one a stepN.run() that can equally be called on its own. Reading it is
-meant to be enough to know what this pipeline does.
+run_pointing() below is the whole method in one place: six named steps in the order
+they happen, plus the segmentation check between the first two. Each step is a
+function that can equally be called on its own. Reading run_pointing() is meant to be
+enough to know what this pipeline does.
 
 Each step's full output goes to {output}/stepN.log with the equivalent Python call
 written at the top, so any step can be repeated by hand; only the lines listed in KEEP
@@ -223,7 +224,7 @@ def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
 
 
 def run_pointing(cfg_path):
-    """The method, in order. Seven steps; each one is a stepN.run() on its own."""
+    """The method, in order: six steps, and the segmentation check between one and two."""
     cfg = load(cfg_path)
     out = cfg["output"]
     inp = cfg["input"]

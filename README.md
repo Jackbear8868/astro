@@ -1,80 +1,143 @@
-## Sky substraction on CGM
+# Sky reconstruction for the Haro 11 MUSE mosaic
 
+MUSE spectra of a faint, extended source sit on top of a sky that is far brighter than
+the source itself. This code learns the sky from the parts of the field where there is
+no source, and subtracts it everywhere.
 
-### Environment (conda)
+The model for one spaxel p at wavelength λ is
+
+    D(p, λ) = s(p) · C_sky(λ) + Σₖ lₖ(p) · Lₖ(λ)
+
+one sky continuum shape `C_sky` scaled per spaxel by an amplitude `s`, plus K sky-line
+basis vectors `Lₖ` with their own per-spaxel coefficients. Both are learned from the
+blank spaxels of a cube that still contains the sky. `s` is then forced onto a smooth
+spatial field before the model is applied to every spaxel, source spaxels included --
+where a source template is fitted alongside the sky, so that the sky is not allowed to
+absorb the galaxy.
+
+The target is Haro 11, a merging dwarf galaxy whose ionised gas reaches across a large
+fraction of the field, which is what makes "where is there no source" the hard part.
+
+---
+
+## Install
 
 ```bash
-# create the `astro` env (python 3.12 + all deps, incl. editable libs/zap)
-SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ZAP=2.1 conda env create -f environment.yml
+git clone --recursive <url> astro     # --recursive: libs/zap is a submodule
+cd astro
+conda env create -f environment.yml
 conda activate astro
 ```
 
-The `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ZAP` variable is required because
-`libs/zap` versions itself with setuptools-scm, but its git metadata is a
-dangling submodule link and is unavailable here, so the version (2.1) must be
-supplied manually.
-
-
-### Data
-
-Haro11_NFM_ESO_nosky.fits -> NFM-AO-N
-Haro11_nosky.fits -> WFM-NOAO-E
-Haro11_WFM_MUSE_archive.fits -> WFM-NOAO-E
-Haro11_wsky.fits -> WFM-NOAO-E
-
-WFM (Wide Field Mode，廣視野模式)： 視野比較大（通常是 $1 \times 1$ 角分），可以看到比較完整的星系結構。
-NFM (Narrow Field Mode，窄視野模式)： 視野非常小（通常是 $7.5 \times 7.5$ 角秒），但解析度極高，用來放大看星系核心的細節。
-AO (Adaptive Optics，調適光學)： 有開啟雷射導星系統來修正地球大氣層擾動，拍出來的影像會非常清晰。
-NOAO (No Adaptive Optics，無調適光學)： 沒有開啟大氣修正。
-E / N (Extended / Nominal，波長範圍)： * N (Nominal) 代表標準波長範圍（大約 480-930 nm）。
-
-下載資料 (Google Drive, 需共用權限)：
-```bash
-cd data && gdown <file_id>   # 4 個 Haro11 cube, 每個約 7-8 GB
-```
-
-
-### 專案結構（現行）
-
-- `src/skymodel/` — **現行主線**：sky reconstruction pipeline（白光影像 + SExtractor 建遮罩
-  → 從 blank spaxel 學天空模型；規格見 `docs/plan/joint-sky-factorization-spec.md`），
-  產出在 `results/skymodel/`。
-- `src/zap/` — ZAP 扣天空**對照組**（mask → zap → eval_spectrum，見 `src/zap/README.md`），
-  產出在 `results/zap/`。
-- `src/cgm_halpha.py` — CGM Hα 延展結構分析（見下節）。
-- 更早期的腳本（pre-0706 舊版、0706 版、sep 探索工具）已移除，存於 git 歷史。
-
-
-### ZAP 扣天空對照（`src/zap/`）
-
-ZAP 是「扣天空 + 去殘差」工具，**正確輸入是還含天空的 cube (`wsky`)**。跑法：
+If you already cloned without `--recursive`:
 
 ```bash
-conda run -n astro python src/zap/mask.py --from-cube NEnosky --method seg2sigma
-conda run -n astro python src/zap/zap.py --target NEwsky --mask-from NEnosky --mask-method seg2sigma_brq --ncpu 16
+git submodule update --init
 ```
-（完整用法與參數見 `src/zap/README.md` 與 `docs/zap-parameters-reference.md`）
 
-**關鍵結論：**
-- **源遮罩是成敗關鍵**。Haro11 的電離氣 (CGM) 延展到視場 30-44%，遮罩太小會讓 ZAP 把
-  Hα 當天空學起來、把源吃掉 (~70%)；需以「偵測 + 膨脹邊界」的大遮罩涵蓋整個延展氣。
-- **`wsky` + ZAP 有效**：天空線從 ~250-460 扣到 ~0-1, 與 MUSE 的 `nosky` 真值相符, 且保留源
-  (見 `results/zap/fig1_wsky_effect.png` 與 `fig3_source_halpha.png`)。
-- **`nosky` + ZAP 是 null test**：`nosky` 已被 MUSE 扣過天空 (空白譜已平), ZAP 沒天空可學、只會
-  灌雜訊──這不是 ZAP 壞掉, 是餵錯 cube。
+The submodule is only needed for the ZAP comparison arm under `src/zap/`. The pipeline
+itself does not import it; `pip install -e .` is enough to use `skymodel` alone.
 
+## Input
 
-### CGM Hα 延展結構分析 (`src/cgm_halpha.py`)
+One pointing needs three files:
+
+| | what | used for |
+|---|---|---|
+| `data/wsky/DATACUBE_FINAL_N.fits` | the cube with the sky still in it | the sky is learned and subtracted here |
+| `data/nosky/DATACUBE_FINAL_ESOSKY_N.fits` | the same field, sky-subtracted by the ESO pipeline | the white light image, and the source spectra that get classified |
+| `data/wsky_seg/DATACUBE_FINAL_N_seg.fits` | a segmentation map on the same pixel grid | which spaxels hold a source, and which are blank |
+
+The cubes are MUSE data products with `DATA` and `STAT` extensions; the mosaic used
+here is 14 pointings of about 4 GB each. The segmentation is a 2-d integer map, one ID
+per source and 0 for background, sharing the white light image's WCS -- the pipeline
+checks that agreement and refuses a pointing whose grids disagree.
+
+Also required, and small enough to keep beside the code: the galaxy eigenspectra
+(`data/eigen_galaxy_Bolton2012.fits`), the QSO eigenspectra
+(`data/qso_eigen_linear_55732.dat`) and the stellar library (`data/stellar_templates/`).
+
+## Run
+
+Everything a pointing needs is in one config file; nothing else is passed on the
+command line.
 
 ```bash
-PYTHONPATH=libs/zap python3 src/cgm_halpha.py
-# -> fig6 (Hα 表面亮度圖), fig7 (方位平均徑向剖面 + 偵測極限)
+conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
+conda run -n astro python src/skymodel/run_pipeline.py configs/*.yaml   # all 14
 ```
 
-比較 MUSE(`nosky`) 與 ZAP(`wsky`) 兩種扣天空法對外圍 CGM 的影響：
-- 兩者都還原出 Haro11 的延展 Hα 暈 (核心 + 到 ~20-30" 的halo)。
-- **MUSE `nosky` 背景較乾淨** (1σ/spaxel ≈ 14 vs ZAP ≈ 36), 但在大半徑 (>35") 略微**過扣** (中位轉負)。
-- **ZAP `wsky` 在大半徑維持正值**, 但其正偏移落在天空曝光的矩形足跡內 (fig6), **較可能是扣天空殘差
-  而非真實 CGM**, 解讀需謹慎。
-- 對 Haro11 faint CGM 而言, `nosky` 較適合 (更乾淨); ZAP 的價值在於可獨立、不依賴 pipeline 重現扣天空。
+About two minutes and 12 GB of memory per pointing, and about 8 GB of output.
 
+The products land under the config's `output` directory:
+
+```
+results/skymodel/p01/
+  step01/  white light image, and the segmentation placed beside it
+  step02/  every source's summed spectrum, its variance, its spaxel count
+  step03/  the sky continuum, the sky-line mask, the K basis vectors
+  step04/  the template fit: each source's class, redshift and amplitudes
+  step05/  s solved per blank spaxel, and the smooth field it is forced onto
+  step06/  sky_subtracted.fits, sky_model.fits, and the per-spaxel coefficients
+  stepN.log  each step's full output, headed by the call that produced it
+```
+
+`configs/README.md` documents every field of a config.
+
+## Use one piece
+
+The six steps are functions, and the pipeline is the six of them in order:
+
+```python
+from skymodel import run_pointing
+run_pointing("configs/p01.yaml")
+```
+
+```python
+from skymodel import sky_basis
+sky_basis(work="results/skymodel/p01",
+          cube="data/wsky/DATACUBE_FINAL_1.fits", K=30)
+```
+
+    whitelight         collapse a cube along wavelength into a white light image
+    object_spectra     sum each source's spectrum over the spaxels its seg ID covers
+    sky_basis          learn the sky continuum and the sky-line basis from blank
+    classify_sources   fit templates to every source, giving it a class and a redshift
+    fit_s_field        force the sky continuum amplitude s onto a spatial field
+    subtract_sky       apply the model to every spaxel and write the subtracted cube
+
+Each also has a command line of its own (`python src/skymodel/stepN_*.py --help`), and
+each writes its products to disk, so a step can be repeated on its own without redoing
+the ones before it.
+
+## Reproducibility
+
+Runs are bit-reproducible: the same config gives the same products, byte for byte. The
+pipeline pins BLAS to one thread before numpy loads, which is what makes it so -- the
+randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
+the basis moves by about 1 part in 10⁴. Steps 3, 5 and 6 stamp the git commit into
+their `meta.json`.
+
+## Repository
+
+```
+src/skymodel/              the pipeline
+  evaluation/              figures and numbers from the products (see its README)
+  evaluation/poster/       the same figures, laid out for print
+  experiments/             one-off "should we do it differently" tests
+src/zap/                   the ZAP comparison arm -- a different method, same data
+configs/                   one file per pointing
+docs/                      method notes, parameter references, what was rejected
+```
+
+## The ZAP comparison
+
+`src/zap/` runs [ZAP](https://github.com/ktsoto/zap) on the same cubes as an
+independent check. Its own README has the commands. One result worth carrying over:
+the source mask decides everything. Haro 11's ionised gas covers 30-44% of the field,
+and a mask that misses it lets ZAP learn Hα as if it were sky and remove most of the
+source.
+
+## License
+
+MIT. See `LICENSE`.

@@ -4,17 +4,24 @@ version = "0.1.0"
 description = "Sky reconstruction and subtraction for the Haro 11 MUSE mosaic"
 readme = "README.md"
 requires-python = ">=3.12"
+# What src/skymodel actually imports. jdaviz and specutils were declared and never
+# imported; scipy, scikit-learn and pandas were imported everywhere and never
+# declared, arriving transitively by luck.
 dependencies = [
-    "astropy>=8.0.0",
-    "jdaviz>=5.0.2",
-    "matplotlib>=3.11.0",
-    "numpy>=2.4.6",
+    "astropy>=6.0",
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pandas>=2.0",
     "pyyaml>=6.0",
-    "sep>=1.4.0",
-    "setuptools<81",
-    "specutils>=2.4.0",
-    "zap",
+    "scikit-learn>=1.3",
+    "scipy>=1.11",
 ]
+
+# The ZAP comparison arm under src/zap, which nothing in the pipeline imports. It
+# needs the libs/zap submodule, so a clone without --recursive can still install
+# and run the pipeline itself.
+[project.optional-dependencies]
+zap = ["sep>=1.4.0", "zap"]
 
 [project.scripts]
 skymodel = "skymodel.run_pipeline:main"

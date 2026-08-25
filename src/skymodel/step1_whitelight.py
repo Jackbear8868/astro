@@ -51,7 +51,7 @@ def whitelight(cube, out):
                vmax=np.nanpercentile(white, 99))
     plt.colorbar()
     fig.savefig(white_png, dpi=130)
-    # Closed explicitly: run() is called in-process by the pipeline, and figures left
+    # Closed explicitly: whitelight() is called in-process by the pipeline, and figures left
     # open accumulate for the whole run instead of dying with a short-lived process.
     plt.close(fig)
 

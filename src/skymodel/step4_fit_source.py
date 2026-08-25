@@ -12,10 +12,11 @@ How a source is classified
     chi2 comparison over all 3801 channels. The next two paragraphs are why that is
     not what happens here.
 
-The specification comes from reminder.txt: use the line mask, leave out the line
-channels, and fit stars and galaxies each inside a fixed wavelength window. The
-window values themselves are the defaults of --star-window / --gal-window and are
-not repeated here -- the same numbers written in two places drift apart eventually.
+Three things are fixed by the method rather than chosen here: the sky-line mask is
+applied, the line channels are left out of chi2, and stars and galaxies are each
+fitted inside a fixed wavelength window. The window values themselves are the
+defaults of --star-window / --gal-window and are not repeated here -- the same
+numbers written in two places drift apart eventually.
 
 Why the sky-line channels are excluded: their residual is dominated by the error of
 the sky subtraction, not by the source. Counting them in chi2 lets "which template
@@ -89,10 +90,11 @@ N_SRC    = 4                # fixed width of the A column: 4 eigenspectra, and a
 # start is whatever each cube's first channel is; comparing reduced chi2 within one
 # pointing is unaffected, because both branches use the same channels.
 #
-# The two windows have to be equal (see the paragraph in the module docstring), so
-# reminder.txt's 4600-6000 / 4600-7000 pair cannot be used literally -- the n_good in
-# the denominator would differ and the two reduced chi2 would not be comparable. The
-# upper bound taken is the union of the two, 8000; the lower stays reminder.txt's 4600.
+# The two windows have to be equal (see the paragraph in the module docstring), so the
+# 4600-6000 / 4600-7000 pair the method was first written with cannot be used
+# literally -- the n_good in the denominator would differ and the two reduced chi2
+# would not be comparable. The upper bound taken is the union of the two, 8000; the
+# lower stays 4600.
 STAR_WINDOW = (4600.0, 8000.0)      # fitting window for the stellar templates
 GAL_WINDOW  = (4600.0, 8000.0)      # for the galaxy eigenspectra; must equal the above
 FULL_RANGE  = (4600.0, 9400.0)      # the whole MUSE range, kept as a control
