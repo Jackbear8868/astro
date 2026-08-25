@@ -65,7 +65,7 @@ def main():
     ap.add_argument("--out-dir", default=None,
                     help="修正後的天空模型寫到哪。省略 = "
                          "results/skymodel/experiments/ccorr/{pointing}。"
-                         "不寫進工作區 —— pNN/ 底下只放 run_pipeline.py 的產物")
+                         "不寫進工作區 —— pNN/ 底下只放 pipeline.py 的產物")
     ap.add_argument("--window", type=int, default=151,
                     help="平滑 delta_C 的 running median 寬度(通道)。逐通道中位"
                          "本身還帶著雜訊,不平滑的話會把雜訊寫進天空模型")

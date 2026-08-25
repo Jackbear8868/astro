@@ -1,7 +1,7 @@
 # 驗收用的程式
 
 這裡放的是**看現行 pipeline 跑出來的結果好不好**的程式：吃 `results/skymodel/pNN/`
-的產物，畫成圖或算成數字。每顆 pointing 都適用，跑完 `run_pipeline.py` 之後例行地跑。
+的產物，畫成圖或算成數字。每顆 pointing 都適用，跑完 `pipeline.py` 之後例行地跑。
 
 隔壁 `experiments/` 放的是另一種東西：**問「該不該改成另一種做法」**的一次性實驗。
 兩者的差別是問句不同 —— 這裡問「現在的結果如何」，那裡問「換一種做法會不會更好」。
@@ -11,7 +11,7 @@
 問題，只把線加粗、字放大、比例指定。科學內容要改，改的是這一層，不是 `poster/`。
 
 輸出一律寫到 `results/skymodel/evaluation/`，不寫進 `pNN/` 工作區 —— `pNN/` 底下的每
-一個檔案都是 `run_pipeline.py` 寫的，這條規則讓「刪掉 pNN 重跑」永遠安全。
+一個檔案都是 `pipeline.py` 寫的，這條規則讓「刪掉 pNN 重跑」永遠安全。
 
 ```
 results/skymodel/evaluation/

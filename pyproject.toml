@@ -31,7 +31,7 @@ dependencies = [
 zap = ["sep>=1.4.0", "zap"]
 
 [project.scripts]
-skymodel = "skymodel.run_pipeline:main"
+skymodel = "skymodel.pipeline:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -63,8 +63,8 @@ Everything a pointing needs is in one config file; nothing else is passed on the
 command line.
 
 ```bash
-conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
-conda run -n astro python src/skymodel/run_pipeline.py configs/*.yaml   # all 14
+conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
+conda run -n astro python src/skymodel/pipeline.py configs/*.yaml   # all 14
 ```
 
 About 80 seconds and 6 GB of memory per pointing, and about 8 GB of output.
@@ -96,7 +96,7 @@ The pipeline is six steps in order:
     subtract_sky       apply the model to every spaxel and write the subtracted cube
 
 `run_pointing` is those six, driven by one pointing's config file, and it is the only
-way in -- the same thing `run_pipeline.py` does from a shell:
+way in -- the same thing `pipeline.py` does from a shell:
 
 ```python
 from skymodel import run_pointing

@@ -6,7 +6,7 @@
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
 需要 step3 存下的 iter_*.npy。若還沒有,重跑一次該顆的 pipeline 即可:
-    conda run -n astro python src/skymodel/run_pipeline.py configs/pNN.yaml
+    conda run -n astro python src/skymodel/pipeline.py configs/pNN.yaml
 
 輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
     iter{N}_masked.png    被遮掉的通道換顏色,連同連續譜與上下門檻
@@ -43,7 +43,7 @@ from utils import detect_lines  # noqa: E402
 ROOT    = Path(__file__).resolve().parents[3]
 FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
-THRESHOLDS = (1, 2)      # (正, 負);與 step3_sky_basis.py 一致
+THRESHOLDS = (1, 2)      # (正, 負);與 pipeline.py 的 sky_basis 一致
 WINDOW     = 300         # running median 視窗;同上
 MIN_UNMASKED_FRAC = 0.16 # utils.estimate_continuum 的停止地板;同上
 
@@ -80,7 +80,7 @@ def main():
     if missing:
         raise SystemExit(
             f"{STEP03} 缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
-            "  conda run -n astro python src/skymodel/run_pipeline.py configs/pNN.yaml\n"
+            "  conda run -n astro python src/skymodel/pipeline.py configs/pNN.yaml\n"
             "  (方法、K 與學天空的空間範圍都在 config 裡,不必另外帶)")
 
     wl = np.load(STEP03 / "wavelength.npy")

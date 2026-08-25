@@ -28,7 +28,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# 判準本體放在這裡。它曾經住在 step3_sky_basis.py,但 step3 從來不呼叫它 ——
+# 判準本體放在這裡。它曾經住在 step3 的檔案裡,但 step3 從來不呼叫它 ——
 # 留在 pipeline 主檔裡只會讓人以為 step3 是用 ZAP 的方式選 K 的。唯一的使用者
 # 就是這支診斷程式,所以搬過來,和它畫的圖放在一起。
 def zap_k(var, nsigma=5):

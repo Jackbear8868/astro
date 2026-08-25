@@ -1,10 +1,10 @@
 # The pipeline
 
-Six steps, run in order by `run_pipeline.py` from one pointing's config file. Reading
+Six steps, run in order by `pipeline.py` from one pointing's config file. Reading
 `run_pointing()` is meant to be enough to know what the pipeline does; this file says
 what each step reads and writes, and why the shape is what it is.
 
-    conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
+    conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
 
 ## The model
 
@@ -54,10 +54,10 @@ memmapped and released when that step returns.
 
 ## One entrance
 
-`run_pipeline.py` is the only supported way in, from a shell or from Python:
+`pipeline.py` is the only supported way in, from a shell or from Python:
 
 ```bash
-conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
+conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
 ```
 
 ```python
@@ -75,10 +75,13 @@ The head of each `stepN.log` is the call that produced the products beside it, w
 out as Python. It is the record of what that run was given, since a config can be
 edited afterwards and then nothing else says; it is not a command to re-run.
 
-## Shared modules
+## The modules
+
+Four of them, plus an `__init__.py` that exports `run_pointing` and `load_config`.
 
 | file | holds |
 |---|---|
+| `pipeline.py` | `run_pointing`, the six steps and the segmentation check between the first two, in that order; the command line is at the end |
 | `config.py` | reads and checks a pointing config; every value the pipeline takes comes from there |
 | `utils.py` | everything the six steps share: the wavelength axis and the air-to-vacuum conversion, continuum estimation and line detection, the source templates (eigenspectra and the stellar library, read as splines), the per-spaxel solves steps 5 and 6 share, the main source group, the s-field construction, the figures the pipeline itself produces, and the one-thread BLAS limit the fitting steps run under |
 | `products.py` | reading a finished run back: where its products are, the settings recorded beside them, and the figures `evaluation/` and `experiments/` share. No step imports it |

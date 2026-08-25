@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[3]
 EVAL = ROOT / "results/skymodel/evaluation"
 
 # Threshold for rejecting bad voxels across spaxels, following mean_sky in
-# step3_sky_basis.py.
+# pipeline.py's sky_basis.
 CLIP_SIGMA = 30
 
 # The spatial maps of s always use the same colour scale. RdBu_r is a diverging scale,
@@ -147,7 +147,7 @@ def collapse(path, band, wl, seg):
     number rejected, number of elements taking part in the rejection).
 
     Bad voxels are rejected before averaging, with the same procedure and threshold as
-    mean_sky in step3_sky_basis.py: within one channel, across spaxels, the centre is
+    mean_sky in pipeline.py's sky_basis: within one channel, across spaxels, the centre is
     the median and the spread is (p84 - p16) / 2 (robust against outliers), and
     anything deviating by more than CLIP_SIGMA times that is rejected. This way no
     separate absolute threshold has to be chosen.

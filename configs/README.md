@@ -3,8 +3,8 @@
 One file per pointing of the Haro 11 mosaic. Everything the pipeline needs for
 that pointing lives in it; nothing else is passed on the command line.
 
-    conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
-    conda run -n astro python src/skymodel/run_pipeline.py configs/p0[1-4].yaml
+    conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
+    conda run -n astro python src/skymodel/pipeline.py configs/p0[1-4].yaml
 
 Paths are written relative to the repository root. `src/skymodel/config.py`
 reads a file, checks the values and hands them out with the paths resolved.

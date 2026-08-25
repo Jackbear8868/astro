@@ -39,6 +39,6 @@ from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 
 from config import load as load_config          # noqa: E402
-from run_pipeline import run_pointing           # noqa: E402
+from pipeline import run_pointing               # noqa: E402
 
 __all__ = ["run_pointing", "load_config"]

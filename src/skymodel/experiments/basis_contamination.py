@@ -78,7 +78,7 @@ def main():
     bf = sorted(STEP04.glob("best_*.npz"))
     if not bf:
         raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑這顆 pointing 的 pipeline:\n"
-                         "  conda run -n astro python src/skymodel/run_pipeline.py "
+                         "  conda run -n astro python src/skymodel/pipeline.py "
                          "configs/pNN.yaml")
     best = np.load(bf[0])
     j = int(np.flatnonzero(best["id"] == args.id)[0])

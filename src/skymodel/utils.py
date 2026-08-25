@@ -76,7 +76,7 @@ def blas_single_thread(fn):
     the limit around the work instead makes the two ways of running a step the
     same, and leaves the threading of a process that merely imported us alone.
     """
-    @functools.wraps(fn)                # run_pipeline writes fn.__module__ and
+    @functools.wraps(fn)                # pipeline.py writes fn.__module__ and
                                         # fn.__name__ into the head of the step log
     def limited(*args, **kwargs):
         with threadpool_limits(limits=1):
