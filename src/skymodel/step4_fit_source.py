@@ -42,6 +42,9 @@ The two windows have to be equal: reduced chi2 = chi2 / (n_good - n_param), and
 n_good in that denominator is set by the channel set. Different windows are not the
 same statistic, so comparing them means nothing. main() refuses a mismatched pair.
 
+run() does the work and can be called directly; main() is the same thing driven from
+the command line.
+
     conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
         --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
@@ -362,6 +365,207 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
     return out
 
 
+def run(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
+        full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
+        zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005, aperture=False,
+        allow_partial=False, spec_dir=None, raw_mask=False, s_fix=1.0, s_free=False,
+        ids=None, z_override=[], num_workers=0):
+    """Fit every source of `work`, writing one best_*.npz and one classification_*.npz
+    per mask iteration into step04; return the last iteration's classification path.
+
+    The path comes back rather than being rebuilt by the caller: step5 reads that file,
+    and a filename spelled out in two places drifts.
+    """
+    over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
+    work    = Path(work)
+    keep_ids = ids      # the --ids filter; `ids` below is the seg IDs read from disk
+    # These three have to be module-level globals: _scan_one runs inside a
+    # multiprocessing worker and cannot see main()'s locals -- a forked worker sees
+    # the module globals as they stood at the fork.
+    global STEP02B, STEP03, STEP04
+    STEP02B = work / "step02b"
+    STEP03  = work / "step03"
+    STEP04 = work / "step04"
+    print(f"workspace {work}")
+    s_fix = None if s_free else s_fix
+    if full_range:
+        star_window = gal_window = FULL_RANGE
+
+    STEP04.mkdir(parents=True, exist_ok=True)
+
+    # Where the source spectra come from has to be said out loud. There is no usable
+    # default: classifying from spectra that still contain the sky produces output
+    # that looks entirely normal, with every source's template and redshift wrong.
+    if not spec_dir and not aperture:
+        raise SystemExit(f"requires --spec-dir (e.g. {work}/step02_eso) or --aperture")
+    src = Path(spec_dir) if spec_dir else STEP02B
+    # A different spectrum source is a different scientific product, so the tag has to
+    # separate them; one workspace can hold several sources (step02_eso and
+    # step02_ours, say), and a name that does not encode the source silently
+    # overwrites the previous run. The default source, step02, gets no suffix -- the
+    # suffix marks a departure from the default, and the default needs no marking.
+    suffix = make_suffix(src.name)
+    ids   = np.load(src / "object_ids.npy")
+    flux  = np.load(src / "object_flux.npy")
+    var   = np.load(src / "object_var.npy")
+    nspax = np.load(src / "object_nspax.npy")
+
+    wl_air = np.load(STEP03 / "wavelength.npy")
+    wl_vac = air_to_vacuum(wl_air)
+    C_sky  = np.load(STEP03 / "sky_continuum.npy")
+    B      = np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")
+    sky    = np.vstack([C_sky, B]) if sky_basis else C_sky[None, :]
+
+    # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1. The mask is
+    # defined on air wavelengths, so the window is cut on air wavelengths too, and the
+    # two agree.
+    line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
+                                 cumulative=not raw_mask)
+    win_star = (wl_air >= star_window[0]) & (wl_air < star_window[1])
+    win_gal  = (wl_air >= gal_window[0])  & (wl_air < gal_window[1])
+
+    z_exg  = np.arange(zmin, zmax + zstep / 2, zstep)
+    z_star = np.arange(-star_dz, star_dz + zstep / 2, zstep)
+    files = sorted(DWARF_DIR.glob("*.dat"))
+    if not files:
+        raise SystemExit(f"★ no .dat templates under {DWARF_DIR}")
+    # A template's rest range has to cover the whole MUSE band. step5 and step6
+    # evaluate templates across the whole band, and a channel that is NaN in the
+    # design matrix is dropped for every spaxel -- those channels never take part in
+    # the solve again. Candidates that cannot cover it are excluded here.
+    need_lo = wl_vac.min() / (1 + z_star.max())
+    need_hi = wl_vac.max() / (1 + z_star.min())
+    star_jobs = []
+    for f in files:
+        sp = load_ascii_template(f)
+        lo, hi = float(sp.t[3]), float(sp.t[-4])
+        if lo > need_lo or hi < need_hi:
+            print(f"  skipping {f.stem}: rest range {lo:.0f}-{hi:.0f} A does not "
+                  f"cover the {need_lo:.0f}-{need_hi:.0f} A needed")
+            continue
+        star_jobs.append(("star", f.stem, sp, z_star))
+    if not star_jobs:
+        raise SystemExit(f"★ no template under {DWARF_DIR} covers the MUSE band")
+    print(f"{len(star_jobs)} stellar candidates ({STAR_LIBRARY}): "
+          + ", ".join(n for _, n, _, _ in star_jobs))
+    # The galaxy side: the eigenspectra are one four-component model, so a single job
+    # scans the whole galaxy population -- linear combinations of the components
+    # interpolate continuously between types, and no list of discrete representative
+    # spectra is needed.
+    gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
+
+    targets = ids.tolist() if id == "all" else [int(id)]
+    if id != "all" and targets[0] not in ids:
+        raise SystemExit(f"ID {targets[0]} does not exist. Available: {ids.min()}-{ids.max()}")
+
+    n_workers = num_workers or max(1, len(os.sched_getaffinity(0)) // 3)
+    n_workers = min(n_workers, len(targets))
+
+    # For the two branches' reduced chi2 to be comparable they must be computed on the
+    # same channels. Different windows give different n_good, hence different
+    # denominators, and comparing them means nothing.
+    if tuple(star_window) != tuple(gal_window):
+        raise SystemExit(
+            f"star window {star_window} and galaxy window {gal_window} differ. "
+            "Single-stage fitting directly compares their reduced chi2, so the channel set "
+            "must be identical -- set --star-window and --gal-window to the same range.")
+
+    print(f"star  {star_window[0]:.0f}-{star_window[1]:.0f} A  "
+          f"window {int(win_star.sum())} channels   {len(star_jobs)} stellar templates x "
+          f"{z_star.size} z values")
+    print(f"galaxy  {gal_window[0]:.0f}-{gal_window[1]:.0f} A  "
+          f"window {int(win_gal.sum())} channels   galaxy eigenspectra x {z_exg.size} z values")
+    print("classification = lower reduced chi2 on the same channel set (no absolute threshold)")
+    print("s is a free parameter" if s_fix is None else f"sky continuum fixed to {s_fix} x C_sky, subtracted first")
+    print("source model = A x template" + ("  + sky-line basis" if sky_basis
+                                          else "   (1 free parameter)"))
+    print(f"spectra from {src.name}"
+          + ("  (circular aperture r=6 px)" if aperture else "  (segmentation footprint)"))
+    print(f"{len(targets)} object(s)   {n_workers} workers   "
+          f"mask iterations {line_mask_iter}")
+
+    KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2", "chi2_all",
+            "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
+            "gal_red_chi2", "gal_tpl")
+    outs = []
+    cls_path = None
+
+    # Each mask iteration is a separate set of results: a different channel set gives
+    # different chi2, and the two cannot be mixed. The static data (templates, spectra,
+    # z grids) is prepared once, and only the mask changes inside the loop.
+    for it in line_mask_iter:
+        line = line_masks[it - 1]
+        fit_star, fit_gal = win_star & ~line, win_gal & ~line
+        tag = make_tag(basis, K, s_fix, star_window,
+                       gal_window, sky_basis, it, not raw_mask,
+                       aperture, suffix)
+
+        print(f"\n{'=' * 112}")
+        print(f"mask iter{it}{'(cumulative)' if not raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"
+              f" ({100 * line.mean():.1f}%)   "
+              f"clean channels for fitting {int(fit_star.sum())}")
+        print(f"{'=' * 112}")
+        print(f"{'ID':>5}{'nspax':>8}{'group':>8}{'tpl':>7}{'z':>10}{'A':>12}"
+              f"{'n':>7}{'chi2':>14}{'chi2/dof':>10}{'star chi2/dof':>15}"
+              f"{'gal chi2/dof':>14}"
+              f"{'src_min':>10}")
+        print("-" * 112)
+
+        _SHARED.update(ids=ids, flux=flux, var=var, nspax=nspax, sky=sky,
+                       star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
+                       fit_star=fit_star, fit_gal=fit_gal,
+                       tag=tag, s_fix=s_fix,
+                       allow_partial=allow_partial)
+
+        summary = []
+        with Pool(n_workers) as pool:
+            for t, row in pool.imap(_scan_one, targets):
+                if row is None:
+                    print(f"{t:>5}   (all fits failed, skipping)")
+                    continue
+                summary.append(row)
+                print(f"{t:>5}{row['nspax']:>8}{row['group']:>8}{row['template']:>7}"
+                      f"{row['z']:>10.5f}{row['A'][0]:>12.4g}{row['n_good']:>7}"
+                      f"{row['chi2']:>14,.0f}{row['red_chi2']:>10.2f}"
+                      f"{row['star_red_chi2']:>15.2f}{row['gal_red_chi2']:>14.2f}"
+                      f"{row['src_min']:>10.2f}",
+                      flush=True)
+
+        new = {k: np.array([x[k] for x in summary]) for k in KEYS}
+
+        # Merge into what is already there rather than overwriting: re-running a
+        # single ID should update that row and nothing else.
+        out = STEP04 / f"best_{tag}.npz"
+        if out.exists():
+            old = np.load(out, allow_pickle=False)
+            if set(old.files) != set(KEYS):
+                print(f"  * {out.name} fields differ from current format, discarding entire file."
+                      f"\n    extra {sorted(set(old.files) - set(KEYS))}"
+                      f"  missing {sorted(set(KEYS) - set(old.files))}")
+            if set(old.files) == set(KEYS):
+                keep = ~np.isin(old["id"], new["id"])
+                if keep.any():
+                    new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
+                    print(f"merged {int(keep.sum())} existing sources")
+        o = np.argsort(new["id"])
+        np.savez(out, **{k: v[o] for k, v in new.items()})
+        cls_path = write_classification(STEP04, tag, np.load(out), keep_ids, over)
+        outs.append((it, out, summary))
+
+    print(f"\n{'=' * 60}\ncross-iteration comparison")
+    print(f"{'iter':>6}{'clean ch':>10}{'stars':>7}{'galaxies':>9}"
+          f"{'star chi2/dof med':>20}{'neg-flux src':>13}")
+    print("-" * 65)
+    for it, out, summary in outs:
+        ns = sum(1 for r in summary if r["group"] == "star")
+        med = float(np.median([r["star_red_chi2"] for r in summary]))
+        neg = sum(1 for r in summary if r["src_min"] < 0)
+        print(f"{it:>6}{int((win_star & ~line_masks[it-1]).sum()):>10}"
+              f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
+    print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
+    return cls_path
+
+
 def main():
     ap = argparse.ArgumentParser(description="single-stage source template fitting (fixed window + sky-line mask)")
     ap.add_argument("--id",    default="all",           help="segmentation ID, or all")
@@ -427,191 +631,14 @@ def main():
     ap.add_argument("--work", required=True,
                     help="working directory for this cube (contains step02/step03/step04)")
     args = ap.parse_args()
-    over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
-    work    = Path(args.work)
-    # These three have to be module-level globals: _scan_one runs inside a
-    # multiprocessing worker and cannot see main()'s locals -- a forked worker sees
-    # the module globals as they stood at the fork.
-    global STEP02B, STEP03, STEP04
-    STEP02B = work / "step02b"
-    STEP03  = work / "step03"
-    STEP04 = work / "step04"
-    print(f"workspace {work}")
-    s_fix = None if args.s_free else args.s_fix
-    if args.full_range:
-        args.star_window = args.gal_window = FULL_RANGE
-
-    STEP04.mkdir(parents=True, exist_ok=True)
-
-    # Where the source spectra come from has to be said out loud. There is no usable
-    # default: classifying from spectra that still contain the sky produces output
-    # that looks entirely normal, with every source's template and redshift wrong.
-    if not args.spec_dir and not args.aperture:
-        raise SystemExit(f"requires --spec-dir (e.g. {work}/step02_eso) or --aperture")
-    src = Path(args.spec_dir) if args.spec_dir else STEP02B
-    # A different spectrum source is a different scientific product, so the tag has to
-    # separate them; one workspace can hold several sources (step02_eso and
-    # step02_ours, say), and a name that does not encode the source silently
-    # overwrites the previous run. The default source, step02, gets no suffix -- the
-    # suffix marks a departure from the default, and the default needs no marking.
-    suffix = make_suffix(src.name)
-    ids   = np.load(src / "object_ids.npy")
-    flux  = np.load(src / "object_flux.npy")
-    var   = np.load(src / "object_var.npy")
-    nspax = np.load(src / "object_nspax.npy")
-
-    wl_air = np.load(STEP03 / "wavelength.npy")
-    wl_vac = air_to_vacuum(wl_air)
-    C_sky  = np.load(STEP03 / "sky_continuum.npy")
-    B      = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
-    sky    = np.vstack([C_sky, B]) if args.sky_basis else C_sky[None, :]
-
-    # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1. The mask is
-    # defined on air wavelengths, so the window is cut on air wavelengths too, and the
-    # two agree.
-    line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
-                                 cumulative=not args.raw_mask)
-    win_star = (wl_air >= args.star_window[0]) & (wl_air < args.star_window[1])
-    win_gal  = (wl_air >= args.gal_window[0])  & (wl_air < args.gal_window[1])
-
-    z_exg  = np.arange(args.zmin, args.zmax + args.zstep / 2, args.zstep)
-    z_star = np.arange(-args.star_dz, args.star_dz + args.zstep / 2, args.zstep)
-    files = sorted(DWARF_DIR.glob("*.dat"))
-    if not files:
-        raise SystemExit(f"★ no .dat templates under {DWARF_DIR}")
-    # A template's rest range has to cover the whole MUSE band. step5 and step6
-    # evaluate templates across the whole band, and a channel that is NaN in the
-    # design matrix is dropped for every spaxel -- those channels never take part in
-    # the solve again. Candidates that cannot cover it are excluded here.
-    need_lo = wl_vac.min() / (1 + z_star.max())
-    need_hi = wl_vac.max() / (1 + z_star.min())
-    star_jobs = []
-    for f in files:
-        sp = load_ascii_template(f)
-        lo, hi = float(sp.t[3]), float(sp.t[-4])
-        if lo > need_lo or hi < need_hi:
-            print(f"  skipping {f.stem}: rest range {lo:.0f}-{hi:.0f} A does not "
-                  f"cover the {need_lo:.0f}-{need_hi:.0f} A needed")
-            continue
-        star_jobs.append(("star", f.stem, sp, z_star))
-    if not star_jobs:
-        raise SystemExit(f"★ no template under {DWARF_DIR} covers the MUSE band")
-    print(f"{len(star_jobs)} stellar candidates ({STAR_LIBRARY}): "
-          + ", ".join(n for _, n, _, _ in star_jobs))
-    # The galaxy side: the eigenspectra are one four-component model, so a single job
-    # scans the whole galaxy population -- linear combinations of the components
-    # interpolate continuously between types, and no list of discrete representative
-    # spectra is needed.
-    gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
-
-    targets = ids.tolist() if args.id == "all" else [int(args.id)]
-    if args.id != "all" and targets[0] not in ids:
-        raise SystemExit(f"ID {targets[0]} does not exist. Available: {ids.min()}-{ids.max()}")
-
-    n_workers = args.num_workers or max(1, len(os.sched_getaffinity(0)) // 3)
-    n_workers = min(n_workers, len(targets))
-
-    # For the two branches' reduced chi2 to be comparable they must be computed on the
-    # same channels. Different windows give different n_good, hence different
-    # denominators, and comparing them means nothing.
-    if tuple(args.star_window) != tuple(args.gal_window):
-        raise SystemExit(
-            f"star window {args.star_window} and galaxy window {args.gal_window} differ. "
-            "Single-stage fitting directly compares their reduced chi2, so the channel set "
-            "must be identical -- set --star-window and --gal-window to the same range.")
-
-    print(f"star  {args.star_window[0]:.0f}-{args.star_window[1]:.0f} A  "
-          f"window {int(win_star.sum())} channels   {len(star_jobs)} stellar templates x "
-          f"{z_star.size} z values")
-    print(f"galaxy  {args.gal_window[0]:.0f}-{args.gal_window[1]:.0f} A  "
-          f"window {int(win_gal.sum())} channels   galaxy eigenspectra x {z_exg.size} z values")
-    print("classification = lower reduced chi2 on the same channel set (no absolute threshold)")
-    print("s is a free parameter" if s_fix is None else f"sky continuum fixed to {s_fix} x C_sky, subtracted first")
-    print("source model = A x template" + ("  + sky-line basis" if args.sky_basis
-                                          else "   (1 free parameter)"))
-    print(f"spectra from {src.name}"
-          + ("  (circular aperture r=6 px)" if args.aperture else "  (segmentation footprint)"))
-    print(f"{len(targets)} object(s)   {n_workers} workers   "
-          f"mask iterations {args.line_mask_iter}")
-
-    KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2", "chi2_all",
-            "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
-            "gal_red_chi2", "gal_tpl")
-    outs = []
-
-    # Each mask iteration is a separate set of results: a different channel set gives
-    # different chi2, and the two cannot be mixed. The static data (templates, spectra,
-    # z grids) is prepared once, and only the mask changes inside the loop.
-    for it in args.line_mask_iter:
-        line = line_masks[it - 1]
-        fit_star, fit_gal = win_star & ~line, win_gal & ~line
-        tag = make_tag(args.basis, args.K, s_fix, args.star_window,
-                       args.gal_window, args.sky_basis, it, not args.raw_mask,
-                       args.aperture, suffix)
-
-        print(f"\n{'=' * 112}")
-        print(f"mask iter{it}{'(cumulative)' if not args.raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"
-              f" ({100 * line.mean():.1f}%)   "
-              f"clean channels for fitting {int(fit_star.sum())}")
-        print(f"{'=' * 112}")
-        print(f"{'ID':>5}{'nspax':>8}{'group':>8}{'tpl':>7}{'z':>10}{'A':>12}"
-              f"{'n':>7}{'chi2':>14}{'chi2/dof':>10}{'star chi2/dof':>15}"
-              f"{'gal chi2/dof':>14}"
-              f"{'src_min':>10}")
-        print("-" * 112)
-
-        _SHARED.update(ids=ids, flux=flux, var=var, nspax=nspax, sky=sky,
-                       star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
-                       fit_star=fit_star, fit_gal=fit_gal,
-                       tag=tag, s_fix=s_fix,
-                       allow_partial=args.allow_partial)
-
-        summary = []
-        with Pool(n_workers) as pool:
-            for t, row in pool.imap(_scan_one, targets):
-                if row is None:
-                    print(f"{t:>5}   (all fits failed, skipping)")
-                    continue
-                summary.append(row)
-                print(f"{t:>5}{row['nspax']:>8}{row['group']:>8}{row['template']:>7}"
-                      f"{row['z']:>10.5f}{row['A'][0]:>12.4g}{row['n_good']:>7}"
-                      f"{row['chi2']:>14,.0f}{row['red_chi2']:>10.2f}"
-                      f"{row['star_red_chi2']:>15.2f}{row['gal_red_chi2']:>14.2f}"
-                      f"{row['src_min']:>10.2f}",
-                      flush=True)
-
-        new = {k: np.array([x[k] for x in summary]) for k in KEYS}
-
-        # Merge into what is already there rather than overwriting: re-running a
-        # single ID should update that row and nothing else.
-        out = STEP04 / f"best_{tag}.npz"
-        if out.exists():
-            old = np.load(out, allow_pickle=False)
-            if set(old.files) != set(KEYS):
-                print(f"  * {out.name} fields differ from current format, discarding entire file."
-                      f"\n    extra {sorted(set(old.files) - set(KEYS))}"
-                      f"  missing {sorted(set(KEYS) - set(old.files))}")
-            if set(old.files) == set(KEYS):
-                keep = ~np.isin(old["id"], new["id"])
-                if keep.any():
-                    new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
-                    print(f"merged {int(keep.sum())} existing sources")
-        o = np.argsort(new["id"])
-        np.savez(out, **{k: v[o] for k, v in new.items()})
-        write_classification(STEP04, tag, np.load(out), args.ids, over)
-        outs.append((it, out, summary))
-
-    print(f"\n{'=' * 60}\ncross-iteration comparison")
-    print(f"{'iter':>6}{'clean ch':>10}{'stars':>7}{'galaxies':>9}"
-          f"{'star chi2/dof med':>20}{'neg-flux src':>13}")
-    print("-" * 65)
-    for it, out, summary in outs:
-        ns = sum(1 for r in summary if r["group"] == "star")
-        med = float(np.median([r["star_red_chi2"] for r in summary]))
-        neg = sum(1 for r in summary if r["src_min"] < 0)
-        print(f"{it:>6}{int((win_star & ~line_masks[it-1]).sum()):>10}"
-              f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
-    print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
+    run(args.work, args.K, id=args.id, basis=args.basis,
+        star_window=args.star_window, gal_window=args.gal_window,
+        full_range=args.full_range, line_mask_iter=args.line_mask_iter,
+        sky_basis=args.sky_basis, zmin=args.zmin, zmax=args.zmax, zstep=args.zstep,
+        star_dz=args.star_dz, aperture=args.aperture,
+        allow_partial=args.allow_partial, spec_dir=args.spec_dir,
+        raw_mask=args.raw_mask, s_fix=args.s_fix, s_free=args.s_free, ids=args.ids,
+        z_override=args.z_override, num_workers=args.num_workers)
 
 
 if __name__ == "__main__":

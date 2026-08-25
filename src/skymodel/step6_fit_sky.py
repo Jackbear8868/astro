@@ -10,6 +10,9 @@ The output is two cubes: sky_subtracted (= data - sky_model) and sky_model
 itself. The source template term is NOT part of sky_model -- only sky is
 subtracted; the source is preserved.
 
+run() does the work and can be called directly; main() is the same thing driven from
+the command line.
+
     conda run -n astro python src/skymodel/step6_fit_sky.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
         --cube data/wsky/DATACUBE_FINAL_1.fits \\
@@ -53,53 +56,29 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
     fits.HDUList(hdus).writeto(path, overwrite=True)
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Per-spaxel sky subtraction using the s-field from step5")
-    ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, required=True,
-                    help="number of sky-line basis vectors")
-    ap.add_argument("--best", required=True,
-                    help="step4 classification file (.npz)")
-    ap.add_argument("--s-field", required=True,
-                    help="s_hat.npy from step5")
-    ap.add_argument("--seg", default=None,
-                    help="segmentation map; default step01/seg.fits")
-    ap.add_argument("--sky-dir", default=None,
-                    help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-region", choices=["all", "line1"], default="all",
-                    help="channels used to solve blank coefficients")
-    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE,
-                    help="fraction of wavelength channels that must carry data before "
-                         "a spaxel is fitted; the field-of-view edge ring falls below it")
-    ap.add_argument("--work", required=True,
-                    help="working directory (contains step01/step03/step04/step05)")
-    ap.add_argument("--cube", required=True,
-                    help="sky-included (wsky) cube")
-    ap.add_argument("--out", default=None,
-                    help="output directory; default {work}/step06")
-    args = ap.parse_args()
-
-    work = Path(args.work)
+def run(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
+        blank_region="all", min_coverage=MIN_COVERAGE, out=None):
+    """Write the sky-subtracted and sky-model cubes into `out`; return that directory."""
+    work = Path(work)
     STEP01 = work / "step01"
     STEP03 = work / "step03"
-    CUBE = Path(args.cube)
-    out = Path(args.out) if args.out else work / "step06"
+    CUBE = Path(cube)
+    out = Path(out) if out else work / "step06"
     out.mkdir(parents=True, exist_ok=True)
 
-    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+    seg_path = Path(seg) if seg else STEP01 / "seg.fits"
     seg   = fits.getdata(seg_path)
     white = np.asarray(fits.getdata(STEP01 / "whitelight.fits"), float)
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
     wl_vac = air_to_vacuum(np.load(STEP03 / "wavelength.npy"))
-    sky_dir = Path(args.sky_dir) if args.sky_dir else STEP03
+    sky_dir = Path(sky_dir) if sky_dir else STEP03
     sky = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
-                     np.load(sky_dir / f"sky_basis_{args.basis}_K{args.K}.npy")])
+                     np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])
     print(f"sky model from {sky_dir.name}")
 
-    best_file = Path(args.best)
+    best_file = Path(best)
     if not best_file.exists():
         raise SystemExit(f"file not found: {best_file}")
     best = np.load(best_file)
@@ -107,11 +86,11 @@ def main():
 
     templates = build_templates(best, wl_vac)
 
-    s_hat_2d = np.load(args.s_field)
-    print(f"s-field from {args.s_field}  median {np.nanmedian(s_hat_2d):.5f}")
+    s_hat_2d = np.load(s_field)
+    print(f"s-field from {s_field}  median {np.nanmedian(s_hat_2d):.5f}")
 
     fit_mask = None
-    if args.blank_region == "line1":
+    if blank_region == "line1":
         f = STEP03 / "iter_line_mask.npy"
         if not f.exists():
             raise SystemExit(f"{f.name} not found; re-run step3")
@@ -136,7 +115,7 @@ def main():
         raise SystemExit(f"s-field shape {s_hat_2d.shape} != cube spatial shape ({ny}, {nx})")
 
     coverage = np.isfinite(D).sum(axis=0) / nz
-    valid    = (white != 0).reshape(-1) & (coverage >= args.min_coverage)
+    valid    = (white != 0).reshape(-1) & (coverage >= min_coverage)
     sky_model = np.full((nz, ny * nx), np.nan, np.float32)
     A_map     = np.full((N_SRC, ny * nx), np.nan, np.float32)
     s_map     = np.full(ny * nx, np.nan, np.float32)
@@ -189,9 +168,9 @@ def main():
     meta = dict(
         step="fit_sky",
         cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
-        best=str(_rel(best_file)), basis=args.basis, K=args.K,
-        s_field=str(_rel(Path(args.s_field))),
-        blank_region=args.blank_region, min_coverage=args.min_coverage,
+        best=str(_rel(best_file)), basis=basis, K=K,
+        s_field=str(_rel(Path(s_field))),
+        blank_region=blank_region, min_coverage=min_coverage,
         n_blank=int(blank.sum()), n_source=n_src_tot,
         n_source_regions=len(rids), n_template_regions=len(templates),
         created=datetime.datetime.now().isoformat(timespec="seconds"),
@@ -208,6 +187,39 @@ def main():
           f"  source {n_src_tot:,}"
           f"  source regions {len(rids)} ({len(rids) - n_notpl} with template)")
     print(f"saved -> {out}")
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Per-spaxel sky subtraction using the s-field from step5")
+    ap.add_argument("--basis", default="svd")
+    ap.add_argument("-K", type=int, required=True,
+                    help="number of sky-line basis vectors")
+    ap.add_argument("--best", required=True,
+                    help="step4 classification file (.npz)")
+    ap.add_argument("--s-field", required=True,
+                    help="s_hat.npy from step5")
+    ap.add_argument("--seg", default=None,
+                    help="segmentation map; default step01/seg.fits")
+    ap.add_argument("--sky-dir", default=None,
+                    help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
+    ap.add_argument("--blank-region", choices=["all", "line1"], default="all",
+                    help="channels used to solve blank coefficients")
+    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE,
+                    help="fraction of wavelength channels that must carry data before "
+                         "a spaxel is fitted; the field-of-view edge ring falls below it")
+    ap.add_argument("--work", required=True,
+                    help="working directory (contains step01/step03/step04/step05)")
+    ap.add_argument("--cube", required=True,
+                    help="sky-included (wsky) cube")
+    ap.add_argument("--out", default=None,
+                    help="output directory; default {work}/step06")
+    args = ap.parse_args()
+    run(args.work, args.cube, args.best, args.s_field, args.K,
+        basis=args.basis, seg=args.seg, sky_dir=args.sky_dir,
+        blank_region=args.blank_region, min_coverage=args.min_coverage,
+        out=args.out)
 
 
 if __name__ == "__main__":
