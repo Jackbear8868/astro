@@ -27,6 +27,14 @@ EIGEN_QSO = ROOT / "data/qso_eigen_linear_55732.dat"
 
 N_SRC        = 4
 MIN_COVERAGE = 0.9
+# Spaxels multiplied at a time in the blank solve. A module constant rather than a
+# parameter: it trades the size of one temporary against the number of BLAS calls
+# and cannot change what fit_blank returns, so there is nothing for a caller to
+# decide about it. A power of two, so that it stays a whole number of the column
+# groups BLAS walks in (see fit_blank) whatever width those groups have here --
+# they are powers of two, and a chunk that is not a whole number of them answers
+# in different last bits.
+SPAXEL_CHUNK = 256
 
 
 def as_vector(s_fix, n):
@@ -124,7 +132,35 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None):
     rows  = slice(None) if fit_mask is None else fit_mask
     clean = good[rows].all(axis=0)
     P     = np.linalg.pinv(A[:, rows].T)
-    fit   = P @ D[rows][:, clean]
+
+    # P is float64 and D is float32, and a mixed-dtype multiply widens its float32
+    # side first, so one call covering every clean spaxel builds a double-width copy
+    # of the whole block just to multiply it. Taking the spaxels a chunk at a time
+    # builds one chunk of that copy instead. Output column j is read off input
+    # column j and nothing else, so which columns share a call cannot change the sum
+    # each column gets -- but for the sum to be the same bit for bit it has to be
+    # the same instructions too. BLAS takes the columns in groups of four and
+    # finishes what is left over with a separate kernel, so a chunk that is not a
+    # whole number of groups wide puts its last columns through a kernel the
+    # unchunked multiply never uses and their last bits move. Chunks are therefore
+    # whole groups wide, and a lone final column -- a matrix-vector product, a
+    # different routine again -- is folded into the chunk before it.
+    #
+    # The rows are selected once, above the loop: with a mask that selection copies
+    # the rows it keeps, and per chunk it would copy them again every time; with no
+    # mask it is a view either way. The clean spaxels are carried as positions
+    # rather than as the mask so that a chunk is a run of consecutive output
+    # columns, which is what those widths are counted in.
+    Drows = D[rows]
+    cols  = np.flatnonzero(clean)
+    fit   = np.empty((K, cols.size))
+    width = max(SPAXEL_CHUNK // 4, 1) * 4
+    edges = list(range(0, cols.size, width)) + [cols.size]
+    if len(edges) > 2 and edges[-1] - edges[-2] == 1:
+        del edges[-2]
+    for a, b in zip(edges, edges[1:]):
+        fit[:, a:b] = P @ Drows[:, cols[a:b]]
+
     if C is not None:
         # Least squares is linear in the data it is given, so
         #     pinv(A) @ (D - s*C) == pinv(A) @ D - (pinv(A) @ C) * s
