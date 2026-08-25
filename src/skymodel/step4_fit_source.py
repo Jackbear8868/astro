@@ -164,6 +164,13 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
     sig  = np.sqrt(np.where(var > 0, var, 1.0))
     n_full = int(base.sum())            # channels the data offers -- the ceiling every
                                         # candidate shares
+    if not n_full:                      # no candidate could clear n > p anyway, and the
+        return []                       # two ends below would have nothing to read
+    # The two ends every candidate has to reach across, taken from the data rather than
+    # from the window values, so a mask or a shorter cube shortens them with it.
+    lam_lo  = float(lam_muse[base].min())
+    lam_hi  = float(lam_muse[base].max())
+    flux_ok = np.isfinite(flux)         # the z-independent half of the src_min channels
 
     if fix_s_at is None:
         sky_free, y, s_free = sky, flux, True
@@ -185,13 +192,29 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
         if s_free:
             lb[n_comp] = 0.0
         ub = np.full(p, np.inf)
+        # With no finite bound there is nothing for an active-set method to look for,
+        # and the answer is the plain least-squares one.
+        has_bounds = np.any(np.isfinite(lb))
+
+        # The spline's own domain. It is the only thing that decides where the
+        # redshifted template comes back NaN, because it is evaluated with
+        # extrapolate=False.
+        lo_rest = float(spline.t[spline.k])
+        hi_rest = float(spline.t[-spline.k - 1])
 
         for z in z_grid:
             T = redshift_to_grid(spline, z, lam_muse)
             if T.ndim == 1:
                 T = T[:, None]
-            good = base & np.all(np.isfinite(T), axis=1)
-            n    = int(good.sum())
+            # Reaching past both ends means reaching across everything between them, so
+            # whether this candidate covers the channel set is two comparisons and not a
+            # pass over T.
+            covers = lo_rest * (1 + z) <= lam_lo and hi_rest * (1 + z) >= lam_hi
+            if covers:
+                good, n = base, n_full
+            else:
+                good = base & np.isfinite(T[:, 0])
+                n    = int(good.sum())
             if n <= p:                  # leave at least one degree of freedom, or
                                         # reduced chi2 is undefined
                 continue
@@ -202,29 +225,41 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
             # has almost no data in it. Templates have a finite rest range, so past
             # some z they no longer reach across the window; those candidates have to
             # be excluded rather than allowed to win.
-            if not allow_partial and n < n_full:
+            if not allow_partial and not covers:
                 continue
 
             M = np.empty((n, p))
             M[:, :n_comp] = T[good] / sig[good][:, None]
             M[:, n_comp:] = skyw[good]
 
-            fitres = lsq_linear(M, yw[good], bounds=(lb, ub), method="bvls")
-            theta  = fitres.x
-            chi2   = 2.0 * fitres.cost
+            if has_bounds:
+                fitres = lsq_linear(M, yw[good], bounds=(lb, ub), method="bvls")
+                theta  = fitres.x
+                chi2   = 2.0 * fitres.cost
+            else:
+                # The singular-value cutoff and the dot product are the ones
+                # lsq_linear itself uses. Both branches feed one comparison, so they
+                # have to agree to the last bit and not merely to rounding.
+                theta = np.linalg.lstsq(M, yw[good], rcond=-1)[0]
+                r     = M @ theta - yw[good]
+                chi2  = float(r @ r)
 
             # Whether the source spectrum goes negative is checked over the whole
             # range, not just inside the window: negative flux is a physical problem
             # with the model, and it does not stop existing because those channels
             # were left out of chi2.
-            src      = np.nan_to_num(T, nan=0.0) @ theta[:n_comp]
-            m_all    = src + theta[n_comp:] @ sky_free
-            chi2_all = float((((y - m_all) / sig) ** 2)[base].sum())
-            ok       = np.isfinite(flux) & np.all(np.isfinite(T), axis=1)
+            #
+            # A template is NaN for a whole channel at once -- the rest wavelength is
+            # either inside the spline's domain or it is not, and the components share
+            # that domain -- so column 0 answers for all of them. Those channels carry
+            # the NaN through the product and ok drops them afterwards, so nothing has
+            # to be substituted for them first.
+            ok  = flux_ok & np.isfinite(T[:, 0])
+            src = T @ theta[:n_comp]
 
             results.append(dict(group=group, template=name, z=float(z),
                     A=theta[:n_comp], s=theta[n_comp] if s_free else fix_s_at,
-                    chi2=chi2, chi2_all=chi2_all, red_chi2=chi2 / (n - p),
+                    chi2=chi2, red_chi2=chi2 / (n - p),
                     n_good=n, src_min=float(src[ok].min())))
 
     return sorted(results, key=lambda r: r["chi2"])
@@ -241,7 +276,6 @@ def _save_scan(path, results):
              z=np.array([x["z"] for x in results]),
              s=np.array([x["s"] for x in results]),
              chi2=np.array([x["chi2"] for x in results]),
-             chi2_all=np.array([x["chi2_all"] for x in results]),
              red_chi2=np.array([x["red_chi2"] for x in results]),
              n_good=np.array([x["n_good"] for x in results]),
              src_min=np.array([x["src_min"] for x in results]))
@@ -444,6 +478,13 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
             print(f"  skipping {f.stem}: rest range {lo:.0f}-{hi:.0f} A does not "
                   f"cover the {need_lo:.0f}-{need_hi:.0f} A needed")
             continue
+        # The scan reads a candidate's coverage off the spline's domain, so a hole
+        # inside that domain would pass it unseen. That is a property of the file, not
+        # of any one redshift, so it is settled here rather than asked per candidate.
+        if not np.all(np.isfinite(sp.c)):
+            print(f"  skipping {f.stem}: the spline has a hole inside its own "
+                  f"{lo:.0f}-{hi:.0f} A range")
+            continue
         star_jobs.append(("star", f.stem, sp, z_star))
     if not star_jobs:
         raise SystemExit(f"★ no template under {DWARF_DIR} covers the MUSE band")
@@ -454,6 +495,10 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     # interpolate continuously between types, and no list of discrete representative
     # spectra is needed.
     gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
+    # Same check as above, and there is only one galaxy job: with it dropped the branch
+    # would be empty and nothing could be classified, so this one has to be fatal.
+    if not np.all(np.isfinite(gal_jobs[0][2].c)):
+        raise SystemExit(f"★ {EIGEN_GAL.name} has a hole inside its own rest range")
 
     targets = ids.tolist() if id == "all" else [int(id)]
     if id != "all" and targets[0] not in ids:
@@ -486,7 +531,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     print(f"{len(targets)} object(s)   {n_workers} workers   "
           f"mask iterations {line_mask_iter}")
 
-    KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2", "chi2_all",
+    KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2",
             "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
             "gal_red_chi2", "gal_tpl")
     outs = []
