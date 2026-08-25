@@ -6,7 +6,18 @@
 This is the pipeline's only entrance. run_pointing() below is the whole method in one
 place: six named steps in the order they happen, plus the segmentation check between
 the first two. Reading run_pointing() is meant to be enough to know what this pipeline
-does.
+does -- including the data flow, because each step is handed what the earlier ones
+returned rather than reopening the files they wrote. A step that reads its input from
+disk can be handed a file some earlier run left there, and nothing says so.
+
+The cube is the exception: every step that needs it opens it itself. It is the one
+input large enough that holding it from one step to the next would cost real memory,
+and it is memmapped, so opening it again is cheap.
+
+The products are still written, under {output}/stepNN, unless the config turns
+keep_intermediate off; step6's are written either way. They are what the evaluation
+scripts read and the only record of the middle of a run, but nothing in the pipeline
+reads them back.
 
 Each step's full output goes to {output}/stepN.log, headed by the call that produced
 it, so the log records which arguments those products came from; only the lines listed
@@ -31,6 +42,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from astropy.io import fits
@@ -88,21 +100,60 @@ def region_kwargs(reg, prefix=""):
         lo(x[0]), BEYOND_EDGE if x[1] is None else x[1] - 1]}
 
 
+# How much of one argument the log prints before it says what the value is instead.
+# The point of the head line is the scalars and the paths; a step is also handed
+# whole spectra and maps, and printing those would bury the rest.
+ARG_WIDTH = 160
+
+
+def _fit(text, value):
+    """text if it is short enough to read on one line, else what the value is."""
+    if len(text) <= ARG_WIDTH and "\n" not in text:
+        return text
+    size = f" of {len(value)}" if hasattr(value, "__len__") else ""
+    return f"<{type(value).__name__}{size}>"
+
+
+def show(v):
+    """One argument of a step call, written for the head of its log.
+
+    An array is written as its shape and dtype: what a run was given is answered
+    by which array it was, and the values themselves are in the products beside
+    the log. The bundles the steps pass each other are opened up so that the
+    paths and tags inside them stay visible.
+
+    Paths are shortened against the repository root: an absolute path from
+    someone else's machine is noise in a file another reader is meant to use.
+    """
+    if isinstance(v, np.ndarray):
+        return f"<ndarray {v.shape} {v.dtype}>"
+    if isinstance(v, Path):
+        try:
+            return repr(str(v.resolve().relative_to(ROOT)))
+        except ValueError:
+            return repr(str(v))
+    if isinstance(v, tuple) and hasattr(v, "_fields"):          # a step's bundle
+        inner = ", ".join(f"{f}={show(x)}" for f, x in zip(v._fields, v))
+        return f"{type(v).__name__}({inner})"
+    if isinstance(v, dict):
+        return _fit("{" + ", ".join(f"{show(k)}: {show(x)}"
+                                    for k, x in v.items()) + "}", v)
+    if isinstance(v, (list, tuple)):
+        body = ", ".join(show(x) for x in v)
+        if isinstance(v, tuple):
+            body = f"({body},)" if len(v) == 1 else f"({body})"
+        else:
+            body = f"[{body}]"
+        return _fit(body, v)
+    return _fit(repr(v), v)
+
+
 def call_repr(fn, kwargs):
     """The step call written out as Python, for the head of its log.
 
     It is the record of which arguments produced the products beside it -- a config
     can be edited afterwards, and then nothing else says what this run was given.
-    Paths are shortened against the repository root: an absolute path from someone
-    else's machine is noise in a file another reader is meant to use.
     """
-    def show(v):
-        if isinstance(v, Path):
-            try:
-                return repr(str(v.resolve().relative_to(ROOT)))
-            except ValueError:
-                return repr(str(v))
-        return repr(v)
     args = ", ".join(f"{k}={show(v)}" for k, v in kwargs.items())
     return f"{fn.__module__}.{fn.__name__}({args})"
 
@@ -152,9 +203,9 @@ class _Tee:
 def run_step(label, fn, kwargs, log_path, keep=None, tail=0):
     """Call one step in this process, sending its output to log_path.
 
-    Whatever the step returns is passed back, so the pipeline uses the paths the step
-    itself produced rather than rebuilding them from the same naming rules a second
-    time.
+    Whatever the step returns is passed back, which is how the pipeline hands one
+    step's results to the next instead of each of them reopening the files the one
+    before it wrote.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w") as log:
@@ -175,14 +226,28 @@ def run_step(label, fn, kwargs, log_path, keep=None, tail=0):
     return result
 
 
-def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
-    """Copy the professor's segmentation next to the white light and confirm the
-    two share a pixel grid.
+class Seg(NamedTuple):
+    """The segmentation, as steps 2, 3, 5 and 6 are handed it.
+
+    path is where it was put next to the white light. Steps 5 and 6 record that
+    in their meta.json, so the products say which map they were made with.
+    """
+    data: np.ndarray
+    path: Path
+
+
+def place_segmentation(seg_src, white, out, max_offset=MAX_GRID_OFFSET,
+                       keep_intermediate=True):
+    """Read the professor's segmentation and confirm it shares a pixel grid with
+    the white light; return it.
 
     Equal shapes do not prove the same grid, so the check is "where on the sky
     does this pixel point", not a keyword-by-keyword comparison: the seg carries
     a CD matrix while the cube uses PC + CDELT, and their CRPIX differ by 0.01 px,
     both of which a literal comparison would report as a mismatch.
+
+    With keep_intermediate the map is copied next to the white light, which is
+    where the evaluation scripts read the segmentation a run used.
 
     max_offset above the default is a decision to run anyway on a pointing whose
     headers disagree. It comes from that pointing's config and is printed when it
@@ -190,13 +255,16 @@ def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
     the step log -- rather than living in whoever's shell history raised it.
     """
     dst = out / "step01/seg.fits"
-    shutil.copy(seg_src, dst)
-    s, hs = fits.getdata(dst, header=True)
-    w, hw = fits.getdata(out / "step01/whitelight.fits", header=True)
+    s, hs = fits.getdata(seg_src, header=True)
+    if keep_intermediate:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(seg_src, dst)
+    w, hw = white.data, white.header
     if s.shape != w.shape:
         raise SystemExit(f"★ seg {s.shape} and white light {w.shape} differ in shape")
     if "CTYPE1" not in hw:
-        raise SystemExit("★ white light carries no WCS -- written by an older step1, re-run it")
+        raise SystemExit("★ the white light carries no WCS -- the cube's DATA "
+                         "header has none to copy")
 
     ny, nx = s.shape
     yy = np.array([0, 0, ny - 1, ny - 1, ny // 2])
@@ -216,6 +284,7 @@ def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
               f"{MAX_GRID_OFFSET:g} px and was allowed by max_grid_offset "
               f"{max_offset:g} in the config. Anything this pointing produces from sky "
               f"coordinates carries that offset.")
+    return Seg(s, dst)
 
 
 def run_pointing(cfg_path):
@@ -225,6 +294,9 @@ def run_pointing(cfg_path):
     inp = cfg["input"]
     basis, src = cfg["sky_line_basis"], cfg["source_fit"]
     amp, spx = cfg["sky_amplitude"], cfg["spaxel_fit"]
+    # Named in full because run_step's own `keep` is a different thing:
+    # which of a step's output lines reach the terminal.
+    keep_intermediate = cfg["keep_intermediate"]
 
     for key, path in inp.items():
         if not path.exists():
@@ -244,63 +316,72 @@ def run_pointing(cfg_path):
     t0 = time.time()
 
     print("--- [1/7] step1 white light (from the nosky cube)")
-    run_step("step1", whitelight,
-             dict(cube=inp["nosky"], out=out / "step01"),
-             out / "step1.log")
+    white = run_step("step1", whitelight,
+                     dict(cube=inp["nosky"], out=out / "step01",
+                          keep_intermediate=keep_intermediate),
+                     out / "step1.log")
 
     print("--- [2/7] the professor's segmentation")
-    place_segmentation(inp["seg"], out, cfg["max_grid_offset"])
+    seg = place_segmentation(inp["seg"], white, out, cfg["max_grid_offset"],
+                             keep_intermediate)
 
     print("--- [3/7] step2 source spectra (nosky, for classification)")
-    run_step("step2", object_spectra,
-             dict(work=out, cube=inp["nosky"], out=out / "step02"),
-             out / "step2.log")
+    spectra = run_step("step2", object_spectra,
+                       dict(cube=inp["nosky"], white=white, seg=seg,
+                            out=out / "step02", keep_intermediate=keep_intermediate),
+                       out / "step2.log")
 
     print("--- [4/7] step3 sky basis")
-    run_step("step3", sky_basis,
-             dict(work=out, cube=inp["cube"], K=basis["K"],
-                  methods=[basis["method"]], seed=basis["seed"],
-                  continuum_window=basis["continuum_window"],
-                  line_thresholds=basis["line_thresholds"],
-                  max_iter=basis["max_iter"], clip_sigma=basis["clip_sigma"],
-                  **basis_region),
-             out / "step3.log", keep=KEEP["step3"])
+    sky = run_step("step3", sky_basis,
+                   dict(work=out, cube=inp["cube"], white=white, seg=seg,
+                        K=basis["K"],
+                        methods=[basis["method"]], seed=basis["seed"],
+                        continuum_window=basis["continuum_window"],
+                        line_thresholds=basis["line_thresholds"],
+                        max_iter=basis["max_iter"], clip_sigma=basis["clip_sigma"],
+                        keep_intermediate=keep_intermediate,
+                        **basis_region),
+                   out / "step3.log", keep=KEEP["step3"])
 
     print("--- [5/7] step4 template fitting and classification")
-    # step4 returns the classification file it wrote, for the last mask iteration
-    # asked for. Rebuilding that name here from make_tag/make_suffix would be the
-    # same naming rule written twice, and the two would drift.
-    best = run_step("step4", classify_sources,
-                    dict(work=out, K=basis["K"], id="all", basis=basis["method"],
-                         fix_s_at=src["fix_s_at"],
-                         star_window=src["fit_window"],
-                         gal_window=src["fit_window"],
-                         line_mask_iter=src["line_mask_iter"],
-                         zmin=src["z_min"], zmax=src["z_max"],
-                         zstep=src["z_step"], star_dz=src["star_dz"],
-                         num_workers=src["num_workers"],
-                         spec_dir=out / "step02"),
-                    out / "step4.log", tail=3)
+    # step4's result is the last mask iteration asked for: the classification
+    # fields step6 rebuilds the sources from, the galaxy-branch redshifts step5
+    # groups the main source by, and the name of the file all of that was
+    # written to.
+    classified = run_step("step4", classify_sources,
+                          dict(work=out, sky=sky, spectra=spectra,
+                               K=basis["K"], id="all", basis=basis["method"],
+                               fix_s_at=src["fix_s_at"],
+                               star_window=src["fit_window"],
+                               gal_window=src["fit_window"],
+                               line_mask_iter=src["line_mask_iter"],
+                               zmin=src["z_min"], zmax=src["z_max"],
+                               zstep=src["z_step"], star_dz=src["star_dz"],
+                               num_workers=src["num_workers"],
+                               keep_intermediate=keep_intermediate),
+                          out / "step4.log", tail=3)
 
     line_iter = src["line_mask_iter"][-1]
     print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")
-    run_step("step5", fit_s_field,
-             dict(work=out, cube=inp["cube"], classification=best, K=basis["K"],
-                  basis=basis["method"],
-                  blank_channels=spx["blank_channels"],
-                  min_channel_coverage=spx["min_channel_coverage"],
-                  min_source_distance=amp["min_source_distance"],
-                  min_main_source_distance=amp["min_main_source_distance"],
-                  train_clip_sigma=amp["train_clip_sigma"],
-                  main_source_dz=amp["main_source_dz"],
-                  **train_region),
-             out / "step5.log", keep=KEEP["step5"])
+    s_field = run_step("step5", fit_s_field,
+                       dict(work=out, cube=inp["cube"], white=white, seg=seg,
+                            sky=sky, classification=classified, K=basis["K"],
+                            basis=basis["method"],
+                            blank_channels=spx["blank_channels"],
+                            min_channel_coverage=spx["min_channel_coverage"],
+                            min_source_distance=amp["min_source_distance"],
+                            min_main_source_distance=amp["min_main_source_distance"],
+                            train_clip_sigma=amp["train_clip_sigma"],
+                            main_source_dz=amp["main_source_dz"],
+                            keep_intermediate=keep_intermediate,
+                            **train_region),
+                       out / "step5.log", keep=KEEP["step5"])
 
     print("--- [7/7] step6 final sky subtraction")
     run_step("step6", subtract_sky,
-             dict(work=out, cube=inp["cube"], classification=best, K=basis["K"],
+             dict(work=out, cube=inp["cube"], white=white, seg=seg, sky=sky,
+                  classification=classified, s_field=s_field, K=basis["K"],
                   basis=basis["method"],
-                  s_field=out / "step05/s_hat.npy",
                   blank_channels=spx["blank_channels"],
                   min_channel_coverage=spx["min_channel_coverage"]),
              out / "step6.log", keep=KEEP["step6"])

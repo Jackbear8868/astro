@@ -47,6 +47,7 @@ fit_window and hands it to both branches, so the pair cannot come apart.
 import os
 from multiprocessing import Pool
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from scipy.optimize import lsq_linear
@@ -88,6 +89,24 @@ GAL_WINDOW  = (4600.0, 8000.0)      # for the galaxy eigenspectra; must equal th
 FULL_RANGE  = (4600.0, 9400.0)      # the whole MUSE range, kept as a control
 
 _SHARED = {}
+
+
+class Classification(NamedTuple):
+    """What this step hands steps 5 and 6.
+
+    data holds the fields of classification_{tag}.npz -- step6 rebuilds each
+    source's model from them. galaxy_z is the galaxy branch's best redshift for
+    every source it could fit, which is a different number from data["z"]: that
+    one belongs to the winning branch, and for a star it is a radial velocity.
+    Step5 groups the main source by redshift and needs the galaxy branch's.
+
+    path and tag name the product these came from. Steps 5 and 6 record the path
+    in their meta.json, and step5 reads the tag to name the step4 run.
+    """
+    path: Path
+    tag: str
+    data: dict                # field name -> array, as written to the npz
+    galaxy_z: dict            # seg ID -> galaxy-branch redshift
 
 
 def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
@@ -318,10 +337,13 @@ def _scan_one(t):
                      allow_partial=S["allow_partial"])
     if not r1 and not r2:
         return t, None
-    if r1:
-        _save_scan(STEP04 / f"scan1_id{t}_{S['tag']}.npz", r1)
-    if r2:
-        _save_scan(STEP04 / f"scan2_id{t}_{S['tag']}.npz", r2)
+    # The whole scan of each branch is a product, not how the result travels: the
+    # row below comes back through the Pool either way.
+    if S["keep_intermediate"]:
+        if r1:
+            _save_scan(STEP04 / f"scan1_id{t}_{S['tag']}.npz", r1)
+        if r2:
+            _save_scan(STEP04 / f"scan2_id{t}_{S['tag']}.npz", r2)
 
     # The two branch winners face each other. The scans come back sorted by chi2, so
     # [0] is each branch's best.
@@ -332,16 +354,27 @@ def _scan_one(t):
     # Both winning values are kept: the classification is decided by which of these
     # two numbers is smaller, and without recording them nothing downstream can ask
     # by how much it won, i.e. whether the classification is firm.
+    #
+    # gal_z is the galaxy branch's own redshift, picked by the lowest reduced chi2
+    # over that branch's whole scan. It is not "z" above, which belongs to whichever
+    # branch won; step5 needs the galaxy value even for a source classified as a star.
     return t, dict(id=t, nspax=int(np.median(S["nspax"][k])),
                    star_red_chi2=r1[0]["red_chi2"] if r1 else np.nan,
                    star_tpl=r1[0]["template"] if r1 else "",
                    gal_red_chi2=r2[0]["red_chi2"] if r2 else np.nan,
                    gal_tpl=r2[0]["template"] if r2 else "",
+                   gal_z=(float(r2[int(np.argmin([x["red_chi2"] for x in r2]))]["z"])
+                          if r2 else None),
                    **{**best, "A": A})
 
 
-def write_classification(out_dir, tag, best, ids=None, over=None):
-    """Reduce the fit results to the list step5 reads.
+def write_classification(out_dir, tag, best, ids=None, over=None,
+                         keep_intermediate=True):
+    """Reduce the fit results to the list step6 rebuilds the sources from.
+
+    Returns (path, fields): the path of classification_{tag}.npz, and the fields
+    that went into it. With keep_intermediate the file is written; the fields are
+    returned either way, because that is how step6 receives them.
 
     The classification was already decided by the scan above -- stellar templates and
     galaxy eigenspectra competing on the same channels, lower reduced chi2 wins. It is
@@ -394,18 +427,21 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
         raise SystemExit("no sources found; classification file not written")
 
     out = out_dir / f"classification_{tag}.npz"
-    np.savez(out,
-             id=np.array([r["id"] for r in rows]),
-             group=np.array([r["group"] for r in rows]),
-             template=np.array([r["template"] for r in rows]),
-             z=np.array([r["z"] for r in rows]),
-             A=np.vstack([r["A"] for r in rows]),
-             star_library=np.array(STAR_LIBRARY))
+    fields = dict(
+        id=np.array([r["id"] for r in rows]),
+        group=np.array([r["group"] for r in rows]),
+        template=np.array([r["template"] for r in rows]),
+        z=np.array([r["z"] for r in rows]),
+        A=np.vstack([r["A"] for r in rows]),
+        star_library=np.array(STAR_LIBRARY))
+    if keep_intermediate:
+        np.savez(out, **fields)
     ns = sum(1 for r in rows if r["group"] == "star")
     print(f"\n{len(rows)} sources: {ns} stars / {len(rows) - ns} galaxies")
     print("margin = ratio of the two models' reduced chi2; closer to 1 means less classification confidence")
-    print(f"saved -> {out}")
-    return out
+    if keep_intermediate:
+        print(f"saved -> {out}")
+    return out, fields
 
 
 def _visible_cpus():
@@ -426,65 +462,73 @@ def _visible_cpus():
 
 
 @blas_single_thread
-def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
+def classify_sources(work, sky, spectra, K, id="all", basis="svd",
+        star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
         full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
         zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005,
-        allow_partial=False, spec_dir=None, raw_mask=False, fix_s_at=1.0,
-        ids=None, z_override=[], num_workers=0):
-    """Fit every source of `work`, writing one best_*.npz and one classification_*.npz
-    per mask iteration into step04; return the last iteration's classification path.
+        allow_partial=False, raw_mask=False, fix_s_at=1.0,
+        ids=None, z_override=[], num_workers=0, keep_intermediate=True):
+    """Fit every source of `spectra`; return the last mask iteration's classification.
 
-    The path comes back rather than being rebuilt by the caller: step5 reads that file,
-    and a filename spelled out in two places drifts.
+    sky is step3's model and spectra is step2's, both in memory. With
+    keep_intermediate one best_*.npz and one classification_*.npz per mask
+    iteration are written into step04, alongside each source's full scan.
+
+    The result comes back rather than being read from those files by step5 and
+    step6, which would make them read one that an earlier run happened to leave
+    under the same name.
     """
     over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
     work    = Path(work)
     # The scan directory is the module global, because that is where _scan_one
     # reads it from inside a worker; the other one is read here and nowhere else.
     global STEP04
-    STEP03  = work / "step03"
     STEP04 = work / "step04"
     print(f"workspace {work}")
     if full_range:
         star_window = gal_window = FULL_RANGE
 
-    STEP04.mkdir(parents=True, exist_ok=True)
+    # z_override re-solves one source at a redshift taken from its galaxy scan, and
+    # that scan is on disk or nowhere -- only the winning row of it comes back
+    # through the Pool.
+    if over and not keep_intermediate:
+        raise SystemExit("★ z_override reads the scan files, which "
+                         "keep_intermediate false does not write")
+    if keep_intermediate:
+        STEP04.mkdir(parents=True, exist_ok=True)
 
-    # Where the source spectra come from. spec_dir has to name a sky-subtracted set:
+    # Where the source spectra came from. It has to be a sky-subtracted set:
     # classifying from spectra that still contain the sky produces output that looks
     # entirely normal, with every source's template and redshift wrong.
-    src = Path(spec_dir)
+    #
     # A different spectrum source is a different scientific product, so the tag has to
     # separate them; one workspace can hold several sources (step02_eso and
     # step02_ours, say), and a name that does not encode the source silently
     # overwrites the previous run. The default source, step02, gets no suffix -- the
     # suffix marks a departure from the default, and the default needs no marking.
-    suffix = make_suffix(src.name)
+    suffix = make_suffix(spectra.path.name)
 
     # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1, so the
     # number of rows is the number of iterations there are to ask for. That count is
     # known only here -- a config is written before step3 has run -- so the requested
-    # iterations are checked against it now, ahead of the spectra, the templates and
-    # the workers. An iteration below 1 would index backwards from the end of the
-    # array at line_masks[it - 1] and fit a mask nobody asked for.
-    line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
-                                 cumulative=not raw_mask)
+    # iterations are checked against it now, ahead of the templates and the workers.
+    # An iteration below 1 would index backwards from the end of the array at
+    # line_masks[it - 1] and fit a mask nobody asked for.
+    line_masks = load_line_masks(sky.iter_line_mask, cumulative=not raw_mask)
     for it in line_mask_iter:
         if not isinstance(it, (int, np.integer)) or not 1 <= it <= len(line_masks):
             raise SystemExit(f"★ line_mask_iter {it!r}: step3 produced "
                              f"{len(line_masks)} mask iterations, so the iterations "
                              f"available are 1-{len(line_masks)}")
 
-    seg_ids = np.load(src / "object_ids.npy")
-    flux  = np.load(src / "object_flux.npy")
-    var   = np.load(src / "object_var.npy")
-    nspax = np.load(src / "object_nspax.npy")
+    seg_ids, flux, var, nspax = (spectra.ids, spectra.flux, spectra.var,
+                                 spectra.nspax)
 
-    wl_air = np.load(STEP03 / "wavelength.npy")
+    wl_air = sky.wavelength
     wl_vac = air_to_vacuum(wl_air)
-    C_sky  = np.load(STEP03 / "sky_continuum.npy")
-    B      = np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")
-    sky    = np.vstack([C_sky, B]) if sky_basis else C_sky[None, :]
+    C_sky  = sky.continuum
+    sky    = (np.vstack([C_sky, sky.basis[basis]]) if sky_basis
+              else C_sky[None, :])
 
     # The mask is defined on air wavelengths, so the fitting window is cut on air
     # wavelengths too, and the two agree.
@@ -547,7 +591,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
           f"sky continuum fixed to {fix_s_at} x C_sky, subtracted first")
     print("source model = A x template" + ("  + sky-line basis" if sky_basis
                                           else "   (1 free parameter)"))
-    print(f"spectra from {src.name}")
+    print(f"spectra from {spectra.path.name}")
     print(f"{len(targets)} object(s)   {n_workers} workers   "
           f"mask iterations {line_mask_iter}")
 
@@ -555,7 +599,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
             "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
             "gal_red_chi2", "gal_tpl")
     outs = []
-    cls_path = None
+    classified = None
 
     # Each mask iteration is a separate set of results: a different channel set gives
     # different chi2, and the two cannot be mixed. The static data (templates, spectra,
@@ -581,7 +625,8 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
                        star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
                        fit_star=fit_star, fit_gal=fit_gal,
                        tag=tag, fix_s_at=fix_s_at,
-                       allow_partial=allow_partial)
+                       allow_partial=allow_partial,
+                       keep_intermediate=keep_intermediate)
 
         summary = []
         with Pool(n_workers, initializer=_init_worker,
@@ -600,10 +645,11 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
 
         new = {k: np.array([x[k] for x in summary]) for k in KEYS}
 
-        # Merge into what is already there rather than overwriting: re-running a
-        # single ID should update that row and nothing else.
         out = STEP04 / f"best_{tag}.npz"
-        if out.exists():
+        # Merge into what is already there rather than overwriting: re-running a
+        # single ID should update that row and nothing else. Only when the file is
+        # being written -- with nothing to write to, there is nothing to merge into.
+        if keep_intermediate and out.exists():
             old = np.load(out, allow_pickle=False)
             if set(old.files) != set(KEYS):
                 print(f"  * {out.name} fields differ from current format, discarding entire file."
@@ -615,8 +661,20 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
                     new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
                     print(f"merged {int(keep.sum())} existing sources")
         o = np.argsort(new["id"])
-        np.savez(out, **{k: v[o] for k, v in new.items()})
-        cls_path = write_classification(STEP04, tag, np.load(out), ids, over)
+        # The rows in the order they are written, which is the order everything
+        # below reads them in. Every value here is already an array of the dtype
+        # np.savez stores and np.load returns, so writing the file and reading it
+        # back would hand on exactly this dict.
+        best = {k: v[o] for k, v in new.items()}
+        if keep_intermediate:
+            np.savez(out, **best)
+        cls_path, fields = write_classification(STEP04, tag, best, ids, over,
+                                                keep_intermediate)
+        # The galaxy branch's redshift for every source it could fit. Rebuilt each
+        # iteration, so what is returned belongs to the same iteration as cls_path.
+        galaxy_z = {int(x["id"]): x["gal_z"] for x in summary
+                    if x["gal_z"] is not None}
+        classified = Classification(cls_path, tag, fields, galaxy_z)
         outs.append((it, out, summary))
 
     print(f"\n{'=' * 60}\ncross-iteration comparison")
@@ -629,8 +687,9 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
         neg = sum(1 for r in summary if r["src_min"] < 0)
         print(f"{it:>6}{int((win_star & ~line_masks[it-1]).sum()):>10}"
               f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
-    print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
-    return cls_path
+    if keep_intermediate:
+        print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
+    return classified
 
 
 # Without this the file would import and exit 0 when run, which reads as having

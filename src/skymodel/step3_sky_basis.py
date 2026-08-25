@@ -5,6 +5,7 @@ Output is consumed by step4's template fitting. The decomposition method for
 the sky-line basis is interchangeable.
 """
 from pathlib import Path
+from typing import NamedTuple
 import numpy as np
 from astropy.io import fits
 from sklearn.decomposition import PCA, TruncatedSVD
@@ -14,6 +15,20 @@ from utils import blas_single_thread, estimate_continuum, wavelength_grid
 import json
 import subprocess
 import time
+
+
+class SkyModel(NamedTuple):
+    """What this step hands steps 4, 5 and 6 -- everything they read of the sky.
+
+    basis is keyed by decomposition method, because `methods` may ask for
+    several in one run and the later steps name the one they fit with.
+    iter_line_mask is the whole per-iteration stack: step4 fits one iteration
+    per pass, steps 5 and 6 take the first.
+    """
+    wavelength: np.ndarray        # (nz,)          air wavelength of each channel
+    continuum: np.ndarray         # (nz,)          C_sky
+    basis: dict                   # method -> (K, nz) sky-line basis
+    iter_line_mask: np.ndarray    # (n_iter, nz)   bool, one row per iteration
 
 SEED       = 0           # random seed shared by all decompositions, ensures reproducibility
 WINDOW     = 300         # running-median window for the continuum (px)
@@ -79,24 +94,30 @@ ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored rel
 
 
 @blas_single_thread
-def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
-        seed=SEED, continuum_window=WINDOW, line_thresholds=THRESHOLDS,
-        max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA):
-    """Write the sky continuum, line mask and sky-line basis into step03; return that directory.
+def sky_basis(work, cube, white, seg, K, methods=METHODS, xlim=None, ylim=None,
+        exclude_box=None, seed=SEED, continuum_window=WINDOW,
+        line_thresholds=THRESHOLDS, max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA,
+        keep_intermediate=True):
+    """Learn the sky continuum, the line mask and the sky-line basis; return them.
+
+    white and seg come from step1 and from the segmentation check, in memory. With
+    keep_intermediate everything learned here is written into step03 as well,
+    together with the meta.json that records which spatial range it came from.
 
     K has no default here: steps 3, 4 and 6 must all use the same K, and a default
     would let one of them silently read a different basis.
     """
     work   = Path(work)
-    STEP01 = work / "step01"
     out_dir = work / "step03"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if keep_intermediate:
+        out_dir.mkdir(parents=True, exist_ok=True)
     WSKY = Path(cube)
     print(f"workdir {work}   cube {WSKY.name}")
 
-    white  = fits.getdata(STEP01 / "whitelight.fits")
-    seg_f  = STEP01 / "seg.fits"
-    seg    = fits.getdata(seg_f)
+    # seg_f is where the segmentation was put, for meta.json below; the map itself
+    # is what the masks are built from.
+    seg_f, seg = seg.path, seg.data
+    white = white.data
     print(f"segmentation: {seg_f.name}  source spaxels {int((seg > 0).sum()):,}")
 
     valid_mask = white != 0
@@ -174,21 +195,23 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
           f"({len(history)} iterations: "
           f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
 
-    np.save(out_dir / "wavelength.npy",    wl)
-    np.save(out_dir / "mean_sky.npy",      mean_sky)
-    np.save(out_dir / "sky_continuum.npy", C_sky)
-    np.save(out_dir / "sky_sigma.npy",     sigma)
-    np.save(out_dir / "line_mask.npy",     line_mask)
-
     # Per-iteration intermediate results. The mask is not cumulative -- each
     # iteration recomputes from the original mean_sky; the previous iteration
     # affects the threshold only indirectly (lines replaced with NaN before
     # re-estimating the continuum), so a small number of marginal channels can
     # drop back out. To understand why the mask grows, the continuum and sigma
     # must be examined alongside it.
-    np.save(out_dir / "iter_continuum.npy", np.array([h[0] for h in history]))
-    np.save(out_dir / "iter_sigma.npy",     np.array([h[1] for h in history]))
-    np.save(out_dir / "iter_line_mask.npy", np.array([h[2] for h in history]))
+    iter_line_mask = np.array([h[2] for h in history])
+
+    if keep_intermediate:
+        np.save(out_dir / "wavelength.npy",    wl)
+        np.save(out_dir / "mean_sky.npy",      mean_sky)
+        np.save(out_dir / "sky_continuum.npy", C_sky)
+        np.save(out_dir / "sky_sigma.npy",     sigma)
+        np.save(out_dir / "line_mask.npy",     line_mask)
+        np.save(out_dir / "iter_continuum.npy", np.array([h[0] for h in history]))
+        np.save(out_dir / "iter_sigma.npy",     np.array([h[1] for h in history]))
+        np.save(out_dir / "iter_line_mask.npy", iter_line_mask)
 
     # Reuse the same keep mask. R = blank - C_sky differs by only a per-channel
     # constant, and a constant shifts both x and its median by the same amount,
@@ -206,10 +229,12 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
     residual = blank - C_sky[:, None]
     np.copyto(residual, (med - C_sky)[:, None], where=~keep)
 
+    bases = {}
     for method in methods:
         t0 = time.time()
-        basis = learn_sky_basis(residual, K=K, method=method, seed=seed)
-        np.save(out_dir / f"sky_basis_{method}_K{K}.npy", basis)   # filename includes K so different K values can coexist
+        bases[method] = basis = learn_sky_basis(residual, K=K, method=method, seed=seed)
+        if keep_intermediate:
+            np.save(out_dir / f"sky_basis_{method}_K{K}.npy", basis)   # filename includes K so different K values can coexist
         print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
     # Provenance of the products. Only method and K appear in the filename;
@@ -224,21 +249,22 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
         except ValueError:
             return str(q)
 
-    (out_dir / "meta.json").write_text(json.dumps(dict(
-        created=time.strftime("%Y-%m-%dT%H:%M:%S"),
-        git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                  capture_output=True, text=True,
-                                  cwd=ROOT).stdout.strip(),
-        cube=rel(cube), seg=rel(seg_f), work=rel(work),
-        methods=list(methods), K=K, seed=seed,
-        continuum_window=continuum_window,
-        line_thresholds=list(line_thresholds),
-        max_iter=max_iter, clip_sigma=clip_sigma,
-        xlim=xlim, ylim=ylim, exclude_box=exclude_box,
-        n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
-    ), indent=2, ensure_ascii=False) + "\n")
-    print(f"meta -> {out_dir / 'meta.json'}")
-    return out_dir
+    if keep_intermediate:
+        (out_dir / "meta.json").write_text(json.dumps(dict(
+            created=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                                      capture_output=True, text=True,
+                                      cwd=ROOT).stdout.strip(),
+            cube=rel(cube), seg=rel(seg_f), work=rel(work),
+            methods=list(methods), K=K, seed=seed,
+            continuum_window=continuum_window,
+            line_thresholds=list(line_thresholds),
+            max_iter=max_iter, clip_sigma=clip_sigma,
+            xlim=xlim, ylim=ylim, exclude_box=exclude_box,
+            n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
+        ), indent=2, ensure_ascii=False) + "\n")
+        print(f"meta -> {out_dir / 'meta.json'}")
+    return SkyModel(wl, C_sky, bases, iter_line_mask)
 
 
 # Without this the file would import and exit 0 when run, which reads as having

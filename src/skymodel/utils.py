@@ -165,9 +165,13 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_
     return history[-1][0], history[-1][1], history[-1][2], history
 
 
-def load_line_masks(path, cumulative=True):
-    """Load the per-iteration sky-line masks saved by step3; returns the
-    cumulative version by default.
+def load_line_masks(masks, cumulative=True):
+    """The per-iteration sky-line masks step3 produced; returns the cumulative
+    version by default.
+
+    `masks` is either the stack step3 returns or the path of the
+    iter_line_mask.npy it wrote, so a script reading the products applies the
+    same rule the pipeline applied.
 
     The saved file stores the mask each iteration actually used -- inside
     estimate_continuum's loop, new_mask is recomputed from scratch by
@@ -186,7 +190,7 @@ def load_line_masks(path, cumulative=True):
     Iteration 1 is the same either way, so call sites that read only [0] are
     unaffected.
     """
-    m = np.load(path)
+    m = np.load(masks) if isinstance(masks, (str, Path)) else np.asarray(masks)
     return np.logical_or.accumulate(m, axis=0) if cumulative else m
 
 
@@ -398,7 +402,8 @@ def galaxy_redshifts(step04, ids, tag=None):
     return out
 
 
-def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None):
+def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
+                      redshifts=None):
     """Full footprint of the main galaxy -- the connected blob containing the
     brightest pixel, keeping only members with matching redshifts.
     Returns (mask, ID list, peak coordinates).
@@ -428,7 +433,11 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None):
     tag is passed through to galaxy_redshifts to name one step4 run when the
     directory holds several.
 
-    When step04 is omitted, only criterion (1) is applied. The professor's
+    redshifts is the same {ID: z} mapping read straight from step4 instead of
+    from its files, which is how the pipeline passes it; step04 and tag are for
+    a script working from the products afterwards. Give one or the other.
+
+    When neither is given, only criterion (1) is applied. The professor's
     delivered seg has no corresponding template fit, so no redshift is
     available; returning the entire adjacent blob is the only honest choice.
 
@@ -454,8 +463,17 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None):
     blob = lab == lab[k]
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
 
-    if step04 is not None:
-        z = galaxy_redshifts(step04, ids, tag)
+    if step04 is not None or redshifts is not None:
+        z = redshifts if redshifts is not None else galaxy_redshifts(step04, ids, tag)
+        # galaxy_redshifts stops when a member has no galaxy scan to read; a
+        # mapping handed in has to be held to the same standard, or a member
+        # missing from it would drop out of the group without a word.
+        missing = [i for i in ids if i not in z]
+        if missing:
+            raise SystemExit(
+                f"★ no galaxy-branch redshift for seg ID(s) {missing}, which are "
+                "part of the blob holding the brightest pixel; the main source "
+                "group cannot be filtered by redshift without them")
         z0 = z[int(seg[k])]
         # Comparing |dz| and |c dz/(1+z0)| is the same criterion -- both sides
         # are multiplied by the same positive number. Using the redshift

@@ -61,8 +61,11 @@ def build_templates(best, lam_vac):
     """
     eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
     # A file without this field was written before the field existed, and every one
-    # of those came from the SDSS stellar library.
-    lib   = str(best["star_library"]) if "star_library" in best.files else "sdss"
+    # of those came from the SDSS stellar library. Membership is asked of `best`
+    # itself rather than of .files, so that step6 can hand over the fields step4
+    # returned without writing and reading an npz to get an object with that
+    # attribute; an NpzFile answers `in` the same way a dict does.
+    lib   = str(best["star_library"]) if "star_library" in best else "sdss"
     if lib != STAR_LIBRARY:
         raise SystemExit(
             f"★ this classification was fitted with the {lib!r} stellar library, "

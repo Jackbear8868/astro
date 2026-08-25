@@ -6,9 +6,25 @@ sky-subtracted cube -- classifying a spectrum that still holds the sky gives out
 that looks entirely normal with every template and redshift wrong.
 """
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from astropy.io import fits
+
+
+class SourceSpectra(NamedTuple):
+    """What this step hands step4: one summed spectrum per source.
+
+    `path` is the directory the four arrays were written to. It is carried
+    because step4 encodes the name of that directory into its output tag -- a
+    different spectrum source is a different scientific product -- not because
+    anything reads the files back.
+    """
+    ids: np.ndarray           # (n_ids,)   segmentation IDs, ascending
+    flux: np.ndarray          # (n_ids, nz)
+    var: np.ndarray           # (n_ids, nz)
+    nspax: np.ndarray         # (n_ids, nz)
+    path: Path
 
 
 def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
@@ -100,21 +116,24 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
     return flux, var, nspax
 
 
-def object_spectra(work, cube, out=None, var_cube=None, top=20):
-    """Write the summed spectra of `work`'s sources into `out`; return that directory.
+def object_spectra(cube, white, seg, out, var_cube=None, top=20,
+                   keep_intermediate=True):
+    """Sum every source's spectrum over the spaxels its segmentation ID covers.
+
+    white and seg come from step1 and from the segmentation check, in memory:
+    whitelight() returns the image, place_segmentation() returns the map. With
+    keep_intermediate the four summed arrays are written into `out` as well.
 
     top only sets how many rows of the SNR table are printed. It changes nothing that
     is saved -- the table is there to notice a source that came out far weaker than
     the rest, which no saved array announces on its own.
     """
-    work = Path(work)
-    step01 = work / "step01"
-    out = Path(out) if out else work / "step02"
-    out.mkdir(parents=True, exist_ok=True)
-    print(f"workspace {work}   cube {Path(cube).name}")
+    out = Path(out)
+    if keep_intermediate:
+        out.mkdir(parents=True, exist_ok=True)
+    print(f"spectra -> {out}   cube {Path(cube).name}")
 
-    white = fits.getdata(step01 / "whitelight.fits")
-    seg = fits.getdata(step01 / "seg.fits")
+    white, seg = white.data, seg.data
 
     valid_mask  = white != 0
     source_mask = (seg > 0) & valid_mask
@@ -134,12 +153,13 @@ def object_spectra(work, cube, out=None, var_cube=None, top=20):
     for k in order[:top]:
         print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
 
-    np.save(out / "object_ids.npy",   ids)
-    np.save(out / "object_flux.npy",  flux)
-    np.save(out / "object_var.npy",   var)
-    np.save(out / "object_nspax.npy", nspax)
-    print("saved ->", out)
-    return out
+    if keep_intermediate:
+        np.save(out / "object_ids.npy",   ids)
+        np.save(out / "object_flux.npy",  flux)
+        np.save(out / "object_var.npy",   var)
+        np.save(out / "object_nspax.npy", nspax)
+        print("saved ->", out)
+    return SourceSpectra(ids, flux, var, nspax, out)
 
 
 # Without this the file would import and exit 0 when run, which reads as having

@@ -17,9 +17,11 @@ comes from.
     from skymodel import run_pointing
     run_pointing("configs/p01.yaml")
 
-The products of every step go to disk, under {output}/step01 ... step06. That is
-deliberate: the products are the interface the evaluation scripts read, and peak memory
-stays at the cost of the largest single step rather than the sum of all six.
+Each step is handed what the earlier ones returned; only the cube is opened again by
+every step that needs it. The products still go to disk, under {output}/step01 ...
+step06, because they are the interface the evaluation scripts read -- but nothing in
+the pipeline reads them back. A config may set `keep_intermediate: false` to write
+only step06's, which are the deliverable.
 
 The four steps that fit -- sky_basis, classify_sources, fit_s_field, subtract_sky --
 hold BLAS at one thread while they work and lift the limit again when they return.

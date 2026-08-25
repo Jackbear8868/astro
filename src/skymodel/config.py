@@ -32,6 +32,13 @@ SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
 # a decision to run on headers that disagree.
 MAX_GRID_OFFSET = 0.1
 
+# Whether steps 1-5 leave their products on disk. The steps hand their results to
+# each other in memory, so those products are written for the reader rather than
+# for the pipeline: the evaluation scripts read them, and they are the only record
+# of what the middle of a run looked like. Hence the default. step6's products are
+# the deliverable and are written whatever this says.
+KEEP_INTERMEDIATE = True
+
 
 def _fail(msg):
     raise SystemExit(f"★ config: {msg}")
@@ -161,5 +168,11 @@ def load(path):
     g = cfg.setdefault("max_grid_offset", MAX_GRID_OFFSET)
     if not isinstance(g, (int, float)) or g <= 0:
         _fail(f"max_grid_offset must be a positive number, got {g!r}")
+
+    # Optional for the same reason: a config writes it only to turn it off, and
+    # turning it off is a decision to keep nothing but step6's cubes.
+    k = cfg.setdefault("keep_intermediate", KEEP_INTERMEDIATE)
+    if not isinstance(k, bool):
+        _fail(f"keep_intermediate must be true or false, got {k!r}")
 
     return cfg

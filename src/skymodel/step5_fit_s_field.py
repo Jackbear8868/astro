@@ -15,6 +15,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from astropy.io import fits
@@ -22,9 +23,20 @@ from astropy.io import fits
 from fitting import MIN_COVERAGE, fit_blank
 from plotting import plot_main_group
 from utils import (C_KMS, DZ_MAX, blas_single_thread, build_s_field,
-                   galaxy_redshifts, main_source_group, wavelength_grid)
+                   main_source_group, wavelength_grid)
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class SField(NamedTuple):
+    """What this step hands step6: the field, and where it was written.
+
+    data is the float32 the file holds, not the float64 the fit produced. step6
+    locks s to these numbers, and narrowing them afterwards instead would move
+    the last bits of every spaxel it fits.
+    """
+    data: np.ndarray          # (ny, nx) float32
+    path: Path                # step05/s_hat.npy
 
 
 def _rel(p):
@@ -36,53 +48,47 @@ def _rel(p):
 
 
 @blas_single_thread
-def fit_s_field(work, cube, classification, K, basis="svd",
+def fit_s_field(work, cube, white, seg, sky, classification, K, basis="svd",
         blank_channels="all", min_channel_coverage=MIN_COVERAGE, fix_blank_s_at=None,
         min_source_distance=15.0, min_main_source_distance=50.0, train_exclude_box=None,
-        train_xlim=None, train_ylim=None, train_clip_sigma=8.0, main_source_dz=DZ_MAX):
-    """Write s_hat.npy, s_free.npy, main_group.png and meta.json into step05; return
-    that directory."""
+        train_xlim=None, train_ylim=None, train_clip_sigma=8.0, main_source_dz=DZ_MAX,
+        keep_intermediate=True):
+    """Build the sky-continuum spatial field; return it.
+
+    white, seg, sky and classification are what steps 1, 3 and 4 returned, in
+    memory. With keep_intermediate s_hat.npy, s_free.npy, main_group.png and
+    meta.json are written into step05 as well.
+    """
     work = Path(work)
-    STEP01 = work / "step01"
-    STEP03 = work / "step03"
     CUBE = Path(cube)
     out = work / "step05"
-    out.mkdir(parents=True, exist_ok=True)
+    if keep_intermediate:
+        out.mkdir(parents=True, exist_ok=True)
 
-    seg_path = STEP01 / "seg.fits"
-    seg   = fits.getdata(seg_path)
-    white = np.asarray(fits.getdata(STEP01 / "whitelight.fits"), float)
+    seg_path, seg = seg.path, seg.data
+    white = np.asarray(white.data, float)
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-    # The sky model on disk is sampled on the grid of whatever cube step3 read. A
-    # work directory and a cube from two pointings need only agree in channel count
-    # to run to the end, with every channel of the model offset against the data it
-    # is fitted to, so the grid is checked against this cube instead of assumed.
-    wl_path = STEP03 / "wavelength.npy"
-    wl_air  = np.load(wl_path)
+    # The sky model was learned on the grid of whatever cube step3 read. A config
+    # naming one pointing's cube in step3 and another's here needs only agree in
+    # channel count to run to the end, with every channel of the model offset
+    # against the data it is fitted to, so the grid is checked instead of assumed.
+    wl_air = sky.wavelength
     wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
     if wl_air.shape != wl_cube.shape:
-        raise SystemExit(f"★ {wl_path} has {wl_air.size} channels but {CUBE} has "
-                         f"{wl_cube.size}")
+        raise SystemExit(f"★ step3's sky model has {wl_air.size} channels but "
+                         f"{CUBE} has {wl_cube.size}")
     if not np.allclose(wl_air, wl_cube, atol=1e-6):
-        raise SystemExit(f"★ {wl_path} was not built from {CUBE}: the two wavelength "
-                         f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
+        raise SystemExit(f"★ step3's sky model was not built from {CUBE}: the two "
+                         f"wavelength grids differ by up to "
+                         f"{np.abs(wl_air - wl_cube).max():.4g} A")
 
-    sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
-                     np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")])
-    print(f"sky model from {STEP03.name}")
-
-    classification_file = Path(classification)
-    if not classification_file.exists():
-        raise SystemExit(f"file not found: {classification_file}")
-
-    fit_mask = None
-    if blank_channels == "line1":
-        f = STEP03 / "iter_line_mask.npy"
-        if not f.exists():
-            raise SystemExit(f"{f.name} not found; re-run step3")
-        fit_mask = np.load(f)[0]
+    fit_mask = sky.iter_line_mask[0] if blank_channels == "line1" else None
+    # From here `sky` is the design matrix the spaxel fits use: the continuum as
+    # row 0, the K line vectors under it.
+    sky = np.vstack([sky.continuum, sky.basis[basis]])
+    print(f"sky model {sky.shape}  basis {basis} K{K}")
 
     with fits.open(CUBE, memmap=True) as hdul:
         D = np.asarray(hdul["DATA"].data, np.float32)
@@ -118,20 +124,20 @@ def fit_s_field(work, cube, classification, K, basis="svd",
             sf_box |= (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
 
     # main source group
-    # The redshifts must come from the fit `classification` names; a workspace can hold
-    # the results of several step4 runs at once.
-    tag = classification_file.stem.removeprefix("classification_")
-    mg, mids, mk = main_source_group(seg, white, classification_file.parent,
-                                     main_source_dz, tag=tag)
+    # The redshifts come from the same step4 result the classification does, so the
+    # grouping and the source models cannot end up from two different fits.
+    mg, mids, mk = main_source_group(seg, white, dz_max=main_source_dz,
+                                     redshifts=classification.galaxy_z)
     all_ids = main_source_group(seg, white)[1]
-    z0 = galaxy_redshifts(classification_file.parent, [int(seg[mk])], tag)[int(seg[mk])]
+    z0 = classification.galaxy_z[int(seg[mk])]
     print(f"  main source (brightest pixel y={mk[0]}, x={mk[1]}): {len(mids)} IDs"
           f", {int(mg.sum()):,} px"
           f" (dz <= {main_source_dz:g},"
           f" i.e. {C_KMS * main_source_dz / (1 + z0):.0f} km/s @ z={z0:.4f})")
 
-    plot_main_group(seg, white, mg, mids, all_ids, mk,
-                    out / "main_group.png", title=Path(work).name)
+    if keep_intermediate:
+        plot_main_group(seg, white, mg, mids, all_ids, mk,
+                        out / "main_group.png", title=Path(work).name)
 
     # build field
     t0 = time.time()
@@ -158,13 +164,19 @@ def fit_s_field(work, cube, classification, K, basis="svd",
         raise SystemExit("★ s_hat is NaN in every spaxel; the field was not estimated "
                          f"from the {int(sf_train.sum()):,} training spaxels and is not "
                          "written")
-    np.save(out / "s_hat.npy", s_hat.astype(np.float32))
-    np.save(out / "s_free.npy", s_free.reshape(ny, nx).astype(np.float32))
+    # Narrowed once, here, and step6 is given these numbers rather than the wider
+    # ones they came from: the file and the fit have to hold the same field.
+    s_hat32 = s_hat.astype(np.float32)
+    s_hat_path = out / "s_hat.npy"
+    if keep_intermediate:
+        np.save(s_hat_path, s_hat32)
+        np.save(out / "s_free.npy", s_free.reshape(ny, nx).astype(np.float32))
 
     meta = dict(
         step="s_field",
-        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(STEP03)),
-        classification=str(_rel(classification_file)), basis=basis, K=K,
+        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)),
+        sky_dir=str(_rel(work / "step03")),
+        classification=str(_rel(classification.path)), basis=basis, K=K,
         blank_channels=blank_channels, fix_blank_s_at=fix_blank_s_at,
         min_channel_coverage=min_channel_coverage,
         sky_amplitude_params=dict(
@@ -180,10 +192,11 @@ def fit_s_field(work, cube, classification, K, basis="svd",
         git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                   capture_output=True, text=True,
                                   cwd=ROOT).stdout.strip())
-    (out / "meta.json").write_text(
-        json.dumps(meta, ensure_ascii=False, indent=2))
-    print(f"saved -> {out}")
-    return out
+    if keep_intermediate:
+        (out / "meta.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2))
+        print(f"saved -> {out}")
+    return SField(s_hat32, s_hat_path)
 
 
 # Without this the file would import and exit 0 when run, which reads as having

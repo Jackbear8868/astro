@@ -47,60 +47,53 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
 
 
 @blas_single_thread
-def subtract_sky(work, cube, classification, s_field, K, basis="svd",
-        blank_channels="all", min_channel_coverage=MIN_COVERAGE):
-    """Write the sky-subtracted and sky-model cubes into step06; return that directory."""
+def subtract_sky(work, cube, white, seg, sky, classification, s_field, K,
+        basis="svd", blank_channels="all", min_channel_coverage=MIN_COVERAGE):
+    """Write the sky-subtracted and sky-model cubes into step06; return that directory.
+
+    white, seg, sky, classification and s_field are what the earlier steps
+    returned, in memory. This step's products are the deliverable, so they are
+    written whatever keep_intermediate said about the ones before them.
+    """
     work = Path(work)
-    STEP01 = work / "step01"
-    STEP03 = work / "step03"
     CUBE = Path(cube)
     out = work / "step06"
     out.mkdir(parents=True, exist_ok=True)
 
-    seg_path = STEP01 / "seg.fits"
-    seg   = fits.getdata(seg_path)
-    white = np.asarray(fits.getdata(STEP01 / "whitelight.fits"), float)
+    seg_path, seg = seg.path, seg.data
+    white = np.asarray(white.data, float)
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-    # The sky model on disk is sampled on the grid of whatever cube step3 read, and
-    # the source templates are about to be redshifted onto that same grid. A work
-    # directory and a cube from two pointings need only agree in channel count to run
-    # to the end, with model and data offset against each other, so the grid is
-    # checked against this cube instead of assumed.
-    wl_path = STEP03 / "wavelength.npy"
-    wl_air  = np.load(wl_path)
+    # The sky model was learned on the grid of whatever cube step3 read, and the
+    # source templates are about to be redshifted onto that same grid. A config
+    # naming one pointing's cube in step3 and another's here needs only agree in
+    # channel count to run to the end, with model and data offset against each
+    # other, so the grid is checked instead of assumed.
+    wl_air  = sky.wavelength
     wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
     if wl_air.shape != wl_cube.shape:
-        raise SystemExit(f"★ {wl_path} has {wl_air.size} channels but {CUBE} has "
-                         f"{wl_cube.size}")
+        raise SystemExit(f"★ step3's sky model has {wl_air.size} channels but "
+                         f"{CUBE} has {wl_cube.size}")
     if not np.allclose(wl_air, wl_cube, atol=1e-6):
-        raise SystemExit(f"★ {wl_path} was not built from {CUBE}: the two wavelength "
-                         f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
+        raise SystemExit(f"★ step3's sky model was not built from {CUBE}: the two "
+                         f"wavelength grids differ by up to "
+                         f"{np.abs(wl_air - wl_cube).max():.4g} A")
 
     wl_vac = air_to_vacuum(wl_air)
-    sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
-                     np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")])
-    print(f"sky model from {STEP03.name}")
+    fit_mask = sky.iter_line_mask[0] if blank_channels == "line1" else None
+    # From here `sky` is the design matrix the spaxel fits use: the continuum as
+    # row 0, the K line vectors under it.
+    sky = np.vstack([sky.continuum, sky.basis[basis]])
+    print(f"sky model {sky.shape}  basis {basis} K{K}")
 
-    classification_file = Path(classification)
-    if not classification_file.exists():
-        raise SystemExit(f"file not found: {classification_file}")
-    classification = np.load(classification_file)
-    print(f"source model from {classification_file.name}: {len(classification['id'])} sources")
+    print(f"source model from {classification.path.name}: "
+          f"{len(classification.data['id'])} sources")
 
-    templates = build_templates(classification, wl_vac)
+    templates = build_templates(classification.data, wl_vac)
 
-    s_field = Path(s_field)
-    s_hat_2d = np.load(s_field)
-    print(f"s-field from {s_field}  median {np.nanmedian(s_hat_2d):.5f}")
-
-    fit_mask = None
-    if blank_channels == "line1":
-        f = STEP03 / "iter_line_mask.npy"
-        if not f.exists():
-            raise SystemExit(f"{f.name} not found; re-run step3")
-        fit_mask = np.load(f)[0]
+    s_hat_2d = s_field.data
+    print(f"s-field from {s_field.path}  median {np.nanmedian(s_hat_2d):.5f}")
 
     with fits.open(CUBE, memmap=True) as hdul:
         hdr_pri  = hdul[0].header.copy()
@@ -176,9 +169,10 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd",
 
     meta = dict(
         step="fit_sky",
-        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(STEP03)),
-        classification=str(_rel(classification_file)), basis=basis, K=K,
-        s_field=str(_rel(Path(s_field))),
+        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)),
+        sky_dir=str(_rel(work / "step03")),
+        classification=str(_rel(classification.path)), basis=basis, K=K,
+        s_field=str(_rel(s_field.path)),
         blank_channels=blank_channels, min_channel_coverage=min_channel_coverage,
         n_blank=int(blank.sum()), n_source=n_src_tot,
         n_source_regions=len(rids), n_template_regions=len(templates),

@@ -6,6 +6,7 @@ the blob holding its brightest pixel, and the evaluation figures use it as their
 background.
 """
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from astropy.io import fits
@@ -16,17 +17,33 @@ matplotlib.use("Agg")              # must be set before importing pyplot: render
 import matplotlib.pyplot as plt
 
 
-def whitelight(cube, out, rows=32):
-    """Write whitelight.fits and its preview png into `out`; return the fits path.
+class WhiteLight(NamedTuple):
+    """What this step hands the ones after it.
 
-    The path comes back rather than being rebuilt by the caller: the pipeline hands
-    it to the segmentation check, and a filename spelled out in two places drifts.
+    The header travels with the image because the segmentation check asks where
+    each pixel points on the sky, which the array on its own cannot answer; every
+    other consumer reads only `data`.
+    """
+    data: np.ndarray          # (ny, nx), the collapsed image, 0 outside the field
+    header: fits.Header       # the cube's celestial WCS
+
+
+def whitelight(cube, out, rows=32, keep_intermediate=True):
+    """Collapse `cube` along wavelength; return the image and its WCS.
+
+    The image comes back rather than being read from the file again by everyone
+    downstream: a step that reads its input from disk can be handed a file an
+    earlier run left there, and nothing says so.
+
+    With keep_intermediate the same image is written to `out` as whitelight.fits
+    plus a preview png, which is what the evaluation scripts read.
 
     rows is the number of image rows collapsed at a time. Affects only memory and
     speed, not the result.
     """
     cube, out = Path(cube), Path(out)
-    out.mkdir(parents=True, exist_ok=True)
+    if keep_intermediate:
+        out.mkdir(parents=True, exist_ok=True)
     white_fits = out / "whitelight.fits"
     white_png = out / "whitelight.png"
 
@@ -48,20 +65,23 @@ def whitelight(cube, out, rows=32):
         # matching shapes do not guarantee alignment. celestial extracts the two sky
         # axes and drops the wavelength axis.
         hdr = WCS(hdul["DATA"].header).celestial.to_header()
+
+    if keep_intermediate:
         fits.writeto(white_fits, white, hdr, overwrite=True)
 
-    fig = plt.figure(figsize=(6, 6))
-    plt.imshow(white, origin="lower", cmap="gray",
-               vmin=np.nanpercentile(white, 5),
-               vmax=np.nanpercentile(white, 99))
-    plt.colorbar()
-    fig.savefig(white_png, dpi=130)
-    # Closed explicitly: whitelight() is called in-process by the pipeline, and figures left
-    # open accumulate for the whole run instead of dying with a short-lived process.
-    plt.close(fig)
+        fig = plt.figure(figsize=(6, 6))
+        plt.imshow(white, origin="lower", cmap="gray",
+                   vmin=np.nanpercentile(white, 5),
+                   vmax=np.nanpercentile(white, 99))
+        plt.colorbar()
+        fig.savefig(white_png, dpi=130)
+        # Closed explicitly: whitelight() is called in-process by the pipeline, and figures left
+        # open accumulate for the whole run instead of dying with a short-lived process.
+        plt.close(fig)
+        print(f"saved -> {white_fits}")
 
-    print(f"saved -> {white_fits}")
-    return white_fits
+    print(f"white light {white.shape} {white.dtype}")
+    return WhiteLight(white, hdr)
 
 
 # Without this the file would import and exit 0 when run, which reads as having
