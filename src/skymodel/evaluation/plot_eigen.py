@@ -39,8 +39,8 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT  # noqa: E402
-from templates import (DWARF_DIR, load_ascii_template, load_eigen_galaxy,  # noqa: E402
-                       load_eigen_qso)
+from utils import (DWARF_DIR, load_ascii_template, load_eigen_galaxy,  # noqa: E402
+                   load_eigen_qso)
 
 FIGURES = EVAL / "templates"
 

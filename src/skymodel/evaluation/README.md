@@ -57,7 +57,7 @@ results/skymodel/evaluation/
 | `seg_id_map.py` | 任一份 segmentation 的 source ID 對照圖 | `masking/` |
 | `seg_slide_map.py` | 同一張源圖，去掉周邊資訊，投影片用 | `masking/` |
 | `main_group_map.py` | 主源怎麼從被拆散的 seg ID 拼回來 | `pNN/` |
-| ↑ | step5 每跑一顆就已經畫同一張到 `pNN/step05/main_group.png`(同一個 `plotting.plot_main_group`,逐像素相同)。這支多的是：一次跑多顆、印出被剔除的 ID 與源流量佔比 | |
+| ↑ | step5 每跑一顆就已經畫同一張到 `pNN/step05/main_group.png`(同一個 `utils.plot_main_group`,逐像素相同)。這支多的是：一次跑多顆、印出被剔除的 ID 與源流量佔比 | |
 | `main_group_spec.py` | 相鄰整團的每個成員，用光譜判斷是不是主星系的一部分 | 只印數字 |
 | `halo_sources.py` | 放大看主星系：延展光上與周圍偵測到了什麼 | `pNN/masking/` |
 

@@ -19,9 +19,8 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
-from fitting import MIN_COVERAGE, N_SRC, build_templates, fit_blank, fit_source
-from templates import air_to_vacuum
-from utils import blas_single_thread, wavelength_grid
+from utils import (MIN_COVERAGE, N_SRC, air_to_vacuum, blas_single_thread,
+                   build_templates, fit_blank, fit_source, wavelength_grid)
 
 ROOT = Path(__file__).resolve().parents[2]
 

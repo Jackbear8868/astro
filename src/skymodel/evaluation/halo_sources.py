@@ -46,7 +46,7 @@ from utils import DZ_MAX, main_source_group  # noqa: E402
 
 FIGURES = EVAL / "masking"
 
-# The main group's outline. Orange is what plotting.plot_main_group already uses for
+# The main group's outline. Orange is what utils.plot_main_group already uses for
 # the same object, and repeating it means the two figures cannot be misread as showing
 # two different footprints.
 C_MAIN = "#ff7f0e"

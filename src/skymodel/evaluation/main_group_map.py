@@ -20,7 +20,7 @@ separates it out.
     right  after: those that passed the redshift criterion and were kept
 
 step5 already draws this for the pointing it is running, into step05/main_group.png,
-by calling the same plotting.plot_main_group. This script exists for the two things
+by calling the same utils.plot_main_group. This script exists for the two things
 that one cannot do: several pointings in one command, and the numbers underneath --
 which IDs were rejected, and how much of the field's flux the group holds.
 
@@ -39,9 +39,8 @@ matplotlib.use("Agg")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, load_field, pointing_dir  # noqa: E402
-from plotting import plot_main_group  # noqa: E402
 from products import fit_dirs  # noqa: E402
-from utils import DZ_MAX, main_source_group  # noqa: E402
+from utils import DZ_MAX, main_source_group, plot_main_group  # noqa: E402
 
 
 def step04_tag(W, run=None):

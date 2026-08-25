@@ -1,12 +1,39 @@
-"""Shared utilities.
+"""Everything the six pipeline steps share.
 
-Two groups:
-  * spectral direction -- running median, iterative sky-line detection
-    (estimate_continuum etc.)
-  * spatial direction -- building a smooth field from per-spaxel coefficients
-    (the s-field section in the second half of this file)
+The sections below, in order:
 
-plus blas_single_thread, the thread limit the fitting steps run under.
+  * thread control -- the one-thread BLAS limit the fitting steps run under
+  * wavelength axis -- the channel grid of a cube, and the air-to-vacuum
+    conversion everything downstream is evaluated in
+  * sky continuum and line detection -- the spectral direction: running
+    median, iterative sky-line detection (estimate_continuum etc.)
+  * source templates -- eigenspectra and the stellar library, read as
+    splines, and the models step6 reconstructs its sources from
+  * linear solves -- the per-spaxel solves steps 5 and 6 share
+  * the main source group -- the whole galaxy, reassembled from the seg IDs
+    the deblender split it into
+  * the s field -- the spatial direction: a smooth field built from the
+    per-spaxel sky-continuum coefficients
+  * figures and display -- the asinh stretch, and the figures the pipeline
+    itself draws
+
+fit_blank and fit_source both minimise the unweighted sum of squared
+residuals. The design matrix is the same for every spaxel (within blank or
+within a source region), so a single pinv call solves all clean spaxels at
+once; only spaxels with bad channels need per-spaxel lstsq, and only those
+violating bounds need per-spaxel lsq_linear.
+
+build_templates selects sources that received a model in step4 and
+redshifts each model onto the MUSE wavelength grid.
+
+The solves run under whatever thread limit their caller set; the steps that
+call them hold BLAS at one thread (blas_single_thread), and so do the two
+solves themselves.
+
+Each figure function draws one self-contained figure and saves it to disk.
+The pipeline steps call these after the corresponding computation; the
+figures are not essential to the pipeline's data flow but let the user
+verify intermediate results without running evaluation scripts separately.
 """
 
 import functools
@@ -14,9 +41,23 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import UnivariateSpline
+from astropy.io import fits
 from scipy import ndimage
+from scipy.interpolate import UnivariateSpline, make_interp_spline
+from scipy.optimize import lsq_linear
 from threadpoolctl import threadpool_limits
+import matplotlib
+matplotlib.use("Agg")              # must be set before importing pyplot: render to file, not screen
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+# ---------------------------------------------------------------------------
+# thread control
+# ---------------------------------------------------------------------------
 
 
 def blas_single_thread(fn):
@@ -43,6 +84,11 @@ def blas_single_thread(fn):
     return limited
 
 
+# ---------------------------------------------------------------------------
+# wavelength axis
+# ---------------------------------------------------------------------------
+
+
 def wavelength_grid(header):
     """The wavelength of every channel of a cube, from its DATA header.
 
@@ -63,6 +109,34 @@ def wavelength_grid(header):
     nz = header["NAXIS3"]
     return (header["CRVAL3"]
             + (np.arange(nz, dtype=np.float64) + 1 - header["CRPIX3"]) * header["CD3_3"])
+
+
+AIR_MIN = 2000.0        # air wavelengths are undefined where air stops transmitting
+
+
+def air_to_vacuum(lam_air):
+    """Convert air wavelengths to vacuum (Morton 2000, IAU standard).
+
+    The MUSE cube's CTYPE3 = AWAV (air wavelength), while the templates and
+    eigenspectra are all in vacuum wavelength. Without conversion there is a
+    systematic redshift offset of ~83 km/s.
+
+    Valid above about 2000 A only. The two resonance terms have poles at
+    1602.8 A and 876.7 A, so below that the result is neither correct nor
+    monotonic -- which is not a limitation in practice, since air does not
+    transmit there and "air wavelength" has no meaning either.
+    """
+    s2 = (1e4 / lam_air) ** 2
+    n = (1.0
+         + 8.336624212083e-5
+         + 2.408926869968e-2 / (130.1065924522 - s2)
+         + 1.599740894897e-4 / (38.92568793293 - s2))
+    return lam_air * n
+
+
+# ---------------------------------------------------------------------------
+# sky continuum and line detection -- the spectral direction
+# ---------------------------------------------------------------------------
 
 
 def running_median(spectrum, window=300):
@@ -148,60 +222,367 @@ def load_line_masks(masks, cumulative=True):
 
 
 # ---------------------------------------------------------------------------
-# s field -- build a spatial field from the per-spaxel sky-continuum
-# coefficient s
+# source templates -- eigenspectra and the stellar library, read as splines
 # ---------------------------------------------------------------------------
-# Why this is needed: if s is solved freely per spaxel, a spaxel adjacent to
-# a source that sees leaked source light can only explain it by raising its
-# own s -- that per-spaxel degree of freedom is the channel through which
-# the sky model absorbs source flux. Replacing it with "build a field from
-# spaxels far from all sources, then extrapolate to the source vicinity"
-# means one spaxel's data cannot budge the field, so source light has nowhere
-# to go inside the sky model and stays in the residual (= is preserved).
-#
-# The functional form of the field (see rowcol_field):
-#
-#     s_hat(x, y) = mu + a(y) + b(x)
-#
-# describes axis-aligned striping caused by the instrument (extending along
-# entire rows/columns, neither sky nor source).
 
 
-def arcsinh_stretch(img, valid=None, soft=0.02):
-    """asinh stretch for display -- returns (stretched image, vmax).
+# The stellar library: where its files are, and the name written into the products.
+# The two are defined together -- kept apart, a product could claim one library while
+# the code read another directory, and that error is invisible in the output.
+DWARF_DIR    = ROOT / "data/stellar_templates"      # two-column ASCII, luminosity
+                                                    # class V main-sequence templates
+STAR_LIBRARY = "dwarf"
 
-    Maps the dynamic range of a white-light image into a displayable
-    range: linear in the faint parts, logarithmic in the bright parts.
-    vmin is always 0; vmax = arcsinh(1 / soft).
+EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
+EIGEN_QSO = ROOT / "data/qso_eigen_linear_55732.dat"
+
+
+def load_ascii_template(path, air=True):
+    """Read one two-column ASCII template (wavelength, flux) and return a cubic
+    B-spline in rest wavelength.
+
+    Gaps are filled with 0 in these files, which a fit would read as "the flux
+    really is zero there"; they become NaN and are dropped, so the spline's
+    domain is the range that actually carries data, and redshift_to_grid
+    returns NaN outside it.
+
+    air=True converts the wavelength axis to vacuum, because everything
+    downstream is evaluated at vacuum wavelengths; a template left in air is
+    fitted about 83 km/s too blue. The axis is cut at AIR_MIN first: below it
+    an air wavelength has no meaning, and air_to_vacuum is not even monotonic
+    there (see its docstring), which would make the spline unbuildable.
     """
-    m = np.isfinite(img) & (img != 0)
-    v = np.nanpercentile(img[m], 99.5)
-    a = img if valid is None else np.where(valid, img, np.nan)
-    return np.arcsinh(a / (soft * v)), np.arcsinh(1 / soft)
+    lam, y = np.loadtxt(path, unpack=True)
+    y = y.astype(np.float64)
+    y[y == 0] = np.nan
+    good = np.isfinite(y)
+    if air:
+        good &= lam >= AIR_MIN
+        lam = air_to_vacuum(lam)
+    return make_interp_spline(lam[good], y[good], k=3)
 
 
-def scale(a):
-    """Robust spread (p84 - p16) / 2.
+def _eigen_spline(lam_rest, F):
+    """Turn (n_comp, n_wave) eigenspectra into a "batch" spline.
 
-    rms/std cannot be used: s has a few spaxels with failed fits whose
-    outlier values are extreme, and rms/std would be dominated by those few,
-    no longer measuring the overall spread.
+    The constant padding at both ends is filler, not data -- the file repeats
+    the last real value all the way to the boundary. Including it in the
+    spline would produce an artificial flat line there, which the fit would
+    happily use to absorb residuals. The boundary of the real data is where
+    all components simultaneously stop changing.
+
+    y is passed as (n_wave, n_comp), so a single evaluation returns all
+    components. The cost of a spline is dominated by the binary search for
+    the knot interval, which is independent of the number of components, so
+    evaluating 4 components is as fast as 1 and avoids repeating the search.
+
+    Returns
+    -------
+    BSpline
+        Evaluated shape is (n_out, n_comp); positions not covered are NaN.
     """
-    a = a[np.isfinite(a)]
-    return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2) if a.size else np.nan
+    d = np.abs(np.diff(F, axis=1)).max(axis=0)
+    i = np.flatnonzero(d > 0)
+    g = slice(i[0], i[-1] + 2)                  # +2: diff is one shorter, and the right endpoint must be included
+    return make_interp_spline(lam_rest[g], F[:, g].T, k=3)
 
 
-def nanmed(a, axis):
-    """Median along axis; returns 0 instead of NaN when an entire row/column
-    is all NaN.
+def load_eigen_galaxy(path):
+    """Bolton et al. 2012 galaxy eigenspectra (FITS bintable) -> batch spline.
 
-    All-NaN means that row has no training points, so the offset cannot be
-    estimated. Setting 0 is "apply no correction" -- the only honest choice
-    in that situation, though it is an assumption, not a measurement.
+    Real data covers 1183-9840 A (rest), 4 components. The chi2 column
+    contains uninitialised memory (1e-310 to 1e307) -- do not touch. The
+    .spec file in the same directory is a text version of the same data,
+    kept to only 4 decimal places -- higher-order components cross zero,
+    so truncation causes divergent relative error; use the FITS version.
     """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        return np.nan_to_num(np.nanmedian(a, axis=axis))
+    d = fits.open(path)[1].data
+    lam = np.asarray(d["wave"], np.float64)
+    F   = np.vstack([np.asarray(d[f"flux{i}"], np.float64) for i in range(1, 5)])
+    return _eigen_spline(lam, F)
+
+
+def load_eigen_qso(path):
+    """QSO eigenspectra (text file: column 1 = wavelength, rest = components)
+    -> batch spline.
+
+    Real data covers 605-8356 A (rest), 4 components. The filename says
+    "linear", but the wavelength grid is actually logarithmic like the galaxy
+    file (dlog10 = 1e-4).
+    """
+    q = np.loadtxt(path)
+    return _eigen_spline(q[:, 0], q[:, 1:].T)
+
+
+def redshift_to_grid(spline, z, lam_muse):
+    """Redshift the template to z and resample onto lam_muse.
+
+    Channels not covered by the template are NaN. A single template returns
+    shape (nz,); the batch spline of eigenspectra returns (nz, n_comp).
+    """
+    return spline(lam_muse / (1.0 + z), extrapolate=False)
+
+
+def build_templates(best, lam_vac):
+    """Select the sources that receive a model and redshift each source model
+    onto the MUSE wavelength grid.
+
+    The stellar library the classification was fitted with is checked
+    against the one available here rather than assumed: a template name says
+    nothing about which library it came from, so reconstructing a source from
+    the wrong library would be silent. Classifications produced by a library
+    that is no longer shipped are refused instead of reinterpreted.
+
+    Returns
+    -------
+    dict
+        {segmentation ID: model redshifted to lam_vac, shape (nz, n_comp)}
+    """
+    eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
+    # A file without this field was written before the field existed, and every one
+    # of those came from the SDSS stellar library. Membership is asked of `best`
+    # itself rather than of .files, so that step6 can hand over the fields step4
+    # returned without writing and reading an npz to get an object with that
+    # attribute; an NpzFile answers `in` the same way a dict does.
+    lib   = str(best["star_library"]) if "star_library" in best else "sdss"
+    if lib != STAR_LIBRARY:
+        raise SystemExit(
+            f"★ this classification was fitted with the {lib!r} stellar library, "
+            f"which is no longer available; re-run step4 to refit it with "
+            f"{STAR_LIBRARY!r}")
+    A = np.asarray(best["A"], float)
+    # Two different things leave a source without a model, and nansum() of a row
+    # returns 0.0 for both: a row that is NaN in every component, which is a source
+    # step4 never solved, and a row that is finite and adds up to zero, which is a
+    # source solved to no amplitude. Neither can be redshifted onto the grid, but
+    # they are not the same event, so they are separated before the sum is taken and
+    # reported apart. np.abs is kept: without it a positive and a negative component
+    # cancelling would read as an amplitude of zero rather than as the model it is.
+    unsolved = np.isnan(A).all(axis=1)
+    keep     = ~unsolved & (np.nansum(np.abs(A), axis=1) > 0)
+    zero_amp = ~unsolved & ~keep
+
+    out   = {}
+    for i in np.flatnonzero(keep):
+        g, name = str(best["group"][i]), str(best["template"][i])
+        spline = eigen[g] if g in eigen else load_ascii_template(DWARF_DIR / f"{name}.dat")
+        T = redshift_to_grid(spline, float(best["z"][i]), lam_vac)
+        out[int(best["id"][i])] = T if T.ndim == 2 else T[:, None]
+    print(f"sources with a model: {int(keep.sum())} / {A.shape[0]}"
+          f"  ({int(unsolved.sum())} unsolved, {int(zero_amp.sum())} zero amplitude)")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# linear solves -- the per-spaxel solves steps 5 and 6 share
+# ---------------------------------------------------------------------------
+
+
+N_SRC        = 4
+MIN_COVERAGE = 0.9
+# Spaxels multiplied at a time in the blank solve. A module constant rather than a
+# parameter: it trades the size of one temporary against the number of BLAS calls
+# and cannot change what fit_blank returns, so there is nothing for a caller to
+# decide about it. A power of two, so that it stays a whole number of the column
+# groups BLAS walks in (see fit_blank) whatever width those groups have here --
+# they are powers of two, and a chunk that is not a whole number of them answers
+# in different last bits.
+SPAXEL_CHUNK = 256
+
+
+def as_vector(s_fix, n):
+    """Normalise s_fix into a length-n vector; None is returned unchanged."""
+    if s_fix is None:
+        return None
+    return np.broadcast_to(np.asarray(s_fix, float), (n,))
+
+
+# Decorated as well as the steps that call it: the limit belongs to the solve, so a
+# diagnostic script that calls this directly gets the numbers the pipeline got.
+@blas_single_thread
+def fit_blank(D, sky, fit_mask=None, s_fix=None):
+    """Coefficients for blank spaxels, with a non-negativity constraint on s.
+
+    Parameters
+    ----------
+    D : ndarray, shape (nz, n)
+    sky : ndarray, shape (K+1, nz)
+    fit_mask : ndarray or None, shape (nz,)
+    s_fix : scalar, ndarray or None, shape (n,)
+        s held at this value. Only the line coefficients are then solved for,
+        and the bound on s has nothing left to constrain.
+
+    Returns
+    -------
+    ndarray, shape (K+1, n)
+    """
+    n    = D.shape[1]
+    s    = as_vector(s_fix, n)
+    C    = None if s is None else sky[0]
+    A    = sky if s is None else sky[1:]
+    K    = A.shape[0]
+    coef = np.full((K, n), np.nan)
+
+    good = np.isfinite(D)
+    if C is not None:
+        # The residual being fitted is D - s*C, which is non-finite wherever D
+        # is, plus every channel where C is and every spaxel where s is.
+        good &= np.isfinite(C)[:, None]
+        good &= np.isfinite(s)
+    if fit_mask is not None:
+        good &= fit_mask[:, None]
+
+    # An all-true row index is not free -- numpy copies every row of both arrays
+    # to honour it -- and D is C-contiguous already, so with no mask the rows are
+    # taken as they lie.
+    rows  = slice(None) if fit_mask is None else fit_mask
+    clean = good[rows].all(axis=0)
+    P     = np.linalg.pinv(A[:, rows].T)
+
+    # P is float64 and D is float32, and a mixed-dtype multiply widens its float32
+    # side first, so one call covering every clean spaxel builds a double-width copy
+    # of the whole block just to multiply it. Taking the spaxels a chunk at a time
+    # builds one chunk of that copy instead. Output column j is read off input
+    # column j and nothing else, so which columns share a call cannot change the sum
+    # each column gets -- but for the sum to be the same bit for bit it has to be
+    # the same instructions too. BLAS takes the columns in groups of four and
+    # finishes what is left over with a separate kernel, so a chunk that is not a
+    # whole number of groups wide puts its last columns through a kernel the
+    # unchunked multiply never uses and their last bits move. Chunks are therefore
+    # whole groups wide, and a lone final column -- a matrix-vector product, a
+    # different routine again -- is folded into the chunk before it.
+    #
+    # The rows are selected once, above the loop: with a mask that selection copies
+    # the rows it keeps, and per chunk it would copy them again every time; with no
+    # mask it is a view either way. The clean spaxels are carried as positions
+    # rather than as the mask so that a chunk is a run of consecutive output
+    # columns, which is what those widths are counted in.
+    Drows = D[rows]
+    cols  = np.flatnonzero(clean)
+    fit   = np.empty((K, cols.size))
+    width = max(SPAXEL_CHUNK // 4, 1) * 4
+    edges = list(range(0, cols.size, width)) + [cols.size]
+    if len(edges) > 2 and edges[-1] - edges[-2] == 1:
+        del edges[-2]
+    for a, b in zip(edges, edges[1:]):
+        fit[:, a:b] = P @ Drows[:, cols[a:b]]
+
+    if C is not None:
+        # Least squares is linear in the data it is given, so
+        #     pinv(A) @ (D - s*C) == pinv(A) @ D - (pinv(A) @ C) * s
+        # is an identity, not an approximation. Taken from right to left it
+        # subtracts s*C from the K coefficients rather than from the (nz, n)
+        # data, and the cube-sized D - s*C is never formed.
+        fit -= (P @ C[rows])[:, None] * s[clean]
+    coef[:, clean] = fit
+
+    for j in np.flatnonzero(~clean):
+        g = good[:, j]
+        if g.sum() <= K:
+            continue
+        y = D[g, j] if C is None else D[g, j] - s[j] * C[g]
+        coef[:, j] = np.linalg.lstsq(A[:, g].T, y, rcond=None)[0]
+
+    if C is not None:
+        out = np.full((sky.shape[0], n), np.nan)
+        out[0], out[1:] = s, coef
+        return out
+
+    lb = np.r_[0.0, np.full(K - 1, -np.inf)]
+    ub = np.full(K, np.inf)
+    for j in np.flatnonzero(coef[0] < 0):
+        g = good[:, j]
+        coef[:, j] = lsq_linear(sky[:, g].T, D[g, j],
+                                bounds=(lb, ub), method="bvls").x
+    return coef
+
+
+# Decorated as well as the steps that call it: the limit belongs to the solve, so a
+# diagnostic script that calls this directly gets the numbers the pipeline got.
+@blas_single_thread
+def fit_source(D, sky, T, s_fix=None, progress=False):
+    """A batch of source spaxels sharing the same template.
+
+    Returns
+    -------
+    ndarray, shape (N_SRC+K, n)
+        Fixed layout (a1...a4, s, c1...c_{K-1}).
+    """
+    K      = sky.shape[0]
+    n_comp = 0 if T is None else T.shape[1]
+    n      = D.shape[1]
+    out    = np.full((N_SRC + K, n), np.nan)
+
+    rows   = (([] if T is None else list(T.T))
+              + ([] if s_fix is not None else [sky[0]])
+              + list(sky[1:]))
+    design = np.vstack(rows)
+    p      = design.shape[0]
+
+    lb = np.full(p, -np.inf)
+    if n_comp == 1:
+        lb[0] = 0.0
+    if s_fix is None:
+        lb[n_comp] = 0.0
+    ub = np.full(p, np.inf)
+    has_bounds = np.any(np.isfinite(lb))
+
+    sv = as_vector(s_fix, n)
+    y = D if sv is None else D - sv * sky[0][:, None]
+
+    design_good = np.all(np.isfinite(design), axis=0)
+    good = np.isfinite(y) & design_good[:, None]
+
+    clean = good.all(axis=0)
+
+    def _unpack(th, j):
+        out[:n_comp, j]    = th[:n_comp]
+        out[N_SRC, j]      = th[n_comp] if sv is None else (
+            sv[j] if sv.ndim else float(sv))
+        out[N_SRC + 1:, j] = th[n_comp + (sv is None):]
+
+    n_clean = int(clean.sum())
+    if n_clean:
+        P = np.linalg.pinv(design.T)
+        coef = P @ y[:, clean]
+        for idx, j in enumerate(np.flatnonzero(clean)):
+            _unpack(coef[:, idx], j)
+
+    dirty = np.flatnonzero(~clean & (good.sum(axis=0) > p))
+    for j in dirty:
+        g = good[:, j]
+        th = np.linalg.lstsq(design[:, g].T, y[g, j], rcond=None)[0]
+        _unpack(th, j)
+
+    if has_bounds:
+        # lb is in the order the design columns were stacked; out is in the fixed
+        # report order. The two are different orders and line up only when n_comp
+        # happens to equal N_SRC, so the bounds are read through this map instead of
+        # against out row by row -- otherwise a bound is compared with someone else's
+        # coefficient and the violation it exists to catch never fires.
+        design_to_out = (list(range(n_comp))
+                         + ([N_SRC] if s_fix is None else [])
+                         + list(range(N_SRC + 1, N_SRC + K)))
+        theta = out[design_to_out]
+        # A column that got neither solve leaves its design rows NaN, and NaN fails
+        # every comparison; that is not a column within its bounds, it is a column
+        # with nothing to re-solve.
+        solved = np.isfinite(theta).all(axis=0)
+        violators = np.flatnonzero(np.any(theta < lb[:, None], axis=0) & solved)
+        for j in violators:
+            g = good[:, j]
+            th = lsq_linear(design[:, g].T, y[g, j],
+                            bounds=(lb, ub), method="bvls").x
+            _unpack(th, j)
+        if progress and len(violators):
+            print(f"      bounded re-solve: {len(violators)}/{n}", flush=True)
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the main source group -- the whole galaxy, reassembled from its seg IDs
+# ---------------------------------------------------------------------------
 
 
 C_KMS = 299792.458
@@ -367,6 +748,50 @@ def main_source_mask(seg, source_id=None, main_blob=True):
     return m, source_id
 
 
+# ---------------------------------------------------------------------------
+# s field -- build a spatial field from the per-spaxel sky-continuum
+# coefficient s
+# ---------------------------------------------------------------------------
+# Why this is needed: if s is solved freely per spaxel, a spaxel adjacent to
+# a source that sees leaked source light can only explain it by raising its
+# own s -- that per-spaxel degree of freedom is the channel through which
+# the sky model absorbs source flux. Replacing it with "build a field from
+# spaxels far from all sources, then extrapolate to the source vicinity"
+# means one spaxel's data cannot budge the field, so source light has nowhere
+# to go inside the sky model and stays in the residual (= is preserved).
+#
+# The functional form of the field (see rowcol_field):
+#
+#     s_hat(x, y) = mu + a(y) + b(x)
+#
+# describes axis-aligned striping caused by the instrument (extending along
+# entire rows/columns, neither sky nor source).
+
+
+def scale(a):
+    """Robust spread (p84 - p16) / 2.
+
+    rms/std cannot be used: s has a few spaxels with failed fits whose
+    outlier values are extreme, and rms/std would be dominated by those few,
+    no longer measuring the overall spread.
+    """
+    a = a[np.isfinite(a)]
+    return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2) if a.size else np.nan
+
+
+def nanmed(a, axis):
+    """Median along axis; returns 0 instead of NaN when an entire row/column
+    is all NaN.
+
+    All-NaN means that row has no training points, so the offset cannot be
+    estimated. Setting 0 is "apply no correction" -- the only honest choice
+    in that situation, though it is an assumption, not a measurement.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nan_to_num(np.nanmedian(a, axis=axis))
+
+
 def rowcol_field(s, w, n_iter=4):
     """s ~ mu + a(y) + b(x), solved by alternating medians (Tukey's median
     polish).
@@ -487,3 +912,92 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
 
     M, _, _ = rowcol_field(s, train)
     return M, train
+
+
+# ---------------------------------------------------------------------------
+# figures and display
+# ---------------------------------------------------------------------------
+
+
+def arcsinh_stretch(img, valid=None, soft=0.02):
+    """asinh stretch for display -- returns (stretched image, vmax).
+
+    Maps the dynamic range of a white-light image into a displayable
+    range: linear in the faint parts, logarithmic in the bright parts.
+    vmin is always 0; vmax = arcsinh(1 / soft).
+    """
+    m = np.isfinite(img) & (img != 0)
+    v = np.nanpercentile(img[m], 99.5)
+    a = img if valid is None else np.where(valid, img, np.nan)
+    return np.arcsinh(a / (soft * v)), np.arcsinh(1 / soft)
+
+
+def plot_main_group(seg, white, main_mask, main_ids, all_ids, peak,
+                    out_path, title=""):
+    """Two-panel figure: before and after redshift filtering of the main
+    source group.
+
+    Left panel: every seg ID inside the adjacent blob, each in its own
+    colour and labelled with the ID number.  Right panel: only the IDs
+    that passed the redshift criterion, with the connected-component
+    boundary drawn as a dashed contour.
+
+    Parameters
+    ----------
+    seg : 2-d int array
+        Segmentation map.
+    white : 2-d float array
+        White-light image (used as background).
+    main_mask : 2-d bool array
+        Footprint of the final main source group (after filtering).
+    main_ids : list of int
+        Seg IDs kept after redshift filtering.
+    all_ids : list of int
+        Seg IDs in the adjacent blob before filtering.
+    peak : tuple (y, x)
+        Coordinates of the brightest pixel.
+    out_path : path-like
+        Where to save the figure.
+    title : str
+        Figure title (typically the pointing name).
+    """
+    valid = white != 0
+    stretched, vmax = arcsinh_stretch(white, valid)
+
+    fig, ax = plt.subplots(1, 2, figsize=(15, 7.2))
+    cmap = plt.cm.tab20(np.linspace(0, 1, 20))
+    for a in ax:
+        a.imshow(stretched, origin="lower", cmap="gray", vmin=0, vmax=vmax)
+        a.set_xticks([]); a.set_yticks([])
+
+    # left: one colour per seg ID inside the adjacent blob (before filtering)
+    for k, i in enumerate(all_ids):
+        m = seg == i
+        rgba = np.zeros(m.shape + (4,))
+        rgba[m] = list(cmap[k % 20][:3]) + [0.55]
+        ax[0].imshow(rgba, origin="lower")
+        yy, xx = np.nonzero(m)
+        if yy.size > 40:
+            ax[0].text(xx.mean(), yy.mean(), str(i), color="w", fontsize=11,
+                       fontweight="bold", ha="center", va="center",
+                       path_effects=[pe.withStroke(linewidth=2.5,
+                                                   foreground="k")])
+    ax[0].set_title(f"before ({len(all_ids)} sources)", fontsize=12)
+
+    # right: after redshift filtering
+    rgba = np.zeros(main_mask.shape + (4,))
+    rgba[main_mask] = [1.0, 0.5, 0.05, 0.5]
+    ax[1].imshow(rgba, origin="lower")
+    ax[1].contour(main_mask, levels=[0.5], colors="#ff7f0e", linewidths=1.6)
+    lab, _ = ndimage.label(seg > 0)
+    ax[1].contour(lab == lab[peak], levels=[0.5],
+                  colors="#00e5ff", linewidths=0.9, linestyles="--")
+    ax[1].plot(peak[1], peak[0], "w+", ms=14, mew=2)
+    ax[1].set_title(f"after ({len(main_ids)} sources)", fontsize=12)
+
+    if title:
+        fig.suptitle(title, fontsize=14)
+    fig.tight_layout()
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
+    plt.close(fig)

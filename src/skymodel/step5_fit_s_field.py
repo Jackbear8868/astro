@@ -20,10 +20,9 @@ from typing import NamedTuple
 import numpy as np
 from astropy.io import fits
 
-from fitting import MIN_COVERAGE, fit_blank
-from plotting import plot_main_group
-from utils import (C_KMS, DZ_MAX, blas_single_thread, build_s_field,
-                   main_source_group, wavelength_grid)
+from utils import (C_KMS, DZ_MAX, MIN_COVERAGE, blas_single_thread,
+                   build_s_field, fit_blank, main_source_group,
+                   plot_main_group, wavelength_grid)
 
 ROOT = Path(__file__).resolve().parents[2]
 

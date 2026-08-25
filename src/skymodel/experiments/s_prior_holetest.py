@@ -57,10 +57,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from fitting import build_templates                     # noqa: E402
-from templates import air_to_vacuum                      # noqa: E402
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import build_s_field, main_source_group, rowcol_field, scale  # noqa: E402
+from utils import (air_to_vacuum, build_s_field, build_templates,  # noqa: E402
+                   main_source_group, rowcol_field, scale)
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,

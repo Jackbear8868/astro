@@ -53,10 +53,9 @@ import numpy as np
 from scipy.optimize import lsq_linear
 from threadpoolctl import threadpool_limits
 
-from templates import (DWARF_DIR, STAR_LIBRARY,
-                       load_ascii_template, load_eigen_galaxy, redshift_to_grid,
-                       air_to_vacuum)
-from utils import blas_single_thread, load_line_masks
+from utils import (DWARF_DIR, STAR_LIBRARY, air_to_vacuum, blas_single_thread,
+                   load_ascii_template, load_eigen_galaxy, load_line_masks,
+                   redshift_to_grid)
 
 ROOT      = Path(__file__).resolve().parents[2]
 # Where the scans are written. This and _SHARED below are the two names _scan_one

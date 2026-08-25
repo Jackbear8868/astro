@@ -28,9 +28,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from fitting import N_SRC, build_templates  # noqa: E402
-from templates import air_to_vacuum  # noqa: E402
 from products import fit_dirs, spectrum_stats  # noqa: E402
+from utils import N_SRC, air_to_vacuum, build_templates  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 COLORS = ["#ff7f0e", "#1f77b4", "#2ca02c", "#d62728"]
