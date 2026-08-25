@@ -5,9 +5,11 @@ from scipy.interpolate import make_interp_spline
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# 恆星模板庫:檔案在哪裡,以及寫進產物的庫名。兩者綁在一起定義 —— 分開放的話
-# 產物可以宣稱出自某個庫、實際讀的卻是另一個目錄,而那種錯誤從輸出看不出來。
-DWARF_DIR    = ROOT / "data/stellar_templates"      # 兩欄 ASCII,光度型 V 的主序模板
+# The stellar library: where its files are, and the name written into the products.
+# The two are defined together -- kept apart, a product could claim one library while
+# the code read another directory, and that error is invisible in the output.
+DWARF_DIR    = ROOT / "data/stellar_templates"      # two-column ASCII, luminosity
+                                                    # class V main-sequence templates
 STAR_LIBRARY = "dwarf"
 
 AIR_MIN = 2000.0        # air wavelengths are undefined where air stops transmitting

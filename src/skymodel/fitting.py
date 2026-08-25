@@ -53,7 +53,8 @@ def build_templates(best, lam_vac):
         {segmentation ID: model redshifted to lam_vac, shape (nz, n_comp)}
     """
     eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
-    # 沒有這個欄位的檔案是在欄位存在之前寫的,一律出自 SDSS 恆星庫。
+    # A file without this field was written before the field existed, and every one
+    # of those came from the SDSS stellar library.
     lib   = str(best["star_library"]) if "star_library" in best.files else "sdss"
     if lib != STAR_LIBRARY:
         raise SystemExit(

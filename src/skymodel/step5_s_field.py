@@ -151,7 +151,8 @@ def main():
             sf_box |= (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
 
     # main source group
-    # 紅移必須出自 --best 那一次擬合;工作區裡可能同時有好幾次 step4 的結果。
+    # The redshifts must come from the fit --best names; a workspace can hold the
+    # results of several step4 runs at once.
     tag = best_file.stem.removeprefix("classification_")
     mg, mids, mk = main_source_group(seg, white, best_file.parent,
                                      args.main_dz_max, tag=tag)

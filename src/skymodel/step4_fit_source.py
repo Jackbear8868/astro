@@ -1,35 +1,46 @@
-"""源的模板擬合 —— 單階段,固定波長視窗,天光線通道排除在 chi2 之外。
+"""Template fitting for the sources -- one stage, a fixed wavelength window, sky-line
+channels kept out of chi2.
 
-分類的方式
+How a source is classified
 
-    恆星模板與星系本徵譜在**同一組通道**上各自擬合,reduced chi2 低的一組
-    勝出,同時定出紅移。chi2 只算在指定視窗內、且不是天光線的通道上。
+    The stellar templates and the galaxy eigenspectra are fitted separately on the
+    **same set of channels**; whichever branch reaches the lower reduced chi2 wins,
+    and fixes the redshift at the same time. chi2 is summed only over channels that
+    are inside the window and are not sky lines.
 
-    另一種做法是把 33 條模板(恆星+星系+QSO)全部丟在一起比 chi2,通道用全部
-    3801 個 —— 下面兩段說明為什麼不那樣做。
+    The alternative is to throw all 33 templates (stars + galaxies + QSO) into one
+    chi2 comparison over all 3801 channels. The next two paragraphs are why that is
+    not what happens here.
 
-規格來自 reminder.txt:用 line mask、不用線區的通道、恆星與星系各自在一個
-固定的波長視窗裡擬合。視窗的實際值見 --star-window / --gal-window 的預設值,
-不在這裡重複寫 —— 兩個地方寫同一組數字遲早會不同步。
+The specification comes from reminder.txt: use the line mask, leave out the line
+channels, and fit stars and galaxies each inside a fixed wavelength window. The
+window values themselves are the defaults of --star-window / --gal-window and are
+not repeated here -- the same numbers written in two places drift apart eventually.
 
-為什麼排除天光線通道:那些通道的殘差被天空扣除的誤差主導,不是源的資訊。
-把它們算進 chi2,等於讓「哪個模板比較能吸收天空殘差」去決定分類與紅移。
-(blank 區的規則正好相反 —— 那裡只用線區,因為要學的就是天空。)
+Why the sky-line channels are excluded: their residual is dominated by the error of
+the sky subtraction, not by the source. Counting them in chi2 lets "which template
+absorbs the sky residual better" decide the classification and the redshift. (The
+rule for blank spaxels is the opposite -- there only the line channels are used,
+because the sky is exactly what is being learned.)
 
-為什麼用固定視窗:讓每個候選各自用它覆蓋到的通道的話,n_good 會隨 z 變,
-chi2(z) 出現純粹來自通道數的階梯。固定視窗之後,只要視窗落在星系本徵譜
-(靜止 1183–9840 A)在整個掃描 z 範圍內都蓋得住的區間,所有候選的通道集合
-完全相同 —— 階梯消失,chi2 之間可以直接相減。
+Why a fixed window: if every candidate were allowed the channels it happens to
+cover, n_good would change with z and chi2(z) would grow steps that come purely
+from the channel count. With a fixed window -- as long as it lies where the galaxy
+eigenspectra (rest 1183-9840 A) reach across the whole scanned z range -- every
+candidate sees exactly the same channels, the steps disappear, and chi2 values can
+be subtracted from each other.
 
-為什麼分類不用絕對門檻:一個「像不像恆星」的絕對門檻要能用,前提是 reduced
-chi2 的絕對值可信;但天光線殘差與流量刻度誤差會把所有源的 reduced chi2 一起
-抬高,門檻不是太鬆就是全部不過。改成直接比兩組冠軍的大小,分類的可信度則由
-**兩組冠軍的差距**來表達 —— star_red_chi2 與 gal_red_chi2 都寫進輸出,
-差距小就代表這個分類不穩。
+Why the classification uses no absolute threshold: a threshold on "is this
+star-like enough" only works if the absolute value of reduced chi2 means something,
+and sky-line residuals and flux-scale errors lift every source's reduced chi2
+together, so the threshold is either too loose or rejects everything. The two
+branch winners are compared directly instead, and how much to trust the answer is
+carried by **the gap between them** -- star_red_chi2 and gal_red_chi2 are both
+written out, and a small gap says the classification is not firm.
 
-兩個視窗必須相同:reduced chi2 = chi2 / (n_good - n_param),分母裡的
-n_good 由通道集合決定。視窗不同就不是同一個統計量,比大小沒有意義。
-main() 會擋下不一致的設定。
+The two windows have to be equal: reduced chi2 = chi2 / (n_good - n_param), and
+n_good in that denominator is set by the channel set. Different windows are not the
+same statistic, so comparing them means nothing. main() refuses a mismatched pair.
 
     conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
         --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
@@ -37,7 +48,8 @@ main() 會擋下不一致的設定。
 """
 import os
 
-# BLAS 的執行緒數必須在 import numpy 之前設定 —— 函式庫載入時只讀一次。
+# The BLAS thread count has to be set before numpy is imported -- the library reads
+# it once, when it loads.
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
@@ -54,38 +66,47 @@ from templates import (DWARF_DIR, STAR_LIBRARY,
 from utils import load_line_masks
 
 ROOT      = Path(__file__).resolve().parents[2]
-# 這三個必須是模組層級的全域 —— multiprocessing 的 worker 由 fork 產生,
-# 只看得到 fork 當下的模組全域,看不到 main() 的區域變數。
-# main() 依 --work 賦值,在開 Pool 之前。
+# These three have to be module-level globals: multiprocessing forks its workers, and
+# a worker sees the module globals as they were at the fork, not main()'s locals.
+# main() assigns them from --work, before the Pool is opened.
 STEP02B = STEP03 = STEP04 = None
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
-N_SRC    = 4                # A 欄位固定寬度:本徵譜 4 條,恆星只用第 0 欄
+N_SRC    = 4                # fixed width of the A column: 4 eigenspectra, and a star
+                            # uses only column 0
 
-# 兩段各自的波長視窗 (A, 空氣波長)。改這裡就等於改預設值;
-# 也可以在命令列用 --star-window / --gal-window 覆蓋,不必動程式。
-# 視窗會編進輸出的 tag,所以不同視窗的結果各存各的,不互相覆蓋。
-# 下限三者取同一個值,三個視窗的差別才單純是「右邊延伸到哪」。
-# 4600 不等於「從頭開始」—— 13 顆的第一個通道在 4599.6-4600.3 A,但 p14 是
-# 4749.83 A(只有 3681 個通道)。實際起點以各 cube 的第一個通道為準;同一顆
-# 內部的 reduced chi2 比較不受影響,因為兩條分支用同一組通道。
-# 兩個視窗必須相同(見上面「兩個視窗必須相同」那一段),所以 reminder.txt 那組
-# 4600-6000 / 4600-7000 不能照字面用 —— 分母的 n_good 會不同,reduced chi2 之間
-# 就不可比。取兩者的聯集上界 8000,下界維持 reminder.txt 的 4600。
-STAR_WINDOW = (4600.0, 8000.0)      # 恆星模板的擬合視窗
-GAL_WINDOW  = (4600.0, 8000.0)      # 星系本徵譜的擬合視窗(須與上者相同)
-FULL_RANGE  = (4600.0, 9400.0)      # MUSE 全波段,拿來當對照組用
+# The wavelength window of each branch (A, air). Editing here changes the default;
+# --star-window / --gal-window override it without touching the code. The window is
+# encoded into the output tag, so results from different windows sit side by side
+# instead of overwriting each other.
+#
+# All three share a lower bound, so the only thing separating the windows is how far
+# right they reach. 4600 is not "from the beginning" -- 13 pointings start between
+# 4599.6 and 4600.3 A, but p14 starts at 4749.83 A with only 3681 channels. The real
+# start is whatever each cube's first channel is; comparing reduced chi2 within one
+# pointing is unaffected, because both branches use the same channels.
+#
+# The two windows have to be equal (see the paragraph in the module docstring), so
+# reminder.txt's 4600-6000 / 4600-7000 pair cannot be used literally -- the n_good in
+# the denominator would differ and the two reduced chi2 would not be comparable. The
+# upper bound taken is the union of the two, 8000; the lower stays reminder.txt's 4600.
+STAR_WINDOW = (4600.0, 8000.0)      # fitting window for the stellar templates
+GAL_WINDOW  = (4600.0, 8000.0)      # for the galaxy eigenspectra; must equal the above
+FULL_RANGE  = (4600.0, 9400.0)      # the whole MUSE range, kept as a control
 
 _SHARED = {}
 
 
 def make_tag(basis, K, s_fix, star_window, gal_window, sky_basis, line_iter,
              cumulative=True, aperture=False, suffix=""):
-    """輸出檔名。凡是會改變結果的設定都編進去,重跑才不會靜靜蓋掉上一次。
+    """The output filename. Every setting that changes the result is encoded into it,
+    so a re-run cannot quietly overwrite the previous one.
 
-    視窗與遮罩輪次都在裡面 —— 它們直接決定哪些通道進 chi2,不同設定的結果
-    是不同的科學產物,必須並存。診斷程式也呼叫這個函式,兩邊的命名規則永遠
-    一致;分成兩份寫的話,改了一邊忘了另一邊會變成「讀到錯的檔案」。
+    The windows and the mask iteration are in there because they decide which channels
+    enter chi2: results from different settings are different scientific products and
+    have to coexist. The diagnostic scripts call this same function, so the two always
+    agree on the naming; written out twice, changing one and forgetting the other
+    turns into "reading the wrong file".
     """
     base = f"{basis}_K{K}" if sky_basis else "nobasis"
     return (f"{base}_s{'free' if s_fix is None else s_fix}"
@@ -96,14 +117,16 @@ def make_tag(basis, K, s_fix, star_window, gal_window, sky_basis, line_iter,
 
 
 def make_suffix(spec_dir_name):
-    """tag 的後綴:凡是會改變結果、但沒有編進 make_tag 的設定都在這裡。
+    """The tag's suffix: whatever changes the result but is not encoded by make_tag.
 
-    光譜來源不同 = 不同的科學產物;預設來源 step02 不加後綴,後綴標記的是
-    「偏離預設」,預設本身不必標。
+    A different spectrum source is a different scientific product. The default source,
+    step02, gets no suffix -- the suffix marks a departure from the default, and the
+    default itself does not need marking.
 
-    _{STAR_LIBRARY}star 是恆星庫的字樣。現在只有一個庫,它是常數 —— 留著是
-    因為既有產物都叫這個名字,拿掉等於把每一份都改名;而且它讓「這批結果出自
-    哪一個庫」寫在檔名上,不必開檔才知道。
+    _{STAR_LIBRARY}star names the stellar library. There is only one library at the
+    moment, so it is a constant; it stays because every existing product is already
+    named this way and dropping it would rename all of them, and because it puts
+    "which library produced these" in the filename instead of inside the file.
     """
     return (("" if spec_dir_name == "step02"
              else f"_{spec_dir_name.replace('step02', '')}")
@@ -112,25 +135,30 @@ def make_suffix(spec_dir_name):
 
 def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
                 allow_partial=False):
-    """在指定的通道集合 fit 上,對一條加總光譜掃描模板與紅移。
+    """Scan templates and redshifts for one summed spectrum, over the channel set fit.
 
-    fit 是布林陣列,長度等於通道數 —— 波長視窗與天光線遮罩都已經合併進去。
-    擬合與評分用同一個集合,所以 chi2 之間可以直接比較。
+    fit is a boolean array as long as the spectrum; the wavelength window and the
+    sky-line mask are already combined into it. Fitting and scoring use the same set,
+    which is what makes the chi2 values comparable.
 
-    jobs 是 (組別, 名稱, 樣條, z 網格) 的清單。z 網格屬於各個候選而不是全域
-    共用 —— 恆星只需要掃 ±0.005(銀河系內的本動速度),星系要掃 0 到 1.5。
+    jobs is a list of (group, name, spline, z grid). The z grid belongs to each
+    candidate rather than being shared -- a star only needs +/-0.005 scanned (peculiar
+    velocities inside the Galaxy), a galaxy needs 0 to 1.5.
 
-    A 與 s 受非負限制:源的振幅和天空連續譜的係數在物理上不能是負的。
-    天光線係數不設限,因為 basis 學自殘差,本來就有正有負。
+    A and s are constrained non-negative: a source's amplitude and the sky continuum's
+    coefficient cannot physically be negative. The sky-line coefficients are left free,
+    because that basis is learned from residuals and is signed by construction.
 
-    s_fix 給定時,s·C_sky 先從資料扣掉,s 不再是自由參數(參數少一個)。
-    用意是切斷 A·T 與 s·C_sky 的簡併 —— 資料無法區分兩者,任其自由會讓模板
-    吸走天空連續譜。
+    When s_fix is given, s*C_sky is subtracted from the data first and s stops being a
+    free parameter (one fewer). The point is to break the degeneracy between A*T and
+    s*C_sky -- the data cannot separate them, and left free the template absorbs the
+    sky continuum.
     """
     base = (fit & np.isfinite(flux) & np.isfinite(var) & (var > 0)
             & np.all(np.isfinite(sky), axis=0))
     sig  = np.sqrt(np.where(var > 0, var, 1.0))
-    n_full = int(base.sum())            # 資料端可用的通道數,所有候選的共同上限
+    n_full = int(base.sum())            # channels the data offers -- the ceiling every
+                                        # candidate shares
 
     if s_fix is None:
         sky_free, y, s_free = sky, flux, True
@@ -147,7 +175,8 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
 
         lb = np.full(p, -np.inf)
         if n_comp == 1:
-            lb[0] = 0.0                 # 單一模板恆正,A ≥ 0 等價於「源不發負的光」
+            lb[0] = 0.0                 # a single template is positive everywhere, so
+                                        # A >= 0 is "the source does not emit negative light"
         if s_free:
             lb[n_comp] = 0.0
         ub = np.full(p, np.inf)
@@ -158,12 +187,16 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
                 T = T[:, None]
             good = base & np.all(np.isfinite(T), axis=1)
             n    = int(good.sum())
-            if n <= p:                  # 至少留 1 個自由度,否則 reduced chi2 無定義
+            if n <= p:                  # leave at least one degree of freedom, or
+                                        # reduced chi2 is undefined
                 continue
-            # 覆蓋不滿整個視窗的候選直接丟掉。chi2 是「加總」,通道少的候選天生
-            # 就小 —— 不擋的話,掃描會跑去模板剛好只覆蓋到幾個通道的那個 z,
-            # 得到一個看似完美其實沒有資料的解。模板的靜止波長範圍有限,z 大到
-            # 一定程度就蓋不住視窗,這種候選必須排除而不是讓它贏。
+            # A candidate that does not cover the whole window is dropped. chi2 is a
+            # sum, so a candidate with fewer channels is smaller for free -- without
+            # this the scan would run to whatever z leaves the template covering a
+            # handful of channels and return a solution that looks perfect because it
+            # has almost no data in it. Templates have a finite rest range, so past
+            # some z they no longer reach across the window; those candidates have to
+            # be excluded rather than allowed to win.
             if not allow_partial and n < n_full:
                 continue
 
@@ -175,8 +208,10 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
             theta  = fitres.x
             chi2   = 2.0 * fitres.cost
 
-            # 源光譜要看整段(不只視窗內)有沒有跑到負的 —— 負流量是模型的物理
-            # 問題,不會因為我們沒把那段算進 chi2 就不存在。
+            # Whether the source spectrum goes negative is checked over the whole
+            # range, not just inside the window: negative flux is a physical problem
+            # with the model, and it does not stop existing because those channels
+            # were left out of chi2.
             src      = np.nan_to_num(T, nan=0.0) @ theta[:n_comp]
             m_all    = src + theta[n_comp:] @ sky_free
             chi2_all = float((((y - m_all) / sig) ** 2)[base].sum())
@@ -191,7 +226,7 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
 
 
 def _save_scan(path, results):
-    """把一段掃描的完整結果寫成 npz,診斷程式可以直接讀。"""
+    """Write a whole scan to an npz the diagnostic scripts can read directly."""
     A = np.full((len(results), N_SRC), np.nan)
     for i, x in enumerate(results):
         A[i, :len(x["A"])] = x["A"]
@@ -208,16 +243,20 @@ def _save_scan(path, results):
 
 
 def _scan_one(t):
-    """單階段擬合單一源:恆星模板與星系本徵譜在同一組通道上競爭。
+    """Fit one source in a single stage: the stellar templates and the galaxy
+    eigenspectra compete on the same channels.
 
-    共用資料由 fork 繼承,不經過 pickle。
+    The shared data is inherited through the fork; nothing is pickled.
 
-    兩組都掃、直接比大小,不需要任何絕對門檻。
+    Both branches are scanned and compared directly, so no absolute threshold is
+    needed anywhere.
 
-    為什麼 reduced chi2 可以直接比
-        reduced chi2 = chi2 / (n_good - n_param),分母已經把「星系本徵譜有 4 個
-        成分、恆星模板只有 1 個」的自由度差算進去。前提是兩者用**同一組通道**
-        (n_good 相同),所以 main() 會檢查兩個視窗一致。
+    Why the two reduced chi2 can be compared
+        reduced chi2 = chi2 / (n_good - n_param), and that denominator already
+        accounts for the difference in degrees of freedom -- 4 components for the
+        galaxy eigenspectra against 1 for a stellar template. It only works if both
+        used the **same channels** (the same n_good), which is why main() checks that
+        the two windows agree.
     """
     S = _SHARED
     k = int(np.flatnonzero(S["ids"] == t)[0])
@@ -238,13 +277,15 @@ def _scan_one(t):
     if r2:
         _save_scan(STEP04 / f"scan2_id{t}_{S['tag']}.npz", r2)
 
-    # 兩組各自的冠軍對決。掃描結果已依 chi2 排序,所以 [0] 就是各組最佳。
+    # The two branch winners face each other. The scans come back sorted by chi2, so
+    # [0] is each branch's best.
     best = min([x[0] for x in (r1, r2) if x], key=lambda d: d["red_chi2"])
 
     A = np.full(N_SRC, np.nan)
     A[:len(best["A"])] = best["A"]
-    # 兩組的冠軍值都留著 —— 分類是由這兩個數字的大小決定的,不記下來的話
-    # 下游無法檢查「贏多少」,也就無法判斷這個分類穩不穩。
+    # Both winning values are kept: the classification is decided by which of these
+    # two numbers is smaller, and without recording them nothing downstream can ask
+    # by how much it won, i.e. whether the classification is firm.
     return t, dict(id=t, nspax=int(np.median(S["nspax"][k])),
                    star_red_chi2=r1[0]["red_chi2"] if r1 else np.nan,
                    star_tpl=r1[0]["template"] if r1 else "",
@@ -254,19 +295,24 @@ def _scan_one(t):
 
 
 def write_classification(out_dir, tag, best, ids=None, over=None):
-    """把擬合結果收斂成 step5 讀的那份清單。
+    """Reduce the fit results to the list step5 reads.
 
-    分類本身已經由上面的掃描決定 —— 恆星模板與星系本徵譜在同一組通道上競爭,
-    reduced chi2 低的勝出。這裡不重算:同樣的判定寫兩份,改了一邊就會靜靜地
-    不一致,而那種錯誤從輸出看不出來。
+    The classification was already decided by the scan above -- stellar templates and
+    galaxy eigenspectra competing on the same channels, lower reduced chi2 wins. It is
+    not recomputed here: the same decision written in two places drifts apart silently
+    the moment one of them is edited, and that kind of error is invisible in the output.
 
-    ids  只收錄這些 seg ID;None = best 檔裡的全部。少寫一個源,那個源在 step5
-         就沒有模板可扣,沒有別的好處,所以預設不篩選。
-    over {id: z} 把某個源的紅移改成指定值,只用來做敏感度測試。振幅會在該 z 上
-         重新取最佳解 —— 模板形狀隨 z 變,振幅不通用。
+    ids  keep only these seg IDs; None means every ID in the best file. Leaving a
+         source out only means step5 has no template to subtract for it, with nothing
+         gained, so nothing is filtered by default.
+    over {id: z} overrides one source's redshift, for sensitivity tests only. The
+         amplitude is re-solved at that z -- the template's shape changes with z, so
+         an amplitude does not carry over.
 
-    恆星庫的名字一起存進去:下游要用同一條模板把源重建出來,光憑模板名字看
-    不出它出自哪一個庫,拿錯庫就會靜靜地用錯的光譜重建源。
+    The stellar library's name is stored alongside: downstream has to rebuild the
+    source from the same template, and a template name alone does not say which
+    library it came from -- the wrong library rebuilds the source from the wrong
+    spectrum, silently.
     """
     over = over or {}
     idx  = {int(i): k for k, i in enumerate(best["id"])}
@@ -383,8 +429,9 @@ def main():
     args = ap.parse_args()
     over = {int(k): float(v) for k, v in (x.split("=") for x in args.z_override)}
     work    = Path(args.work)
-    # 這三個必須是模組層級的全域 —— _scan_one 在 multiprocessing 的 worker
-    # 行程裡執行,看不到 main() 的區域變數(worker 由 fork 產生,看得到的是 fork 當下的模組全域)。
+    # These three have to be module-level globals: _scan_one runs inside a
+    # multiprocessing worker and cannot see main()'s locals -- a forked worker sees
+    # the module globals as they stood at the fork.
     global STEP02B, STEP03, STEP04
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
@@ -396,15 +443,17 @@ def main():
 
     STEP04.mkdir(parents=True, exist_ok=True)
 
-    # 源光譜的來源必須明講。沒有可用的預設 —— 用含天空的光譜去分類,結果看起來
-    # 完全正常,只是每個源的模板和紅移都是錯的。
+    # Where the source spectra come from has to be said out loud. There is no usable
+    # default: classifying from spectra that still contain the sky produces output
+    # that looks entirely normal, with every source's template and redshift wrong.
     if not args.spec_dir and not args.aperture:
         raise SystemExit(f"requires --spec-dir (e.g. {work}/step02_eso) or --aperture")
     src = Path(args.spec_dir) if args.spec_dir else STEP02B
-    # 光譜來源不同 = 不同的科學產物,tag 必須分得開,否則會靜靜蓋掉上一次。
-    # 光譜來源編進 tag —— 同一個工作區裡若有多種來源(例如 ne_pointing 的
-    # step02_eso 與 step02_ours),不編進檔名就會靜靜蓋掉上一次。
-    # 預設來源 step02 不加後綴:後綴標記的是「偏離預設」,預設本身不必標。
+    # A different spectrum source is a different scientific product, so the tag has to
+    # separate them; one workspace can hold several sources (step02_eso and
+    # step02_ours, say), and a name that does not encode the source silently
+    # overwrites the previous run. The default source, step02, gets no suffix -- the
+    # suffix marks a departure from the default, and the default needs no marking.
     suffix = make_suffix(src.name)
     ids   = np.load(src / "object_ids.npy")
     flux  = np.load(src / "object_flux.npy")
@@ -417,8 +466,9 @@ def main():
     B      = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
     sky    = np.vstack([C_sky, B]) if args.sky_basis else C_sky[None, :]
 
-    # 天光線遮罩。iter_line_mask 的第 i 列是 step3 第 i+1 輪的結果 ——
-    # 遮罩是在空氣波長上定義的,所以視窗也用空氣波長切,兩者一致。
+    # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1. The mask is
+    # defined on air wavelengths, so the window is cut on air wavelengths too, and the
+    # two agree.
     line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
                                  cumulative=not args.raw_mask)
     win_star = (wl_air >= args.star_window[0]) & (wl_air < args.star_window[1])
@@ -428,10 +478,11 @@ def main():
     z_star = np.arange(-args.star_dz, args.star_dz + args.zstep / 2, args.zstep)
     files = sorted(DWARF_DIR.glob("*.dat"))
     if not files:
-        raise SystemExit(f"★ {DWARF_DIR} 底下沒有 .dat 模板")
-    # 模板的靜止波長範圍必須蓋住整個 MUSE 波段。step5/step6 是在全波段
-    # 評估模板的,設計矩陣裡有 NaN 的通道會對每一個 spaxel 都被丟掉,
-    # 那些通道就再也不參與求解。蓋不住的候選在這裡就排除。
+        raise SystemExit(f"★ no .dat templates under {DWARF_DIR}")
+    # A template's rest range has to cover the whole MUSE band. step5 and step6
+    # evaluate templates across the whole band, and a channel that is NaN in the
+    # design matrix is dropped for every spaxel -- those channels never take part in
+    # the solve again. Candidates that cannot cover it are excluded here.
     need_lo = wl_vac.min() / (1 + z_star.max())
     need_hi = wl_vac.max() / (1 + z_star.min())
     star_jobs = []
@@ -439,16 +490,18 @@ def main():
         sp = load_ascii_template(f)
         lo, hi = float(sp.t[3]), float(sp.t[-4])
         if lo > need_lo or hi < need_hi:
-            print(f"  略過 {f.stem}:靜止範圍 {lo:.0f}-{hi:.0f} A,"
-                  f"蓋不住需要的 {need_lo:.0f}-{need_hi:.0f} A")
+            print(f"  skipping {f.stem}: rest range {lo:.0f}-{hi:.0f} A does not "
+                  f"cover the {need_lo:.0f}-{need_hi:.0f} A needed")
             continue
         star_jobs.append(("star", f.stem, sp, z_star))
     if not star_jobs:
-        raise SystemExit(f"★ {DWARF_DIR} 底下沒有蓋住 MUSE 波段的模板")
-    print(f"恆星候選 {len(star_jobs)} 條 ({STAR_LIBRARY}): "
+        raise SystemExit(f"★ no template under {DWARF_DIR} covers the MUSE band")
+    print(f"{len(star_jobs)} stellar candidates ({STAR_LIBRARY}): "
           + ", ".join(n for _, n, _, _ in star_jobs))
-    # 星系側的候選:本徵譜是「一條 4 成分的模型」,一個 job 就掃完整個星系族群,
-    # 成分的線性組合在族群之間連續內插,不必列出一堆離散的代表光譜。
+    # The galaxy side: the eigenspectra are one four-component model, so a single job
+    # scans the whole galaxy population -- linear combinations of the components
+    # interpolate continuously between types, and no list of discrete representative
+    # spectra is needed.
     gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
 
     targets = ids.tolist() if args.id == "all" else [int(args.id)]
@@ -458,8 +511,9 @@ def main():
     n_workers = args.num_workers or max(1, len(os.sched_getaffinity(0)) // 3)
     n_workers = min(n_workers, len(targets))
 
-    # 兩組模型的 reduced chi2 要能直接比大小,就必須算在同一組通道上。
-    # 視窗不同時 n_good 不同,reduced chi2 的分母不同,比出來的大小沒有意義。
+    # For the two branches' reduced chi2 to be comparable they must be computed on the
+    # same channels. Different windows give different n_good, hence different
+    # denominators, and comparing them means nothing.
     if tuple(args.star_window) != tuple(args.gal_window):
         raise SystemExit(
             f"star window {args.star_window} and galaxy window {args.gal_window} differ. "
@@ -485,8 +539,9 @@ def main():
             "gal_red_chi2", "gal_tpl")
     outs = []
 
-    # 每一輪遮罩是一組獨立的結果 —— 通道集合不同,chi2 就不同,不能混在一起。
-    # 靜態資料(模板、光譜、z 網格)只準備一次,迴圈裡只換遮罩。
+    # Each mask iteration is a separate set of results: a different channel set gives
+    # different chi2, and the two cannot be mixed. The static data (templates, spectra,
+    # z grids) is prepared once, and only the mask changes inside the loop.
     for it in args.line_mask_iter:
         line = line_masks[it - 1]
         fit_star, fit_gal = win_star & ~line, win_gal & ~line
@@ -527,7 +582,8 @@ def main():
 
         new = {k: np.array([x[k] for x in summary]) for k in KEYS}
 
-        # 併入既有結果,不覆寫 —— 重跑單一 ID 只該更新那一列。
+        # Merge into what is already there rather than overwriting: re-running a
+        # single ID should update that row and nothing else.
         out = STEP04 / f"best_{tag}.npz"
         if out.exists():
             old = np.load(out, allow_pickle=False)
