@@ -31,7 +31,7 @@ CLIP_SIGMA = 30          # sigma-clip threshold for mean_sky, in units of robust
 METHODS    = ["pca", "svd"]
 
 
-def learn_sky_basis(residual, K=10, method="pca", seed=SEED):
+def learn_sky_basis(residual, K=10, method="pca", seed=SEED, chunk=200):
     """Learn K sky-line basis vectors from the residuals of blank spaxels.
 
     All methods return shape (K, nz), i.e. the design matrix always has
@@ -45,13 +45,26 @@ def learn_sky_basis(residual, K=10, method="pca", seed=SEED):
     method : {"pca", "svd"}
     seed : int
         random_state for the decomposition
+    chunk : int
+        Number of spaxels converted at a time. Affects only memory, not the
+        result.
 
     Returns
     -------
     basis : ndarray, shape (K, nz)
         K sky-line basis vectors. Row order matches downstream coefficient order.
     """
-    X = np.nan_to_num(residual.T).astype(np.float32)     # (n_blank, nz)
+    # (n_blank, nz), filled a block of spaxels at a time so that only a block of
+    # residual is ever held at float64 width.
+    #
+    # The order matters and cannot be flipped to narrow first: nan_to_num
+    # replaces an infinity with the largest finite number *of the dtype it is
+    # given*, so on float64 it writes ~1.8e308, which then overflows back to inf
+    # on the cast to float32. Narrowing first would turn the same infinity into
+    # ~3.4e38, a finite number the decomposition would treat as real data.
+    X = np.empty((residual.shape[1], residual.shape[0]), np.float32)
+    for i in range(0, X.shape[0], chunk):
+        X[i:i+chunk] = np.nan_to_num(residual.T[i:i+chunk])
 
     # random_state=SEED is essential, not just a precaution: the default
     # algorithm of both TruncatedSVD and PCA is randomized SVD. Without a
@@ -195,7 +208,14 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
     # Rejected positions are filled with the channel's typical residual
     # med - C_sky, not 0: filling 0 on a sky-line channel amounts to claiming
     # there is no line there; med is the more honest value.
-    residual = np.where(keep, blank - C_sky[:, None], (med - C_sky)[:, None])
+    #
+    # Written in two steps rather than as one np.where: blank is float32 and
+    # C_sky float64, so the subtraction alone already allocates the full-size
+    # float64 array we want, and np.where would then allocate a second one just
+    # to choose between it and a per-channel constant. Overwriting the rejected
+    # positions in place picks the same values out of the same array.
+    residual = blank - C_sky[:, None]
+    np.copyto(residual, (med - C_sky)[:, None], where=~keep)
 
     for method in methods:
         t0 = time.time()

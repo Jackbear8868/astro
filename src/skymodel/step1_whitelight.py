@@ -23,19 +23,31 @@ matplotlib.use("Agg")              # must be set before importing pyplot: render
 import matplotlib.pyplot as plt
 
 
-def whitelight(cube, out):
+def whitelight(cube, out, rows=32):
     """Write whitelight.fits and its preview png into `out`; return the fits path.
 
     The path comes back rather than being rebuilt by the caller: the pipeline hands
     it to the segmentation check, and a filename spelled out in two places drifts.
+
+    rows is the number of image rows collapsed at a time. Affects only memory and
+    speed, not the result.
     """
     cube, out = Path(cube), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     white_fits = out / "whitelight.fits"
     white_png = out / "whitelight.png"
 
-    with fits.open(cube) as hdul:
-        white = np.nanmean(hdul["DATA"].data, axis=0)
+    with fits.open(cube, memmap=True) as hdul:
+        data = hdul["DATA"].data
+        # Collapse a band of image rows at a time. nanmean copies its input to
+        # replace the NaNs, so calling it on the whole cube holds a second copy of
+        # the cube plus its mask; a band holds only its own share of that. The
+        # split is spatial, so each band still accumulates over the full wavelength
+        # axis in one call -- the summation order per pixel is untouched, and the
+        # bands only have to be laid back next to each other. Splitting along
+        # wavelength instead would change that order and with it the last bits.
+        white = np.concatenate([np.nanmean(data[:, y:y + rows, :], axis=0)
+                                for y in range(0, data.shape[1], rows)])
         white = np.nan_to_num(white, nan=0.0)
         # Carry over the celestial WCS from the cube. Without it the white light
         # image is a bare array -- downstream checks that the segmentation map and

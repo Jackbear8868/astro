@@ -81,16 +81,28 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
         nspax = np.zeros((len(ids), nz))
 
         for j in range(0, nz, chunk):
-            d = np.asarray(hdul["DATA"].data[j:j+chunk], np.float64).reshape(-1, seg_flat.size)
-            v = np.asarray(vdul["STAT"].data[j:j+chunk], np.float64).reshape(-1, seg_flat.size)
+            # Kept at the cube's own float32: the widening is only needed for the
+            # summation below, which asks for float64 accumulation itself, so doing
+            # it here would carry a double-width copy of the chunk for nothing.
+            d = np.asarray(hdul["DATA"].data[j:j+chunk], np.float32).reshape(-1, seg_flat.size)
+            v = np.asarray(vdul["STAT"].data[j:j+chunk], np.float32).reshape(-1, seg_flat.size)
 
             ok = np.isfinite(d) & np.isfinite(v) & (v > 0)
             d  = np.where(ok, d, 0.0)
             v  = np.where(ok, v, 0.0)
 
             for k, idx in enumerate(members):
-                flux[k,  j:j+chunk] = d[:, idx].sum(axis=1)
-                var[k,   j:j+chunk] = v[:, idx].sum(axis=1)
+                # Widened before the sum, not during it: a source can cover
+                # thousands of spaxels, and accumulating that many float32 terms
+                # at float32 width loses digits. Asking sum() for a float64
+                # accumulator over float32 input would give the same answer only
+                # for as long as it keeps blocking the reduction the way it does
+                # now, which is not a promise it makes; widening first is the
+                # same arithmetic by construction. Only one source's spaxels are
+                # widened at a time, so the chunk itself stays float32. nspax
+                # counts a boolean and keeps the integer accumulator sum picks.
+                flux[k,  j:j+chunk] = d[:, idx].astype(np.float64).sum(axis=1)
+                var[k,   j:j+chunk] = v[:, idx].astype(np.float64).sum(axis=1)
                 nspax[k, j:j+chunk] = ok[:, idx].sum(axis=1)
 
     return flux, var, nspax
