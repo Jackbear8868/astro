@@ -41,8 +41,8 @@ written out, and a small gap says the classification is not firm.
 
 The two windows have to be equal: reduced chi2 = chi2 / (n_good - n_param), and
 n_good in that denominator is set by the channel set. Different windows are not the
-same statistic, so comparing them means nothing. classify_sources() refuses a
-mismatched pair.
+same statistic, so comparing them means nothing. A pointing's config holds one
+fit_window and hands it to both branches, so the pair cannot come apart.
 """
 import os
 from multiprocessing import Pool
@@ -91,7 +91,7 @@ _SHARED = {}
 
 
 def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
-             cumulative=True, aperture=False, suffix=""):
+             cumulative=True, suffix=""):
     """The output filename. Every setting that changes the result is encoded into it,
     so a re-run cannot quietly overwrite the previous one.
 
@@ -105,8 +105,7 @@ def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
     return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
             f"_{star_window[0]:.0f}-{star_window[1]:.0f}"
             f"_{gal_window[0]:.0f}-{gal_window[1]:.0f}"
-            f"_L{line_iter}{'cum' if cumulative else 'raw'}"
-            + ("_ap" if aperture else "") + suffix)
+            f"_L{line_iter}{'cum' if cumulative else 'raw'}" + suffix)
 
 
 def make_suffix(spec_dir_name):
@@ -302,8 +301,8 @@ def _scan_one(t):
         reduced chi2 = chi2 / (n_good - n_param), and that denominator already
         accounts for the difference in degrees of freedom -- 4 components for the
         galaxy eigenspectra against 1 for a stellar template. It only works if both
-        used the **same channels** (the same n_good), which is why classify_sources()
-        checks that the two windows agree.
+        used the **same channels** (the same n_good), which is why the two branches
+        are given the same window.
     """
     S = _SHARED
     k = int(np.flatnonzero(S["seg_ids"] == t)[0])
@@ -429,7 +428,7 @@ def _visible_cpus():
 @blas_single_thread
 def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
         full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
-        zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005, aperture=False,
+        zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005,
         allow_partial=False, spec_dir=None, raw_mask=False, fix_s_at=1.0,
         ids=None, z_override=[], num_workers=0):
     """Fit every source of `work`, writing one best_*.npz and one classification_*.npz
@@ -441,9 +440,8 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
     work    = Path(work)
     # The scan directory is the module global, because that is where _scan_one
-    # reads it from inside a worker; the other two are read here and nowhere else.
+    # reads it from inside a worker; the other one is read here and nowhere else.
     global STEP04
-    STEP02B = work / "step02b"
     STEP03  = work / "step03"
     STEP04 = work / "step04"
     print(f"workspace {work}")
@@ -455,7 +453,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     # Where the source spectra come from. spec_dir has to name a sky-subtracted set:
     # classifying from spectra that still contain the sky produces output that looks
     # entirely normal, with every source's template and redshift wrong.
-    src = Path(spec_dir) if spec_dir else STEP02B
+    src = Path(spec_dir)
     # A different spectrum source is a different scientific product, so the tag has to
     # separate them; one workspace can hold several sources (step02_eso and
     # step02_ours, say), and a name that does not encode the source silently
@@ -535,21 +533,9 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
         raise SystemExit(f"★ {EIGEN_GAL.name} has a hole inside its own rest range")
 
     targets = seg_ids.tolist() if id == "all" else [int(id)]
-    if id != "all" and targets[0] not in seg_ids:
-        raise SystemExit(f"ID {targets[0]} does not exist. "
-                         f"Available: {seg_ids.min()}-{seg_ids.max()}")
 
     n_workers = num_workers or max(1, _visible_cpus() // 3)
     n_workers = min(n_workers, len(targets))
-
-    # For the two branches' reduced chi2 to be comparable they must be computed on the
-    # same channels. Different windows give different n_good, hence different
-    # denominators, and comparing them means nothing.
-    if tuple(star_window) != tuple(gal_window):
-        raise SystemExit(
-            f"star window {star_window} and galaxy window {gal_window} differ. "
-            "Single-stage fitting directly compares their reduced chi2, so the channel set "
-            "must be identical -- set --star-window and --gal-window to the same range.")
 
     print(f"star  {star_window[0]:.0f}-{star_window[1]:.0f} A  "
           f"window {int(win_star.sum())} channels   {len(star_jobs)} stellar templates x "
@@ -561,8 +547,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
           f"sky continuum fixed to {fix_s_at} x C_sky, subtracted first")
     print("source model = A x template" + ("  + sky-line basis" if sky_basis
                                           else "   (1 free parameter)"))
-    print(f"spectra from {src.name}"
-          + ("  (circular aperture r=6 px)" if aperture else "  (segmentation footprint)"))
+    print(f"spectra from {src.name}")
     print(f"{len(targets)} object(s)   {n_workers} workers   "
           f"mask iterations {line_mask_iter}")
 
@@ -579,8 +564,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
         line = line_masks[it - 1]
         fit_star, fit_gal = win_star & ~line, win_gal & ~line
         tag = make_tag(basis, K, fix_s_at, star_window,
-                       gal_window, sky_basis, it, not raw_mask,
-                       aperture, suffix)
+                       gal_window, sky_basis, it, not raw_mask, suffix)
 
         print(f"\n{'=' * 112}")
         print(f"mask iter{it}{'(cumulative)' if not raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"

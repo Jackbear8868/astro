@@ -5,9 +5,8 @@
   - 遮罩是逐輪累加的嗎?(不是 —— 每輪都用原始 mean_sky 重新判定)
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
-需要 step3 存下的 iter_*.npy。若還沒有,重跑一次 step3 即可:
-    python src/skymodel/step3_sky_basis.py --methods svd -K 30 \
-        --work <工作區> --cube <wsky cube> <該顆的 REGION>
+需要 step3 存下的 iter_*.npy。若還沒有,重跑一次該顆的 pipeline 即可:
+    conda run -n astro python src/skymodel/run_pipeline.py configs/pNN.yaml
 
 輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
     iter{N}_masked.png    被遮掉的通道換顏色,連同連續譜與上下門檻
@@ -81,9 +80,8 @@ def main():
     if missing:
         raise SystemExit(
             f"{STEP03} 缺少 {', '.join(missing)}。step3 必須用有存 history 的版本重跑一次:\n"
-            f"  conda run -n astro python src/skymodel/step3_sky_basis.py "
-            f"--methods svd -K 30 --work {args.work} --cube <wsky cube>\n"
-            "  (學天空的空間範圍要一併帶上,見 configs/pNN.yaml 的 sky_region)")
+            "  conda run -n astro python src/skymodel/run_pipeline.py configs/pNN.yaml\n"
+            "  (方法、K 與學天空的空間範圍都在 config 裡,不必另外帶)")
 
     wl = np.load(STEP03 / "wavelength.npy")
     ms = np.load(STEP03 / "mean_sky.npy")

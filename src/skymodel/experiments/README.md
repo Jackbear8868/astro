@@ -20,8 +20,9 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 
 輸出一律寫到 `results/skymodel/evaluation/` 底下,**檔名或目錄名帶 `pNN`**。
 14 顆的 step4 tag 與 step5 run 名字完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉
-前一顆。唯一的例外是 `step2b_aperture.py`:它產的是**源光譜**而不是圖,而
-`step4_classify_sources.py --aperture` 是去 `{work}/step02b/` 讀的,所以必須寫進工作區。
+前一顆。唯一的例外是 `step2b_aperture.py`:它產的是**源光譜**而不是圖,寫在工作區的
+`{work}/step02b/`。目前 pipeline 沒有任何一步會去讀那個目錄 —— `run_pointing` 把
+`classify_sources` 的 `spec_dir` 一律指到 `{work}/step02`。
 
 ---
 
@@ -42,9 +43,12 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 `configs/pNN.yaml` 的 `sky_region` 是使用者看著 `sky_region_visual.py` 的輸出
 (`evaluation/masking/prof_seg/visual_pNN.png`)親自定的,不是推導出來的值。
 
-`dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg`(界定 blank)、
-`step5_fit_s_field.py --seg` 與 `step6_subtract_sky.py --seg`(界定源區);
-`step3_sky_basis.py` 的 `--help` 指名它。
+要用 `dilate_seg.py` 產的遮罩跑 pipeline,把該顆 `configs/pNN.yaml` 的 `input.seg`
+指到那份 `seg_dil{r}.fits`:`run_pipeline.place_segmentation` 會把它複製成
+`step01/seg.fits`,而讀遮罩的四步 —— step2(抽源光譜)、step3(界定 blank)、
+step5 與 step6(界定源區)—— 都是從那裡讀的。要和原本的結果並存的話,`output`
+也要一起改:產物的檔名不帶遮罩,同一個 `output` 會被後跑的那次蓋掉。這條路徑的
+好處是「這次跑用的是哪一份遮罩」留在 config 檔裡,命令列旗標留不住。
 
 ### 天空 basis
 
