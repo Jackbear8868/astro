@@ -138,6 +138,8 @@ the source mask decides everything. Haro 11's ionised gas covers 30-44% of the f
 and a mask that misses it lets ZAP learn Hα as if it were sky and remove most of the
 source.
 
-## License
+## Credit and license
 
-MIT. See `LICENSE`.
+This work was carried out in Hsiao-Wen Chen's group at the University of Chicago.
+
+MIT, see `LICENSE`. Copyright (c) 2026 Yu-Jung Lin and Hsiao-Wen Chen.
