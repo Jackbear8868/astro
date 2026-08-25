@@ -8,17 +8,16 @@ violating bounds need per-spaxel lsq_linear.
 
 build_templates selects sources that received a model in step4 and
 redshifts each model onto the MUSE wavelength grid.
+
+The solves below run under whatever thread limit their caller set; the steps
+that call them hold BLAS at one thread (utils.blas_single_thread).
 """
-import os
-
-for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(_v, "1")
-
 from pathlib import Path
 
 import numpy as np
 from scipy.optimize import lsq_linear
 
+from utils import blas_single_thread
 from templates import (DWARF_DIR, STAR_LIBRARY, load_ascii_template,
                        load_eigen_galaxy, load_eigen_qso, redshift_to_grid)
 
@@ -70,6 +69,9 @@ def build_templates(best, lam_vac):
     return out
 
 
+# Decorated as well as the steps that call it: the limit belongs to the solve, so a
+# diagnostic script that calls this directly gets the numbers the pipeline got.
+@blas_single_thread
 def fit_blank(D, sky, fit_mask=None, s_fix=None):
     """Coefficients for blank spaxels, with a non-negativity constraint on s.
 
@@ -139,6 +141,9 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None):
     return coef
 
 
+# Decorated as well as the steps that call it: the limit belongs to the solve, so a
+# diagnostic script that calls this directly gets the numbers the pipeline got.
+@blas_single_thread
 def fit_source(D, sky, T, s_fix=None, progress=False):
     """A batch of source spaxels sharing the same template.
 

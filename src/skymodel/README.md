@@ -69,7 +69,7 @@ from its own log.
 | file | holds |
 |---|---|
 | `config.py` | reads and checks a pointing config; every value the pipeline takes comes from there |
-| `utils.py` | continuum estimation and line detection, the main source group, the s-field construction |
+| `utils.py` | continuum estimation and line detection, the main source group, the s-field construction, the one-thread BLAS limit the fitting steps run under |
 | `fitting.py` | the per-spaxel solves shared by steps 5 and 6 |
 | `templates.py` | the source templates: eigenspectra and the stellar library, read as splines |
 | `plotting.py` | figures the pipeline itself produces |

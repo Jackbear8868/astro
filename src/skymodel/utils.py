@@ -5,8 +5,11 @@ Two groups:
     (estimate_continuum etc.)
   * spatial direction -- building a smooth field from per-spaxel coefficients
     (the s-field section in the second half of this file)
+
+plus blas_single_thread, the thread limit the fitting steps run under.
 """
 
+import functools
 import warnings
 from pathlib import Path
 
@@ -19,6 +22,31 @@ matplotlib.use("Agg")              # must be set before importing pyplot
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from scipy.stats import skew, kurtosis
+from threadpoolctl import threadpool_limits
+
+
+def blas_single_thread(fn):
+    """Run fn with BLAS, and the OpenMP runtime under it, held at one thread.
+
+    A threaded BLAS splits a sum across however many threads it is given and adds
+    the pieces back in that order, so the last bits of a fit follow the thread
+    count. Held at one, what a step writes depends on the step alone and not on
+    the machine it ran on.
+
+    The limit is applied when fn is called and lifted when it returns. That is
+    why it is here rather than in the OMP_NUM_THREADS family of variables: those
+    are read once, as each library loads, so they only bite when they are set
+    before anything imports numpy -- which a module cannot arrange for whoever
+    imports it, and which a step run on its own therefore never gets. Applying
+    the limit around the work instead makes the two ways of running a step the
+    same, and leaves the threading of a process that merely imported us alone.
+    """
+    @functools.wraps(fn)                # run_pipeline writes fn.__module__ and
+                                        # fn.__name__ into the head of the step log
+    def limited(*args, **kwargs):
+        with threadpool_limits(limits=1):
+            return fn(*args, **kwargs)
+    return limited
 
 
 OLD_AMP_KEYS = {"r_far": "min_source_distance",

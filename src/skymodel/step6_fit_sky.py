@@ -32,7 +32,7 @@ from astropy.io import fits
 
 from fitting import MIN_COVERAGE, N_SRC, build_templates, fit_blank, fit_source
 from templates import air_to_vacuum
-from utils import wavelength_grid
+from utils import blas_single_thread, wavelength_grid
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -57,6 +57,7 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
     fits.HDUList(hdus).writeto(path, overwrite=True)
 
 
+@blas_single_thread
 def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, sky_dir=None,
         blank_channels="all", min_channel_coverage=MIN_COVERAGE, out=None, argv=None):
     """Write the sky-subtracted and sky-model cubes into `out`; return that directory.

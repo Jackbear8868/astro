@@ -25,6 +25,13 @@ Each step also has a command line of its own -- `python src/skymodel/stepN_*.py 
 deliberate: the products are the interface the evaluation scripts read, a step can be
 repeated on its own without redoing the ones before it, and memory stays at the cost of
 the largest single step rather than the sum of all six.
+
+The four steps that fit -- sky_basis, classify_sources, fit_s_field, subtract_sky --
+hold BLAS at one thread while they work and lift the limit again when they return.
+That is what makes the products reproducible: a threaded BLAS adds a sum up in as many
+pieces as it has threads, and the last bits of the answer follow the thread count.
+Importing this package changes nothing about the threading of the process that imports
+it.
 """
 # The modules address each other by bare name (`from utils import ...`), which is what
 # lets each one run as a script. Putting this directory on the path first means the

@@ -112,10 +112,11 @@ the ones before it.
 
 ## Reproducibility
 
-Runs are bit-reproducible: the same config gives the same products, byte for byte. The
-pipeline pins BLAS to one thread before numpy loads, which is what makes it so -- the
+Runs are bit-reproducible: the same config gives the same products, byte for byte. Each
+fitting step holds BLAS at one thread while it works, which is what makes it so -- the
 randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
-the basis moves by about 1 part in 10⁴. Steps 3, 5 and 6 stamp the git commit into
+the basis moves by about 1 part in 10⁴. A step run on its own limits itself the same
+way, so it gives what the pipeline gives. Steps 3, 5 and 6 stamp the git commit into
 their `meta.json`.
 
 ## Repository

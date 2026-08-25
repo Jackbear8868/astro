@@ -31,8 +31,8 @@ from astropy.io import fits
 
 from fitting import MIN_COVERAGE, fit_blank
 from plotting import plot_main_group
-from utils import (C_KMS, DZ_MAX, build_s_field, galaxy_redshifts,
-                   main_source_group, wavelength_grid)
+from utils import (C_KMS, DZ_MAX, blas_single_thread, build_s_field,
+                   galaxy_redshifts, main_source_group, wavelength_grid)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -45,6 +45,7 @@ def _rel(p):
         return p
 
 
+@blas_single_thread
 def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=None,
         blank_channels="all", min_channel_coverage=MIN_COVERAGE, fix_blank_s_at=None,
         min_source_distance=15.0, min_main_source_distance=50.0, train_exclude_box=None,

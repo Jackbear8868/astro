@@ -13,7 +13,7 @@ from astropy.io import fits
 from sklearn.decomposition import PCA, TruncatedSVD
 
 
-from utils import estimate_continuum, wavelength_grid
+from utils import blas_single_thread, estimate_continuum, wavelength_grid
 import argparse
 import json
 import sys
@@ -70,6 +70,7 @@ ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored rel
 
 
 
+@blas_single_thread
 def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
         seed=SEED, continuum_window=WINDOW, line_thresholds=THRESHOLDS,
         max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA, seg=None, out=None, argv=None):

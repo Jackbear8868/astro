@@ -50,30 +50,25 @@ thing driven from the command line.
         --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
 """
-import os
-
-# The BLAS thread count has to be set before numpy is imported -- the library reads
-# it once, when it loads.
-for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(_v, "1")
-
 import argparse
+import os
 from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
 from scipy.optimize import lsq_linear
+from threadpoolctl import threadpool_limits
 
 from templates import (DWARF_DIR, STAR_LIBRARY,
                        load_ascii_template, load_eigen_galaxy, redshift_to_grid,
                        air_to_vacuum)
-from utils import load_line_masks
+from utils import blas_single_thread, load_line_masks
 
 ROOT      = Path(__file__).resolve().parents[2]
-# These three have to be module-level globals: multiprocessing forks its workers, and
-# a worker sees the module globals as they were at the fork, not main()'s locals.
-# main() assigns them from --work, before the Pool is opened.
-STEP02B = STEP03 = STEP04 = None
+# Where the scans are written. This and _SHARED below are the two names _scan_one
+# reads, and it reads them from inside a worker process, where the locals of the
+# call that started the Pool do not exist; _init_worker fills both in.
+STEP04 = None
 EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 
 N_SRC    = 4                # fixed width of the A column: 4 eigenspectra, and a star
@@ -281,11 +276,31 @@ def _save_scan(path, results):
              src_min=np.array([x["src_min"] for x in results]))
 
 
+def _init_worker(shared, step04):
+    """Give a worker process the two names _scan_one reads.
+
+    Only a forked worker inherits the parent's memory. Under spawn (the default on
+    macOS and Windows) and under forkserver a worker is a fresh interpreter, where
+    both are still empty and every fit would fail; passed through the initializer
+    they arrive whichever way the worker was started, for one pickle of the shared
+    arrays per worker.
+
+    The thread limit is re-applied for the same reason: a fresh interpreter starts
+    at the machine default, so a spawned worker would fit with more threads than
+    the parent and return different last bits, and a worker per core each taking
+    the whole machine would oversubscribe it. It is not scoped to a block -- the
+    worker exists to run this and nothing else.
+    """
+    global _SHARED, STEP04
+    _SHARED, STEP04 = shared, step04
+    threadpool_limits(limits=1)
+
+
 def _scan_one(t):
     """Fit one source in a single stage: the stellar templates and the galaxy
     eigenspectra compete on the same channels.
 
-    The shared data is inherited through the fork; nothing is pickled.
+    The shared data comes from _init_worker, once per worker.
 
     Both branches are scanned and compared directly, so no absolute threshold is
     needed anywhere.
@@ -401,6 +416,24 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
     return out
 
 
+def _visible_cpus():
+    """How many CPUs this process is allowed to run on.
+
+    cpu_count() answers for the machine, which is the wrong number under an
+    affinity mask or inside a cpuset, and sched_getaffinity is the right number
+    but exists on Linux alone. process_cpu_count() is both; the two fallbacks are
+    for interpreters that predate it.
+    """
+    if hasattr(os, "process_cpu_count"):            # 3.13+
+        n = os.process_cpu_count()
+    elif hasattr(os, "sched_getaffinity"):          # Linux
+        n = len(os.sched_getaffinity(0))
+    else:
+        n = os.cpu_count()
+    return n or 1
+
+
+@blas_single_thread
 def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
         full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
         zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005, aperture=False,
@@ -415,10 +448,9 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
     work    = Path(work)
     keep_ids = ids      # the --ids filter; `ids` below is the seg IDs read from disk
-    # These three have to be module-level globals: _scan_one runs inside a
-    # multiprocessing worker and cannot see main()'s locals -- a forked worker sees
-    # the module globals as they stood at the fork.
-    global STEP02B, STEP03, STEP04
+    # The scan directory is the module global, because that is where _scan_one
+    # reads it from inside a worker; the other two are read here and nowhere else.
+    global STEP04
     STEP02B = work / "step02b"
     STEP03  = work / "step03"
     STEP04 = work / "step04"
@@ -504,7 +536,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     if id != "all" and targets[0] not in ids:
         raise SystemExit(f"ID {targets[0]} does not exist. Available: {ids.min()}-{ids.max()}")
 
-    n_workers = num_workers or max(1, len(os.sched_getaffinity(0)) // 3)
+    n_workers = num_workers or max(1, _visible_cpus() // 3)
     n_workers = min(n_workers, len(targets))
 
     # For the two branches' reduced chi2 to be comparable they must be computed on the
@@ -565,7 +597,8 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
                        allow_partial=allow_partial)
 
         summary = []
-        with Pool(n_workers) as pool:
+        with Pool(n_workers, initializer=_init_worker,
+                  initargs=(_SHARED, STEP04)) as pool:
             for t, row in pool.imap(_scan_one, targets):
                 if row is None:
                     print(f"{t:>5}   (all fits failed, skipping)")
@@ -679,7 +712,10 @@ def main():
                     help="override a source's redshift to a specified value, for sensitivity "
                          "testing only -- production records should not contain manually set "
                          "values. Amplitude is re-solved at the overridden z, not carried over")
-    ap.add_argument("--num-workers", type=int, default=0)
+    ap.add_argument("--num-workers", type=int, default=0,
+                    help="worker processes. 0 means one third of the CPUs this "
+                         "process can see -- a conservative default for a machine "
+                         "shared with other people; on a machine of your own, raise it")
     ap.add_argument("--work", required=True,
                     help="working directory for this cube (contains step02/step03/step04)")
     args = ap.parse_args()

@@ -18,18 +18,11 @@ The white light is computed from the nosky cube. It is no longer used for
 detection, but downstream needs it to locate the main source (the blob holding
 the brightest pixel), and the sky continuum of the wsky cube lifts the whole
 image, which makes the brightest pixel unreliable.
+
+Nothing here fixes the BLAS thread count. Each fitting step holds BLAS at one
+thread around its own work (utils.blas_single_thread), so a step gives the same
+answer whether it is reached from here or run on its own.
 """
-import os
-
-# Before numpy is imported, by anything. The steps run in this process now, and step4
-# forks a worker per core -- each one spawning its own BLAS threads would oversubscribe
-# the machine. Measured on step3, the step with the largest matrices: 16.1 s at one
-# thread against 17.0 s at twenty-four, so nothing is given up. fitting.py sets the
-# same variables for the same reason, but it is imported too late to be the one that
-# decides.
-for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(_v, "1")
-
 import argparse
 import contextlib
 import re
