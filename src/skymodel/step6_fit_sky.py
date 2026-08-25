@@ -125,11 +125,9 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
         hdr_stat["HISTORY"] = ("STAT copied unchanged from the input cube; it does NOT "
                                "include the uncertainty of the sky model itself.")
         D = np.asarray(hdul["DATA"].data, np.float32)
-        V = np.asarray(hdul["STAT"].data, np.float32)
 
     nz, ny, nx = D.shape
     D = D.reshape(nz, -1)
-    V = V.reshape(nz, -1)
     seg_f = seg.reshape(-1)
     s_hat = s_hat_2d.ravel()
 
@@ -179,10 +177,15 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
               flush=True)
 
     # write output
-    sub = D - sky_model
+    # Nothing below reads the data again, so the difference overwrites it.
+    sub  = np.subtract(D, sky_model, out=D)
     cube = lambda x: x.reshape(nz, ny, nx)
-    write_cube(out / "sky_subtracted.fits", cube(sub),
-               hdr_pri, hdr_data, cube(V).astype(np.float32), hdr_stat)
+    # STAT is passed through untouched, so it is handed to the writer straight
+    # from the input file rather than held in memory: on disk it is already the
+    # big-endian float32 that goes back out.
+    with fits.open(CUBE, memmap=True) as hdul:
+        write_cube(out / "sky_subtracted.fits", cube(sub),
+                   hdr_pri, hdr_data, hdul["STAT"].data, hdr_stat)
     write_cube(out / "sky_model.fits", cube(sky_model), hdr_pri, hdr_data)
     np.save(out / "A_map.npy", A_map.reshape(N_SRC, ny, nx))
     np.save(out / "s_map.npy", s_map.reshape(ny, nx))

@@ -40,7 +40,7 @@ passing arrays in memory. That is deliberate:
 
 - the products are the interface the 23 scripts under `evaluation/` read
 - a step can be repeated on its own without redoing the ones before it
-- peak memory stays at the cost of the largest single step (about 12 GB, step 6)
+- peak memory stays at the cost of the largest single step (about 7 GB, step 6)
   instead of the sum of all six
 - `sky_subtracted.fits` is 4 GB and is the deliverable anyway
 

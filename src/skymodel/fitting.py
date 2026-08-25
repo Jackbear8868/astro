@@ -70,7 +70,7 @@ def build_templates(best, lam_vac):
     return out
 
 
-def fit_blank(D, sky, fit_mask=None, s_fix=None, _nonneg=True):
+def fit_blank(D, sky, fit_mask=None, s_fix=None):
     """Coefficients for blank spaxels, with a non-negativity constraint on s.
 
     Parameters
@@ -78,36 +78,58 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None, _nonneg=True):
     D : ndarray, shape (nz, n)
     sky : ndarray, shape (K+1, nz)
     fit_mask : ndarray or None, shape (nz,)
+    s_fix : scalar, ndarray or None, shape (n,)
+        s held at this value. Only the line coefficients are then solved for,
+        and the bound on s has nothing left to constrain.
 
     Returns
     -------
     ndarray, shape (K+1, n)
     """
-    if s_fix is not None:
-        c   = fit_blank(D - s_fix * sky[0][:, None], sky[1:], fit_mask,
-                        _nonneg=False)
-        out = np.full((sky.shape[0], D.shape[1]), np.nan)
-        out[0], out[1:] = s_fix, c
-        return out
+    n    = D.shape[1]
+    s    = as_vector(s_fix, n)
+    C    = None if s is None else sky[0]
+    A    = sky if s is None else sky[1:]
+    K    = A.shape[0]
+    coef = np.full((K, n), np.nan)
 
-    K    = sky.shape[0]
-    coef = np.full((K, D.shape[1]), np.nan)
     good = np.isfinite(D)
-    rows = np.ones(D.shape[0], bool) if fit_mask is None else fit_mask
+    if C is not None:
+        # The residual being fitted is D - s*C, which is non-finite wherever D
+        # is, plus every channel where C is and every spaxel where s is.
+        good &= np.isfinite(C)[:, None]
+        good &= np.isfinite(s)
     if fit_mask is not None:
         good &= fit_mask[:, None]
 
+    # An all-true row index is not free -- numpy copies every row of both arrays
+    # to honour it -- and D is C-contiguous already, so with no mask the rows are
+    # taken as they lie.
+    rows  = slice(None) if fit_mask is None else fit_mask
     clean = good[rows].all(axis=0)
-    coef[:, clean] = np.linalg.pinv(sky[:, rows].T) @ D[rows][:, clean]
+    P     = np.linalg.pinv(A[:, rows].T)
+    fit   = P @ D[rows][:, clean]
+    if C is not None:
+        # Least squares is linear in the data it is given, so
+        #     pinv(A) @ (D - s*C) == pinv(A) @ D - (pinv(A) @ C) * s
+        # is an identity, not an approximation. Taken from right to left it
+        # subtracts s*C from the K coefficients rather than from the (nz, n)
+        # data, and the cube-sized D - s*C is never formed.
+        fit -= (P @ C[rows])[:, None] * s[clean]
+    coef[:, clean] = fit
 
     for j in np.flatnonzero(~clean):
         g = good[:, j]
         if g.sum() <= K:
             continue
-        coef[:, j] = np.linalg.lstsq(sky[:, g].T, D[g, j], rcond=None)[0]
+        y = D[g, j] if C is None else D[g, j] - s[j] * C[g]
+        coef[:, j] = np.linalg.lstsq(A[:, g].T, y, rcond=None)[0]
 
-    if not _nonneg:
-        return coef
+    if C is not None:
+        out = np.full((sky.shape[0], n), np.nan)
+        out[0], out[1:] = s, coef
+        return out
+
     lb = np.r_[0.0, np.full(K - 1, -np.inf)]
     ub = np.full(K, np.inf)
     for j in np.flatnonzero(coef[0] < 0):

@@ -67,7 +67,7 @@ conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
 conda run -n astro python src/skymodel/run_pipeline.py configs/*.yaml   # all 14
 ```
 
-About two minutes and 12 GB of memory per pointing, and about 8 GB of output.
+About two minutes and 7 GB of memory per pointing, and about 8 GB of output.
 
 The products land under the config's `output` directory:
 
