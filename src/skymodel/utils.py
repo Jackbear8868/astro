@@ -441,6 +441,16 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None):
                          white.shape)
     src = seg > 0
     lab, _ = ndimage.label(src)
+    # label() numbers the sources and leaves the background as 0, so if the brightest
+    # pixel sits on no source at all, `lab == lab[k]` selects the background instead
+    # of a blob: `blob & src` is then empty and the caller is handed a mask of
+    # nothing, with the exclusion radius that mask sets applied to nowhere. Either
+    # the segmentation missed a source or this pixel is not source light (a cosmic
+    # ray residual, a hot pixel); which of the two it is cannot be settled here.
+    if lab[k] == 0:
+        raise SystemExit(
+            f"★ the brightest pixel of the white light image, y={k[0]} x={k[1]} "
+            f"(value {white[k]:.6g}), lies on no segmentation source")
     blob = lab == lab[k]
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
 

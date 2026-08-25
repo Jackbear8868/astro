@@ -13,7 +13,7 @@ inside the sky model and is preserved in the residual.
 fit_s_field() does the work and can be called directly; main() is the same
 thing driven from the command line.
 
-    conda run -n astro python src/skymodel/step5_s_field.py \\
+    conda run -n astro python src/skymodel/step5_fit_s_field.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
         --cube data/wsky/DATACUBE_FINAL_1.fits \\
         --classification results/skymodel/p01/step04/classification_*.npz
@@ -29,6 +29,7 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
+from config import BLANK_CHANNELS
 from fitting import MIN_COVERAGE, fit_blank
 from plotting import plot_main_group
 from utils import (C_KMS, DZ_MAX, blas_single_thread, build_s_field,
@@ -216,7 +217,7 @@ def main():
                     help="segmentation map; default step01/seg.fits")
     ap.add_argument("--sky-dir", default=None,
                     help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-channels", choices=["all", "line1"], default="all",
+    ap.add_argument("--blank-channels", choices=BLANK_CHANNELS, default="all",
                     help="channels used for the free blank solve")
     ap.add_argument("--min-channel-coverage", type=float, default=MIN_COVERAGE,
                     help="fraction of wavelength channels that must carry data before "

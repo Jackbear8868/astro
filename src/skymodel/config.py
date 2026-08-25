@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 METHODS  = ("svd", "pca")
 APPLY_TO = ("basis", "sky_amplitude")
+# The channels the blank spaxels are solved on: every channel, or only those left
+# by step3's first sky-line mask. step5 and step6 import this for their own
+# --blank-channels, so the two ways in accept the same words.
+BLANK_CHANNELS = ("all", "line1")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
             "sky_amplitude", "spaxel_fit")
 
@@ -53,6 +57,26 @@ def _pair(v, name):
     if not ok:
         _fail(f"{name} must be a two-element list of numbers, got {v!r}")
     return list(v)
+
+
+def _number(v, name, ge=None, gt=None, le=None):
+    """A number, optionally bounded: >= ge, > gt, <= le.
+
+    Only bounds that hold whatever the data looks like belong here -- a distance
+    cannot be negative, a fraction of the channels cannot exceed 1. How far apart
+    two things should be, or how hard to clip, is not a question this file can
+    answer. A missing key arrives as None and fails as "not a number", which is
+    what it is.
+    """
+    if not isinstance(v, (int, float)):
+        _fail(f"{name} must be a number, got {v!r}")
+    if ge is not None and v < ge:
+        _fail(f"{name} must be >= {ge}, got {v!r}")
+    if gt is not None and v <= gt:
+        _fail(f"{name} must be > {gt}, got {v!r}")
+    if le is not None and v > le:
+        _fail(f"{name} must be <= {le}, got {v!r}")
+    return v
 
 
 def load(path):
@@ -105,6 +129,31 @@ def load(path):
         _fail(f"source_fit.fit_window must increase, got {s['fit_window']}")
     if not isinstance(s.get("line_mask_iter"), list) or not s["line_mask_iter"]:
         _fail("source_fit.line_mask_iter must be a non-empty list of iteration numbers")
+    # Iterations are numbered from 1, and step4 reads them as line_masks[it - 1]:
+    # 0 or less indexes backwards from the end and quietly fits a different mask.
+    # There is no upper bound here -- how many iterations exist is only known once
+    # step3's masks are on disk, so step4 is where that half of it is checked.
+    for it in s["line_mask_iter"]:
+        if not isinstance(it, int) or it < 1:
+            _fail("source_fit.line_mask_iter: iterations are integers counting "
+                  f"from 1, got {it!r}")
+
+    a = cfg["sky_amplitude"]
+    _number(a.get("min_source_distance"),
+            "sky_amplitude.min_source_distance", ge=0)
+    _number(a.get("min_main_source_distance"),
+            "sky_amplitude.min_main_source_distance", ge=0)
+    _number(a.get("train_clip_sigma"), "sky_amplitude.train_clip_sigma", gt=0)
+    _number(a.get("main_source_dz"), "sky_amplitude.main_source_dz", ge=0)
+
+    sp = cfg["spaxel_fit"]
+    if sp.get("blank_channels") not in BLANK_CHANNELS:
+        _fail(f"spaxel_fit.blank_channels must be one of {list(BLANK_CHANNELS)}, "
+              f"got {sp.get('blank_channels')!r}")
+    # A fraction of the wavelength channels, so it lives in [0, 1]. Written as a
+    # channel count instead, no spaxel could ever reach it and none would be fitted.
+    _number(sp.get("min_channel_coverage"),
+            "spaxel_fit.min_channel_coverage", ge=0, le=1)
 
     # Optional, so it is filled in here rather than required of all 14 files. It
     # still lives only in the config: a limit raised on the command line would be

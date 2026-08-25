@@ -47,9 +47,9 @@ from run_pipeline import run_pointing           # noqa: E402
 from step1_whitelight import whitelight         # noqa: E402
 from step2_object_spectra import object_spectra  # noqa: E402
 from step3_sky_basis import sky_basis           # noqa: E402
-from step4_fit_source import classify_sources   # noqa: E402
-from step5_s_field import fit_s_field           # noqa: E402
-from step6_fit_sky import subtract_sky          # noqa: E402
+from step4_classify_sources import classify_sources   # noqa: E402
+from step5_fit_s_field import fit_s_field           # noqa: E402
+from step6_subtract_sky import subtract_sky          # noqa: E402
 
 __all__ = [
     "run_pointing", "load_config",

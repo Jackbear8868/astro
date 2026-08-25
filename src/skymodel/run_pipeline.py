@@ -41,9 +41,9 @@ from config import MAX_GRID_OFFSET, ROOT, load
 from step1_whitelight import whitelight
 from step2_object_spectra import object_spectra
 from step3_sky_basis import sky_basis
-from step4_fit_source import classify_sources
-from step5_s_field import fit_s_field
-from step6_fit_sky import subtract_sky
+from step4_classify_sources import classify_sources
+from step5_fit_s_field import fit_s_field
+from step6_subtract_sky import subtract_sky
 
 # Which lines of a step reach the terminal while it runs; the rest is in the log.
 KEEP = {

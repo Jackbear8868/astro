@@ -77,7 +77,7 @@ def main():
     # 檔名裡的 tag 由 step4 的設定組成,與這支無關 —— 直接找目錄裡的 best
     bf = sorted(STEP04.glob("best_*.npz"))
     if not bf:
-        raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑 step4_fit_source.py")
+        raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑 step4_classify_sources.py")
     best = np.load(bf[0])
     j = int(np.flatnonzero(best["id"] == args.id)[0])
     z = float(best["z"][j])

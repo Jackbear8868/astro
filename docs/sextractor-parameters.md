@@ -1,7 +1,7 @@
 # SExtractor 偵測參數參考(本專案遮罩流程)
 
 > 本專案的源偵測/遮罩流程:**SExtractor 對白光影像偵測**(教授工作流)。
-> 工作夾:`src/skymodel/SExtractor/`(用法見其 README);下游:`src/skymodel/step3_sky_basis.py`(界定 blank)與 `src/skymodel/step5_s_field.py`、`src/skymodel/step6_fit_sky.py`(界定源區)。
+> 工作夾:`src/skymodel/SExtractor/`(用法見其 README);下游:`src/skymodel/step3_sky_basis.py`(界定 blank)與 `src/skymodel/step5_fit_s_field.py`、`src/skymodel/step6_subtract_sky.py`(界定源區)。
 >
 > **分工**:
 > - 這份文件 = 各偵測參數的**通用物理意義**與「如何從任一 cube 的資料/header 推出參考值」。

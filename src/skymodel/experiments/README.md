@@ -21,7 +21,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 輸出一律寫到 `results/skymodel/evaluation/` 底下,**檔名或目錄名帶 `pNN`**。
 14 顆的 step4 tag 與 step5 run 名字完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉
 前一顆。唯一的例外是 `step2b_aperture.py`:它產的是**源光譜**而不是圖,而
-`step4_fit_source.py --aperture` 是去 `{work}/step02b/` 讀的,所以必須寫進工作區。
+`step4_classify_sources.py --aperture` 是去 `{work}/step02b/` 讀的,所以必須寫進工作區。
 
 ---
 
@@ -43,7 +43,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 (`evaluation/masking/prof_seg/visual_pNN.png`)親自定的,不是推導出來的值。
 
 `dilate_seg.py` 產的遮罩可以直接餵給 `step3_sky_basis.py --seg`(界定 blank)、
-`step5_s_field.py --seg` 與 `step6_fit_sky.py --seg`(界定源區);
+`step5_fit_s_field.py --seg` 與 `step6_subtract_sky.py --seg`(界定源區);
 `step3_sky_basis.py` 的 `--help` 指名它。
 
 ### 天空 basis

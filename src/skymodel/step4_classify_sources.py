@@ -46,7 +46,7 @@ same statistic, so comparing them means nothing. main() refuses a mismatched pai
 classify_sources() does the work and can be called directly; main() is the same
 thing driven from the command line.
 
-    conda run -n astro python src/skymodel/step4_fit_source.py --id all -K 54 \\
+    conda run -n astro python src/skymodel/step4_classify_sources.py --id all -K 54 \\
         --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
         --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
 """
@@ -313,7 +313,7 @@ def _scan_one(t):
         the two windows agree.
     """
     S = _SHARED
-    k = int(np.flatnonzero(S["ids"] == t)[0])
+    k = int(np.flatnonzero(S["seg_ids"] == t)[0])
     with np.errstate(invalid="ignore", divide="ignore"):
         f = S["flux"][k] / S["nspax"][k]
         v = S["var"][k]  / S["nspax"][k] ** 2
@@ -447,7 +447,6 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     """
     over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
     work    = Path(work)
-    keep_ids = ids      # the --ids filter; `ids` below is the seg IDs read from disk
     # The scan directory is the module global, because that is where _scan_one
     # reads it from inside a worker; the other two are read here and nowhere else.
     global STEP04
@@ -472,7 +471,22 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     # overwrites the previous run. The default source, step02, gets no suffix -- the
     # suffix marks a departure from the default, and the default needs no marking.
     suffix = make_suffix(src.name)
-    ids   = np.load(src / "object_ids.npy")
+
+    # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1, so the
+    # number of rows is the number of iterations there are to ask for. That count is
+    # known only here -- a config is written before step3 has run -- so the requested
+    # iterations are checked against it now, ahead of the spectra, the templates and
+    # the workers. An iteration below 1 would index backwards from the end of the
+    # array at line_masks[it - 1] and fit a mask nobody asked for.
+    line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
+                                 cumulative=not raw_mask)
+    for it in line_mask_iter:
+        if not isinstance(it, (int, np.integer)) or not 1 <= it <= len(line_masks):
+            raise SystemExit(f"★ line_mask_iter {it!r}: step3 produced "
+                             f"{len(line_masks)} mask iterations, so the iterations "
+                             f"available are 1-{len(line_masks)}")
+
+    seg_ids = np.load(src / "object_ids.npy")
     flux  = np.load(src / "object_flux.npy")
     var   = np.load(src / "object_var.npy")
     nspax = np.load(src / "object_nspax.npy")
@@ -483,11 +497,8 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     B      = np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")
     sky    = np.vstack([C_sky, B]) if sky_basis else C_sky[None, :]
 
-    # The sky-line mask. Row i of iter_line_mask is step3's iteration i+1. The mask is
-    # defined on air wavelengths, so the window is cut on air wavelengths too, and the
-    # two agree.
-    line_masks = load_line_masks(STEP03 / "iter_line_mask.npy",
-                                 cumulative=not raw_mask)
+    # The mask is defined on air wavelengths, so the fitting window is cut on air
+    # wavelengths too, and the two agree.
     win_star = (wl_air >= star_window[0]) & (wl_air < star_window[1])
     win_gal  = (wl_air >= gal_window[0])  & (wl_air < gal_window[1])
 
@@ -532,9 +543,10 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     if not np.all(np.isfinite(gal_jobs[0][2].c)):
         raise SystemExit(f"★ {EIGEN_GAL.name} has a hole inside its own rest range")
 
-    targets = ids.tolist() if id == "all" else [int(id)]
-    if id != "all" and targets[0] not in ids:
-        raise SystemExit(f"ID {targets[0]} does not exist. Available: {ids.min()}-{ids.max()}")
+    targets = seg_ids.tolist() if id == "all" else [int(id)]
+    if id != "all" and targets[0] not in seg_ids:
+        raise SystemExit(f"ID {targets[0]} does not exist. "
+                         f"Available: {seg_ids.min()}-{seg_ids.max()}")
 
     n_workers = num_workers or max(1, _visible_cpus() // 3)
     n_workers = min(n_workers, len(targets))
@@ -590,7 +602,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
               f"{'src_min':>10}")
         print("-" * 112)
 
-        _SHARED.update(ids=ids, flux=flux, var=var, nspax=nspax, sky=sky,
+        _SHARED.update(seg_ids=seg_ids, flux=flux, var=var, nspax=nspax, sky=sky,
                        star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
                        fit_star=fit_star, fit_gal=fit_gal,
                        tag=tag, fix_s_at=fix_s_at,
@@ -629,7 +641,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
                     print(f"merged {int(keep.sum())} existing sources")
         o = np.argsort(new["id"])
         np.savez(out, **{k: v[o] for k, v in new.items()})
-        cls_path = write_classification(STEP04, tag, np.load(out), keep_ids, over)
+        cls_path = write_classification(STEP04, tag, np.load(out), ids, over)
         outs.append((it, out, summary))
 
     print(f"\n{'=' * 60}\ncross-iteration comparison")

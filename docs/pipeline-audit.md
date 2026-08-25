@@ -48,7 +48,7 @@ s 場乘上 `C_sky` 之後扣在**每一個** spaxel 上（含源區）。這條
 要試就是在 step5 的指令加上和 `REGION` 同一組數字，並用 `--run` 給它自己的資料夾：
 
 ```
-  ... step5_s_field.py ... --sf-xlim 0 165 --out results/skymodel/p01/step05_sfregion
+  ... step5_fit_s_field.py ... --sf-xlim 0 165 --out results/skymodel/p01/step05_sfregion
 ```
 
 ---

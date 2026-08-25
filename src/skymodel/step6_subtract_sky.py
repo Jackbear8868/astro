@@ -13,7 +13,7 @@ subtracted; the source is preserved.
 subtract_sky() does the work and can be called directly; main() is the same
 thing driven from the command line.
 
-    conda run -n astro python src/skymodel/step6_fit_sky.py \\
+    conda run -n astro python src/skymodel/step6_subtract_sky.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
         --cube data/wsky/DATACUBE_FINAL_1.fits \\
         --classification results/skymodel/p01/step04/classification_*.npz \\
@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
+from config import BLANK_CHANNELS
 from fitting import MIN_COVERAGE, N_SRC, build_templates, fit_blank, fit_source
 from templates import air_to_vacuum
 from utils import blas_single_thread, wavelength_grid
@@ -108,6 +109,27 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
     print(f"source model from {classification_file.name}: {len(classification['id'])} sources")
 
     templates = build_templates(classification, wl_vac)
+
+    # The field was solved against one particular sky model, and s is locked to it
+    # below. A field built with a different K or a different basis still has the
+    # cube's spatial shape and still holds plausible numbers, so nothing further
+    # down separates it from the right one -- the record step5 wrote beside the
+    # field is what says which sky model it belongs to.
+    s_field = Path(s_field)
+    s_field_meta = s_field.parent / "meta.json"
+    if s_field_meta.exists():
+        recorded = json.loads(s_field_meta.read_text())
+        for key, given in (("K", K), ("basis", basis)):
+            if recorded.get(key) != given:
+                raise SystemExit(
+                    f"★ {_rel(s_field_meta)} records the s-field as solved with "
+                    f"{key}={recorded.get(key)!r}, but this step was given "
+                    f"{key}={given!r}")
+    else:
+        # A field can legitimately be hand-built, and then there is no record to
+        # read; saying so is the whole of what can be done about it.
+        print(f"no meta.json beside {s_field.name}: the s-field's K and basis "
+              f"are not checked")
 
     s_hat_2d = np.load(s_field)
     print(f"s-field from {s_field}  median {np.nanmedian(s_hat_2d):.5f}")
@@ -230,7 +252,7 @@ def main():
                     help="segmentation map; default step01/seg.fits")
     ap.add_argument("--sky-dir", default=None,
                     help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-channels", choices=["all", "line1"], default="all",
+    ap.add_argument("--blank-channels", choices=BLANK_CHANNELS, default="all",
                     help="channels used to solve blank coefficients")
     ap.add_argument("--min-channel-coverage", type=float, default=MIN_COVERAGE,
                     help="fraction of wavelength channels that must carry data before "

@@ -60,12 +60,26 @@ def build_templates(best, lam_vac):
             f"★ this classification was fitted with the {lib!r} stellar library, "
             f"which is no longer available; re-run step4 to refit it with "
             f"{STAR_LIBRARY!r}")
+    A = np.asarray(best["A"], float)
+    # Two different things leave a source without a model, and nansum() of a row
+    # returns 0.0 for both: a row that is NaN in every component, which is a source
+    # step4 never solved, and a row that is finite and adds up to zero, which is a
+    # source solved to no amplitude. Neither can be redshifted onto the grid, but
+    # they are not the same event, so they are separated before the sum is taken and
+    # reported apart. np.abs is kept: without it a positive and a negative component
+    # cancelling would read as an amplitude of zero rather than as the model it is.
+    unsolved = np.isnan(A).all(axis=1)
+    keep     = ~unsolved & (np.nansum(np.abs(A), axis=1) > 0)
+    zero_amp = ~unsolved & ~keep
+
     out   = {}
-    for i in np.flatnonzero(np.nansum(np.abs(best["A"]), axis=1) > 0):
+    for i in np.flatnonzero(keep):
         g, name = str(best["group"][i]), str(best["template"][i])
         spline = eigen[g] if g in eigen else load_ascii_template(DWARF_DIR / f"{name}.dat")
         T = redshift_to_grid(spline, float(best["z"][i]), lam_vac)
         out[int(best["id"][i])] = T if T.ndim == 2 else T[:, None]
+    print(f"sources with a model: {int(keep.sum())} / {A.shape[0]}"
+          f"  ({int(unsolved.sum())} unsolved, {int(zero_amp.sum())} zero amplitude)")
     return out
 
 
