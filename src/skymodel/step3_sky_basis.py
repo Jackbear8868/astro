@@ -72,12 +72,17 @@ ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored rel
 
 def run(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
         seed=SEED, continuum_window=WINDOW, line_thresholds=THRESHOLDS,
-        max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA, seg=None, out=None):
+        max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA, seg=None, out=None, argv=None):
     """Write the sky continuum, line mask and sky-line basis into `out`; return that directory.
 
     K has no default here for the same reason -K is required on the command line:
     all three steps must use the same K, and a default would let a missed step
     silently read a different basis.
+
+    argv is written into meta.json as the record of how the step was launched, and
+    only main() can know it: called directly, sys.argv belongs to whatever called
+    run(), not to this step. It stays null in that case -- everything it would have
+    carried is already written out under its own name.
     """
     work   = Path(work)
     STEP01 = work / "step01"
@@ -219,7 +224,7 @@ def run(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
         max_iter=max_iter, clip_sigma=clip_sigma,
         xlim=xlim, ylim=ylim, exclude_box=exclude_box,
         n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
-        argv=sys.argv[1:],
+        argv=argv,
     ), indent=2, ensure_ascii=False) + "\n")
     print(f"meta -> {out_dir / 'meta.json'}")
     return out_dir
@@ -277,7 +282,7 @@ def main():
                     help="output directory; if omitted writes to {work}/step03 (overwrites); "
                          "specify explicitly for experiments")
     args = ap.parse_args()
-    run(args.work, args.cube, args.K, methods=args.methods,
+    run(args.work, args.cube, args.K, argv=sys.argv[1:], methods=args.methods,
         xlim=args.xlim, ylim=args.ylim, exclude_box=args.exclude_box,
         seed=args.seed, continuum_window=args.continuum_window,
         line_thresholds=args.line_thresholds, max_iter=args.max_iter,

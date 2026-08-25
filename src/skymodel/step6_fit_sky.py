@@ -57,8 +57,14 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
 
 
 def run(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
-        blank_region="all", min_coverage=MIN_COVERAGE, out=None):
-    """Write the sky-subtracted and sky-model cubes into `out`; return that directory."""
+        blank_region="all", min_coverage=MIN_COVERAGE, out=None, argv=None):
+    """Write the sky-subtracted and sky-model cubes into `out`; return that directory.
+
+    argv is written into meta.json as the record of how the step was launched, and
+    only main() can know it: called directly, sys.argv belongs to whatever called
+    run(), not to this step. It stays null in that case -- everything it would have
+    carried is already written out under its own name.
+    """
     work = Path(work)
     STEP01 = work / "step01"
     STEP03 = work / "step03"
@@ -177,7 +183,7 @@ def run(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
         git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                   capture_output=True, text=True,
                                   cwd=ROOT).stdout.strip(),
-        argv=sys.argv[1:])
+        argv=argv)
     (out / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2))
 
@@ -216,7 +222,7 @@ def main():
     ap.add_argument("--out", default=None,
                     help="output directory; default {work}/step06")
     args = ap.parse_args()
-    run(args.work, args.cube, args.best, args.s_field, args.K,
+    run(args.work, args.cube, args.best, args.s_field, args.K, argv=sys.argv[1:],
         basis=args.basis, seg=args.seg, sky_dir=args.sky_dir,
         blank_region=args.blank_region, min_coverage=args.min_coverage,
         out=args.out)
