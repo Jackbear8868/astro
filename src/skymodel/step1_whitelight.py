@@ -62,3 +62,11 @@ def whitelight(cube, out, rows=32):
 
     print(f"saved -> {white_fits}")
     return white_fits
+
+
+# Without this the file would import and exit 0 when run, which reads as having
+# done the step. There is one way into the pipeline, and this says where it is.
+if __name__ == "__main__":
+    raise SystemExit(
+        "★ the steps are not run on their own; run the pipeline:\n"
+        "      python src/skymodel/run_pipeline.py configs/pNN.yaml")

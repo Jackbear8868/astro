@@ -647,3 +647,11 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
               f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
     print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
     return cls_path
+
+
+# Without this the file would import and exit 0 when run, which reads as having
+# done the step. There is one way into the pipeline, and this says where it is.
+if __name__ == "__main__":
+    raise SystemExit(
+        "★ the steps are not run on their own; run the pipeline:\n"
+        "      python src/skymodel/run_pipeline.py configs/pNN.yaml")

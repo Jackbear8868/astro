@@ -239,3 +239,11 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
     ), indent=2, ensure_ascii=False) + "\n")
     print(f"meta -> {out_dir / 'meta.json'}")
     return out_dir
+
+
+# Without this the file would import and exit 0 when run, which reads as having
+# done the step. There is one way into the pipeline, and this says where it is.
+if __name__ == "__main__":
+    raise SystemExit(
+        "★ the steps are not run on their own; run the pipeline:\n"
+        "      python src/skymodel/run_pipeline.py configs/pNN.yaml")
