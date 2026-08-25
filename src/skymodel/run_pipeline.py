@@ -3,16 +3,16 @@
     conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
     conda run -n astro python src/skymodel/run_pipeline.py configs/p0[1-4].yaml
 
-run_pointing() below is the whole method in one place: six named steps in the order
-they happen, plus the segmentation check between the first two. Each step is a
-function that can equally be called on its own. Reading run_pointing() is meant to be
-enough to know what this pipeline does.
+This is the pipeline's only entrance. run_pointing() below is the whole method in one
+place: six named steps in the order they happen, plus the segmentation check between
+the first two. Reading run_pointing() is meant to be enough to know what this pipeline
+does.
 
-Each step's full output goes to {output}/stepN.log with the equivalent Python call
-written at the top, so any step can be repeated by hand; only the lines listed in KEEP
-reach the terminal. The full output is worth keeping: step3's spatial-range statistics
-and step4's per-source classification table, margin column included, exist nowhere
-else.
+Each step's full output goes to {output}/stepN.log, headed by the call that produced
+it, so the log records which arguments those products came from; only the lines listed
+in KEEP reach the terminal. The full output is worth keeping: step3's spatial-range
+statistics and step4's per-source classification table, margin column included, exist
+nowhere else.
 
 The white light is computed from the nosky cube. It is no longer used for
 detection, but downstream needs it to locate the main source (the blob holding
@@ -20,8 +20,8 @@ the brightest pixel), and the sky continuum of the wsky cube lifts the whole
 image, which makes the brightest pixel unreliable.
 
 Nothing here fixes the BLAS thread count. Each fitting step holds BLAS at one
-thread around its own work (utils.blas_single_thread), so a step gives the same
-answer whether it is reached from here or run on its own.
+thread around its own work (utils.blas_single_thread), so the products do not
+follow the thread count of the machine the pipeline is run on.
 """
 import argparse
 import contextlib
@@ -91,10 +91,10 @@ def region_kwargs(reg, prefix=""):
 def call_repr(fn, kwargs):
     """The step call written out as Python, for the head of its log.
 
-    A log that records how the step was reached is what makes the step repeatable
-    by hand, and this line can be pasted into an interpreter as it stands. Paths are
-    shortened against the repository root: an absolute path from someone else's
-    machine is noise in a file another reader is meant to use.
+    It is the record of which arguments produced the products beside it -- a config
+    can be edited afterwards, and then nothing else says what this run was given.
+    Paths are shortened against the repository root: an absolute path from someone
+    else's machine is noise in a file another reader is meant to use.
     """
     def show(v):
         if isinstance(v, Path):

@@ -4,14 +4,7 @@ Everything downstream that has to say "where is the source" works on this image
 rather than on the cube: the segmentation is checked against it, the main source is
 the blob holding its brightest pixel, and the evaluation figures use it as their
 background.
-
-whitelight() does the work and can be called directly; main() is the same
-thing driven from the command line.
-
-    conda run -n astro python src/skymodel/step1_whitelight.py \\
-        data/nosky/DATACUBE_FINAL_ESOSKY_1.fits --out results/skymodel/p01/step01
 """
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -69,19 +62,3 @@ def whitelight(cube, out, rows=32):
 
     print(f"saved -> {white_fits}")
     return white_fits
-
-
-def main():
-    ap = argparse.ArgumentParser(
-        description="cube -> whitelight image (whitelight.fits + preview png)")
-    ap.add_argument("cube", type=Path, help="input cube (.fits)")
-    # --out has no default. The alternative would be to derive a directory name from
-    # the cube filename, but that means feeding the wrong cube silently creates an
-    # unrecognisable directory under results/ with no warning.
-    ap.add_argument("--out", type=Path, required=True, help="output directory")
-    args = ap.parse_args()
-    whitelight(args.cube, args.out)
-
-
-if __name__ == "__main__":
-    main()

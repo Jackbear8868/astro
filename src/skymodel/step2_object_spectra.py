@@ -4,15 +4,7 @@ These summed spectra are what step4 classifies: one spectrum per source, with it
 variance and the number of contributing spaxels per channel. They come from a
 sky-subtracted cube -- classifying a spectrum that still holds the sky gives output
 that looks entirely normal with every template and redshift wrong.
-
-object_spectra() does the work and can be called directly; main() is the same
-thing driven from the command line.
-
-    conda run -n astro python src/skymodel/step2_object_spectra.py \\
-        --work results/skymodel/p01 --cube data/nosky/DATACUBE_FINAL_ESOSKY_1.fits \\
-        --out results/skymodel/p01/step02
 """
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -148,25 +140,3 @@ def object_spectra(work, cube, out=None, var_cube=None, top=20):
     np.save(out / "object_nspax.npy", nspax)
     print("saved ->", out)
     return out
-
-
-def main():
-    ap = argparse.ArgumentParser(description="sum source spectra by segmentation ID")
-    ap.add_argument("--cube", required=True,
-                    help="cube to extract (reads its DATA). Classification needs a "
-                         "sky-subtracted version; run_pipeline.py passes the ESO "
-                         "nosky cube. Passing our own step05/sky_subtracted.fits "
-                         "also works, but that feeds step5 output back into step2, "
-                         "creating a 5->2->4->5 loop")
-    ap.add_argument("--var-cube", default=None,
-                    help="where to read STAT from; defaults to --cube. Our own "
-                         "sky-subtracted cube only has DATA, so use this to point "
-                         "to the original cube")
-    ap.add_argument("--work", required=True, help="working directory for this cube")
-    ap.add_argument("--out", required=True, help="output directory")
-    args = ap.parse_args()
-    object_spectra(args.work, args.cube, out=args.out, var_cube=args.var_cube)
-
-
-if __name__ == "__main__":
-    main()

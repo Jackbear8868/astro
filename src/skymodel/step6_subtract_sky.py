@@ -9,28 +9,16 @@ locked to s_hat(x, y):
 The output is two cubes: sky_subtracted (= data - sky_model) and sky_model
 itself. The source template term is NOT part of sky_model -- only sky is
 subtracted; the source is preserved.
-
-subtract_sky() does the work and can be called directly; main() is the same
-thing driven from the command line.
-
-    conda run -n astro python src/skymodel/step6_subtract_sky.py \\
-        --basis svd -K 30 --work results/skymodel/p01 \\
-        --cube data/wsky/DATACUBE_FINAL_1.fits \\
-        --classification results/skymodel/p01/step04/classification_*.npz \\
-        --s-field results/skymodel/p01/step05/s_hat.npy
 """
-import argparse
 import datetime
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
 
-from config import BLANK_CHANNELS
 from fitting import MIN_COVERAGE, N_SRC, build_templates, fit_blank, fit_source
 from templates import air_to_vacuum
 from utils import blas_single_thread, wavelength_grid
@@ -59,33 +47,27 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
 
 
 @blas_single_thread
-def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, sky_dir=None,
-        blank_channels="all", min_channel_coverage=MIN_COVERAGE, out=None, argv=None):
-    """Write the sky-subtracted and sky-model cubes into `out`; return that directory.
-
-    argv is written into meta.json as the record of how the step was launched, and
-    only main() can know it: called directly, sys.argv belongs to whatever called
-    subtract_sky(), not to this step. It stays null in that case -- everything it would have
-    carried is already written out under its own name.
-    """
+def subtract_sky(work, cube, classification, s_field, K, basis="svd",
+        blank_channels="all", min_channel_coverage=MIN_COVERAGE):
+    """Write the sky-subtracted and sky-model cubes into step06; return that directory."""
     work = Path(work)
     STEP01 = work / "step01"
     STEP03 = work / "step03"
     CUBE = Path(cube)
-    out = Path(out) if out else work / "step06"
+    out = work / "step06"
     out.mkdir(parents=True, exist_ok=True)
 
-    seg_path = Path(seg) if seg else STEP01 / "seg.fits"
+    seg_path = STEP01 / "seg.fits"
     seg   = fits.getdata(seg_path)
     white = np.asarray(fits.getdata(STEP01 / "whitelight.fits"), float)
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
     # The sky model on disk is sampled on the grid of whatever cube step3 read, and
-    # the source templates are about to be redshifted onto that same grid. A --work
-    # and a --cube from two pointings need only agree in channel count to run to the
-    # end, with model and data offset against each other, so the grid is checked
-    # against this cube instead of assumed.
+    # the source templates are about to be redshifted onto that same grid. A work
+    # directory and a cube from two pointings need only agree in channel count to run
+    # to the end, with model and data offset against each other, so the grid is
+    # checked against this cube instead of assumed.
     wl_path = STEP03 / "wavelength.npy"
     wl_air  = np.load(wl_path)
     wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
@@ -97,10 +79,9 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
                          f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
 
     wl_vac = air_to_vacuum(wl_air)
-    sky_dir = Path(sky_dir) if sky_dir else STEP03
-    sky = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
-                     np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])
-    print(f"sky model from {sky_dir.name}")
+    sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
+                     np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")])
+    print(f"sky model from {STEP03.name}")
 
     classification_file = Path(classification)
     if not classification_file.exists():
@@ -110,27 +91,7 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
 
     templates = build_templates(classification, wl_vac)
 
-    # The field was solved against one particular sky model, and s is locked to it
-    # below. A field built with a different K or a different basis still has the
-    # cube's spatial shape and still holds plausible numbers, so nothing further
-    # down separates it from the right one -- the record step5 wrote beside the
-    # field is what says which sky model it belongs to.
     s_field = Path(s_field)
-    s_field_meta = s_field.parent / "meta.json"
-    if s_field_meta.exists():
-        recorded = json.loads(s_field_meta.read_text())
-        for key, given in (("K", K), ("basis", basis)):
-            if recorded.get(key) != given:
-                raise SystemExit(
-                    f"★ {_rel(s_field_meta)} records the s-field as solved with "
-                    f"{key}={recorded.get(key)!r}, but this step was given "
-                    f"{key}={given!r}")
-    else:
-        # A field can legitimately be hand-built, and then there is no record to
-        # read; saying so is the whole of what can be done about it.
-        print(f"no meta.json beside {s_field.name}: the s-field's K and basis "
-              f"are not checked")
-
     s_hat_2d = np.load(s_field)
     print(f"s-field from {s_field}  median {np.nanmedian(s_hat_2d):.5f}")
 
@@ -215,7 +176,7 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
 
     meta = dict(
         step="fit_sky",
-        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
+        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(STEP03)),
         classification=str(_rel(classification_file)), basis=basis, K=K,
         s_field=str(_rel(Path(s_field))),
         blank_channels=blank_channels, min_channel_coverage=min_channel_coverage,
@@ -224,8 +185,7 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
         created=datetime.datetime.now().isoformat(timespec="seconds"),
         git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                   capture_output=True, text=True,
-                                  cwd=ROOT).stdout.strip(),
-        argv=argv)
+                                  cwd=ROOT).stdout.strip())
     (out / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2))
 
@@ -236,39 +196,3 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
           f"  source regions {len(rids)} ({len(rids) - n_notpl} with template)")
     print(f"saved -> {out}")
     return out
-
-
-def main():
-    ap = argparse.ArgumentParser(
-        description="Per-spaxel sky subtraction using the s-field from step5")
-    ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, required=True,
-                    help="number of sky-line basis vectors")
-    ap.add_argument("--classification", required=True,
-                    help="step4 classification file (.npz)")
-    ap.add_argument("--s-field", required=True,
-                    help="s_hat.npy from step5")
-    ap.add_argument("--seg", default=None,
-                    help="segmentation map; default step01/seg.fits")
-    ap.add_argument("--sky-dir", default=None,
-                    help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-channels", choices=BLANK_CHANNELS, default="all",
-                    help="channels used to solve blank coefficients")
-    ap.add_argument("--min-channel-coverage", type=float, default=MIN_COVERAGE,
-                    help="fraction of wavelength channels that must carry data before "
-                         "a spaxel is fitted; the field-of-view edge ring falls below it")
-    ap.add_argument("--work", required=True,
-                    help="working directory (contains step01/step03/step04/step05)")
-    ap.add_argument("--cube", required=True,
-                    help="sky-included (wsky) cube")
-    ap.add_argument("--out", default=None,
-                    help="output directory; default {work}/step06")
-    args = ap.parse_args()
-    subtract_sky(args.work, args.cube, args.classification, args.s_field, args.K, argv=sys.argv[1:],
-        basis=args.basis, seg=args.seg, sky_dir=args.sky_dir,
-        blank_channels=args.blank_channels, min_channel_coverage=args.min_channel_coverage,
-        out=args.out)
-
-
-if __name__ == "__main__":
-    main()

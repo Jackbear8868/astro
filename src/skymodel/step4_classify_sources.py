@@ -15,7 +15,7 @@ How a source is classified
 Three things are fixed by the method rather than chosen here: the sky-line mask is
 applied, the line channels are left out of chi2, and stars and galaxies are each
 fitted inside a fixed wavelength window. The window values themselves are the
-defaults of --star-window / --gal-window and are not repeated here -- the same
+STAR_WINDOW / GAL_WINDOW defaults below and are not repeated here -- the same
 numbers written in two places drift apart eventually.
 
 Why the sky-line channels are excluded: their residual is dominated by the error of
@@ -41,16 +41,9 @@ written out, and a small gap says the classification is not firm.
 
 The two windows have to be equal: reduced chi2 = chi2 / (n_good - n_param), and
 n_good in that denominator is set by the channel set. Different windows are not the
-same statistic, so comparing them means nothing. main() refuses a mismatched pair.
-
-classify_sources() does the work and can be called directly; main() is the same
-thing driven from the command line.
-
-    conda run -n astro python src/skymodel/step4_classify_sources.py --id all -K 54 \\
-        --spec-dir results/skymodel/ne_pointing/step02_eso --s-fix 0.0 \\
-        --star-window 4700 8000 --gal-window 4700 8000 --line-mask-iter 1
+same statistic, so comparing them means nothing. classify_sources() refuses a
+mismatched pair.
 """
-import argparse
 import os
 from multiprocessing import Pool
 from pathlib import Path
@@ -74,10 +67,10 @@ EIGEN_GAL = ROOT / "data/eigen_galaxy_Bolton2012.fits"
 N_SRC    = 4                # fixed width of the A column: 4 eigenspectra, and a star
                             # uses only column 0
 
-# The wavelength window of each branch (A, air). Editing here changes the default;
-# --star-window / --gal-window override it without touching the code. The window is
-# encoded into the output tag, so results from different windows sit side by side
-# instead of overwriting each other.
+# The wavelength window of each branch (A, air). These are the defaults of the
+# star_window / gal_window parameters; a pointing's config sets them per run. The
+# window is encoded into the output tag, so results from different windows sit side
+# by side instead of overwriting each other.
 #
 # All three share a lower bound, so the only thing separating the windows is how far
 # right they reach. 4600 is not "from the beginning" -- 13 pointings start between
@@ -309,8 +302,8 @@ def _scan_one(t):
         reduced chi2 = chi2 / (n_good - n_param), and that denominator already
         accounts for the difference in degrees of freedom -- 4 components for the
         galaxy eigenspectra against 1 for a stellar template. It only works if both
-        used the **same channels** (the same n_good), which is why main() checks that
-        the two windows agree.
+        used the **same channels** (the same n_good), which is why classify_sources()
+        checks that the two windows agree.
     """
     S = _SHARED
     k = int(np.flatnonzero(S["seg_ids"] == t)[0])
@@ -459,11 +452,9 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
 
     STEP04.mkdir(parents=True, exist_ok=True)
 
-    # Where the source spectra come from has to be said out loud. There is no usable
-    # default: classifying from spectra that still contain the sky produces output
-    # that looks entirely normal, with every source's template and redshift wrong.
-    if not spec_dir and not aperture:
-        raise SystemExit(f"requires --spec-dir (e.g. {work}/step02_eso) or --aperture")
+    # Where the source spectra come from. spec_dir has to name a sky-subtracted set:
+    # classifying from spectra that still contain the sky produces output that looks
+    # entirely normal, with every source's template and redshift wrong.
     src = Path(spec_dir) if spec_dir else STEP02B
     # A different spectrum source is a different scientific product, so the tag has to
     # separate them; one workspace can hold several sources (step02_eso and
@@ -656,91 +647,3 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
               f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
     print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
     return cls_path
-
-
-def main():
-    ap = argparse.ArgumentParser(description="single-stage source template fitting (fixed window + sky-line mask)")
-    ap.add_argument("--id",    default="all",           help="segmentation ID, or all")
-    ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, required=True,
-                    help="number of sky-line basis vectors. Required -- all three steps must use the same K; separate defaults would silently read a different basis set")
-    ap.add_argument("--star-window", type=float, nargs=2, default=STAR_WINDOW,
-                    metavar=("LO", "HI"), help="stellar template fitting window (A, air); must match --gal-window")
-    ap.add_argument("--gal-window", type=float, nargs=2, default=GAL_WINDOW,
-                    metavar=("LO", "HI"), help="galaxy eigenspectrum fitting window (A, air); must match --star-window")
-    ap.add_argument("--full-range", action="store_true",
-                    help=f"use full MUSE range {FULL_RANGE[0]:.0f}-{FULL_RANGE[1]:.0f} A "
-                         "as a control. Note: stellar templates extend to ~9200 A at rest; "
-                         "under full range different templates cover different channel counts, "
-                         "so chi2 comparisons are affected by channel count.")
-    ap.add_argument("--line-mask-iter", type=int, nargs="+", default=[1, 2, 3, 4],
-                    help="which step3 sky-line mask iteration(s) to use; can specify "
-                         "multiple, each produces a separate result. Iter 1 is the loosest "
-                         "(only the strongest lines); higher iterations mask more channels. "
-                         "Default: all four.")
-    ap.add_argument("--sky-basis", action="store_true",
-                    help="include sky-line basis in the source fit. Off by default: "
-                         "sky-line channels are already excluded from chi2, the basis has "
-                         "almost no power in the remaining channels, and those K weakly "
-                         "constrained parameters only absorb source signal. Without it the "
-                         "source model has only 1 free parameter A.")
-    ap.add_argument("--zmin",  type=float, default=0.0)
-    ap.add_argument("--zmax",  type=float, default=1.5)
-    ap.add_argument("--zstep", type=float, default=1e-4)
-    ap.add_argument("--star-dz", type=float, default=0.005,
-                    help="half-width of z scan for stars (+-1500 km/s). Resolved point "
-                         "sources must be Milky Way foreground stars with no Hubble flow, "
-                         "only peculiar velocity.")
-    ap.add_argument("--aperture", action="store_true",
-                    help="read circular aperture spectra from step02b/ (produced by "
-                         "experiments/step2b_aperture.py) instead of segmentation footprint "
-                         "from step02/")
-    ap.add_argument("--allow-partial", action="store_true",
-                    help="allow candidates where the template covers only part of the "
-                         "window. Off by default -- chi2 is a sum, so candidates with fewer "
-                         "channels are inherently smaller, biasing the scan toward z values "
-                         "where the template barely covers the window. Enable only when you "
-                         "know what you are doing.")
-    ap.add_argument("--spec-dir", default=None,
-                    help="directory of source spectra, overrides --aperture. Classification "
-                         "requires sky-subtracted spectra, e.g. .../step02_ours (our subtraction) "
-                         "or step02_eso (ESO subtraction). Directory name is encoded in the "
-                         "output tag so different sources are stored separately")
-    ap.add_argument("--raw-mask", action="store_true",
-                    help="use each mask iteration independently without accumulation. "
-                         "Default is cumulative -- step3's raw iterations are not strictly "
-                         "nested (some channels drop out); cumulative mode produces a clean "
-                         "'progressively more masked' sequence.")
-    ap.add_argument("--fix-s-at", type=float, default=1.0,
-                    help="hold the sky continuum amplitude s at this value while "
-                         "classifying, subtracting s x C_sky from the data first. "
-                         "It breaks the degeneracy between the source template and "
-                         "the sky continuum, which the data cannot separate")
-    ap.add_argument("--solve-s", action="store_true",
-                    help="solve s as a free parameter instead of fixing it")
-    ap.add_argument("--ids", type=int, nargs="+", default=None,
-                    help="classification file includes only these seg IDs. Omit = all fitted sources")
-    ap.add_argument("--z-override", nargs="*", default=[], metavar="ID=Z",
-                    help="override a source's redshift to a specified value, for sensitivity "
-                         "testing only -- production records should not contain manually set "
-                         "values. Amplitude is re-solved at the overridden z, not carried over")
-    ap.add_argument("--num-workers", type=int, default=0,
-                    help="worker processes. 0 means one third of the CPUs this "
-                         "process can see -- a conservative default for a machine "
-                         "shared with other people; on a machine of your own, raise it")
-    ap.add_argument("--work", required=True,
-                    help="working directory for this cube (contains step02/step03/step04)")
-    args = ap.parse_args()
-    classify_sources(args.work, args.K, id=args.id, basis=args.basis,
-        star_window=args.star_window, gal_window=args.gal_window,
-        full_range=args.full_range, line_mask_iter=args.line_mask_iter,
-        sky_basis=args.sky_basis, zmin=args.zmin, zmax=args.zmax, zstep=args.zstep,
-        star_dz=args.star_dz, aperture=args.aperture,
-        allow_partial=args.allow_partial, spec_dir=args.spec_dir,
-        raw_mask=args.raw_mask, fix_s_at=None if args.solve_s else args.fix_s_at,
-        ids=args.ids,
-        z_override=args.z_override, num_workers=args.num_workers)
-
-
-if __name__ == "__main__":
-    main()

@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 METHODS  = ("svd", "pca")
 APPLY_TO = ("basis", "sky_amplitude")
 # The channels the blank spaxels are solved on: every channel, or only those left
-# by step3's first sky-line mask. step5 and step6 import this for their own
-# --blank-channels, so the two ways in accept the same words.
+# by step3's first sky-line mask. Checked here, because this is where the value
+# steps 5 and 6 are given comes from.
 BLANK_CHANNELS = ("all", "line1")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
             "sky_amplitude", "spaxel_fit")

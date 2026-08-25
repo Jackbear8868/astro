@@ -39,30 +39,34 @@ Each step writes to `{output}/stepNN/` and the next reads from there, rather tha
 passing arrays in memory. That is deliberate:
 
 - the products are the interface the 23 scripts under `evaluation/` read
-- a step can be repeated on its own without redoing the ones before it
-- peak memory stays at the cost of the largest single step (about 7 GB, step 6)
+- every intermediate result stays there to be looked at after the run, instead of
+  existing only inside one process
+- peak memory stays at the cost of the largest single step (about 6 GB, step 6)
   instead of the sum of all six
 - `sky_subtracted.fits` is 4 GB and is the deliverable anyway
 
-## Calling a step directly
+## One entrance
 
-Every step is a function with named parameters, and `main()` is that function driven
-from a command line. Both do the same work:
-
-```python
-from skymodel import sky_basis
-sky_basis(work="results/skymodel/p01",
-          cube="data/wsky/DATACUBE_FINAL_1.fits", K=30, ylim=[170, 9999])
-```
+`run_pipeline.py` is the only supported way in, from a shell or from Python:
 
 ```bash
-conda run -n astro python src/skymodel/step3_sky_basis.py \
-    --work results/skymodel/p01 --cube data/wsky/DATACUBE_FINAL_1.fits \
-    -K 30 --ylim 170 9999
+conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
 ```
 
-The head of each `stepN.log` is the equivalent Python call, so a step is repeatable
-from its own log.
+```python
+from skymodel import run_pointing
+run_pointing("configs/p01.yaml")
+```
+
+The six steps are ordinary functions, but they are not exported and have no command
+lines of their own. Each expects a set of arguments that agree with each other -- the
+same K in steps 3, 4 and 6, an s-field solved against the sky basis step 6 reads, a
+`work` directory holding what the earlier steps wrote -- and the config file is what
+makes them agree.
+
+The head of each `stepN.log` is the call that produced the products beside it, written
+out as Python. It is the record of what that run was given, since a config can be
+edited afterwards and then nothing else says; it is not a command to re-run.
 
 ## Shared modules
 
@@ -73,11 +77,6 @@ from its own log.
 | `fitting.py` | the per-spaxel solves shared by steps 5 and 6 |
 | `templates.py` | the source templates: eigenspectra and the stellar library, read as splines |
 | `plotting.py` | figures the pipeline itself produces |
-
-## K, and why it is required everywhere
-
-`-K` has no default in any step. All three of steps 3, 4 and 6 must use the same K; with
-separate defaults, one step missed means silently reading a different basis.
 
 ## The segmentation
 

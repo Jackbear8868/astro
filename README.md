@@ -67,7 +67,7 @@ conda run -n astro python src/skymodel/run_pipeline.py configs/p01.yaml
 conda run -n astro python src/skymodel/run_pipeline.py configs/*.yaml   # all 14
 ```
 
-About two minutes and 7 GB of memory per pointing, and about 8 GB of output.
+About 80 seconds and 6 GB of memory per pointing, and about 8 GB of output.
 
 The products land under the config's `output` directory:
 
@@ -84,20 +84,9 @@ results/skymodel/p01/
 
 `configs/README.md` documents every field of a config.
 
-## Use one piece
+## The six steps
 
-The six steps are functions, and the pipeline is the six of them in order:
-
-```python
-from skymodel import run_pointing
-run_pointing("configs/p01.yaml")
-```
-
-```python
-from skymodel import sky_basis
-sky_basis(work="results/skymodel/p01",
-          cube="data/wsky/DATACUBE_FINAL_1.fits", K=30)
-```
+The pipeline is six steps in order:
 
     whitelight         collapse a cube along wavelength into a white light image
     object_spectra     sum each source's spectrum over the spaxels its seg ID covers
@@ -106,18 +95,25 @@ sky_basis(work="results/skymodel/p01",
     fit_s_field        force the sky continuum amplitude s onto a spatial field
     subtract_sky       apply the model to every spaxel and write the subtracted cube
 
-Each also has a command line of its own (`python src/skymodel/stepN_*.py --help`), and
-each writes its products to disk, so a step can be repeated on its own without redoing
-the ones before it.
+`run_pointing` is those six, driven by one pointing's config file, and it is the only
+way in -- the same thing `run_pipeline.py` does from a shell:
+
+```python
+from skymodel import run_pointing
+run_pointing("configs/p01.yaml")
+```
+
+Each step writes its products to disk, so every intermediate result is there to be
+looked at after the run. `src/skymodel/README.md` says what each step reads and writes.
 
 ## Reproducibility
 
 Runs are bit-reproducible: the same config gives the same products, byte for byte. Each
 fitting step holds BLAS at one thread while it works, which is what makes it so -- the
 randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
-the basis moves by about 1 part in 10⁴. A step run on its own limits itself the same
-way, so it gives what the pipeline gives. Steps 3, 5 and 6 stamp the git commit into
-their `meta.json`.
+the basis moves by about 1 part in 10⁴. Steps 3, 5 and 6 stamp the git commit into
+their `meta.json`, and each `stepN.log` opens with the call that produced the products
+beside it.
 
 ## Repository
 

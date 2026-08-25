@@ -3,9 +3,6 @@ C_sky and K sky-line basis vectors.
 
 Output is consumed by step4's template fitting. The decomposition method for
 the sky-line basis is interchangeable.
-
-sky_basis() does the work and can be called directly; main() is the same
-thing driven from the command line.
 """
 from pathlib import Path
 import numpy as np
@@ -14,9 +11,7 @@ from sklearn.decomposition import PCA, TruncatedSVD
 
 
 from utils import blas_single_thread, estimate_continuum, wavelength_grid
-import argparse
 import json
-import sys
 import subprocess
 import time
 
@@ -86,27 +81,21 @@ ROOT = Path(__file__).resolve().parents[2]   # paths in meta.json are stored rel
 @blas_single_thread
 def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=None,
         seed=SEED, continuum_window=WINDOW, line_thresholds=THRESHOLDS,
-        max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA, seg=None, out=None, argv=None):
-    """Write the sky continuum, line mask and sky-line basis into `out`; return that directory.
+        max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA):
+    """Write the sky continuum, line mask and sky-line basis into step03; return that directory.
 
-    K has no default here for the same reason -K is required on the command line:
-    all three steps must use the same K, and a default would let a missed step
-    silently read a different basis.
-
-    argv is written into meta.json as the record of how the step was launched, and
-    only main() can know it: called directly, sys.argv belongs to whatever called
-    sky_basis(), not to this step. It stays null in that case -- everything it would have
-    carried is already written out under its own name.
+    K has no default here: steps 3, 4 and 6 must all use the same K, and a default
+    would let one of them silently read a different basis.
     """
     work   = Path(work)
     STEP01 = work / "step01"
-    out_dir = Path(out) if out else work / "step03"
+    out_dir = work / "step03"
     out_dir.mkdir(parents=True, exist_ok=True)
     WSKY = Path(cube)
     print(f"workdir {work}   cube {WSKY.name}")
 
     white  = fits.getdata(STEP01 / "whitelight.fits")
-    seg_f  = Path(seg) if seg else STEP01 / "seg.fits"
+    seg_f  = STEP01 / "seg.fits"
     seg    = fits.getdata(seg_f)
     print(f"segmentation: {seg_f.name}  source spaxels {int((seg > 0).sum()):,}")
 
@@ -247,70 +236,6 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
         max_iter=max_iter, clip_sigma=clip_sigma,
         xlim=xlim, ylim=ylim, exclude_box=exclude_box,
         n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
-        argv=argv,
     ), indent=2, ensure_ascii=False) + "\n")
     print(f"meta -> {out_dir / 'meta.json'}")
     return out_dir
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Learn sky continuum and sky-line basis from blank spaxels")
-    ap.add_argument("--methods", nargs="+", default=["pca", "svd"],
-                    choices=METHODS, help="which decomposition methods to run")
-    ap.add_argument("-K", type=int, required=True,
-                    help="number of sky-line basis vectors; required -- all three steps must use the same K; with separate defaults a missed step silently reads a different basis")
-    ap.add_argument("--xlim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
-                    help="use only blank spaxels in this x range (pixels, includes LO, excludes HI) "
-                         "to learn the sky. The main source's extended halo leaks into nearby "
-                         "blank samples; restricting to a strip far from it yields fewer but "
-                         "cleaner samples. Trade-off: sky spatial variation is determined by "
-                         "only part of the field of view")
-    ap.add_argument("--ylim", type=int, nargs=2, default=None, metavar=("LO", "HI"),
-                    help="same as --xlim but restricts y")
-    ap.add_argument("--exclude-box", type=int, nargs=4, default=None,
-                    metavar=("Y0", "Y1", "X0", "X1"),
-                    help="exclude blank spaxels inside this box from sky training samples "
-                         "(endpoints inclusive). --xlim/--ylim can only trim edges, not cut "
-                         "out an interior region. Purpose: high-noise patches in a mosaic "
-                         "field with insufficient exposure. Spaxels inside the box are still "
-                         "sky-subtracted, just not used for training")
-    ap.add_argument("--seed", type=int, default=SEED,
-                    help="random seed for the decomposition; both PCA and TruncatedSVD "
-                         "default to a randomized algorithm, so an unfixed seed gives a "
-                         "different basis on every run")
-    ap.add_argument("--continuum-window", type=int, default=WINDOW,
-                    metavar="CHANNELS",
-                    help="running-median window used to estimate the sky continuum")
-    ap.add_argument("--line-thresholds", type=float, nargs=2, default=list(THRESHOLDS),
-                    metavar=("POS", "NEG"),
-                    help="line detection thresholds in sigma, positive and negative side")
-    ap.add_argument("--max-iter", type=int, default=MAX_ITER,
-                    help="maximum iterations of the continuum / line-mask loop")
-    ap.add_argument("--clip-sigma", type=float, default=CLIP_SIGMA,
-                    help="sigma clip applied per channel across spaxels before averaging, "
-                         "in units of the robust spread")
-    ap.add_argument("--seg", default=None,
-                    help="which segmentation map to use for defining blank. Default is "
-                         "SExtractor's step01/seg.fits; pointing to seg_dil{r}.fits from "
-                         "experiments/dilate_seg.py uses a version that excludes leaked "
-                         "source light from the sky samples")
-    ap.add_argument("--work", required=True,
-                    help="working directory for this cube (contains step01/step02/...); "
-                         "one per pointing, same structure, independent of each other")
-    ap.add_argument("--cube", required=True,
-                    help="the cube to learn the sky from. **Must be the sky-included wsky** "
-                         "-- the nosky cube already has ESO sky subtracted, so there is no "
-                         "sky to learn, only noise")
-    ap.add_argument("--out", default=None,
-                    help="output directory; if omitted writes to {work}/step03 (overwrites); "
-                         "specify explicitly for experiments")
-    args = ap.parse_args()
-    sky_basis(args.work, args.cube, args.K, argv=sys.argv[1:], methods=args.methods,
-        xlim=args.xlim, ylim=args.ylim, exclude_box=args.exclude_box,
-        seed=args.seed, continuum_window=args.continuum_window,
-        line_thresholds=args.line_thresholds, max_iter=args.max_iter,
-        clip_sigma=args.clip_sigma, seg=args.seg, out=args.out)
-
-
-if __name__ == "__main__":
-    main()

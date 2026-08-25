@@ -9,27 +9,16 @@
 The field is what step6 locks s to when fitting every spaxel. By replacing
 per-spaxel freedom with a smooth surface, source light has nowhere to hide
 inside the sky model and is preserved in the residual.
-
-fit_s_field() does the work and can be called directly; main() is the same
-thing driven from the command line.
-
-    conda run -n astro python src/skymodel/step5_fit_s_field.py \\
-        --basis svd -K 30 --work results/skymodel/p01 \\
-        --cube data/wsky/DATACUBE_FINAL_1.fits \\
-        --classification results/skymodel/p01/step04/classification_*.npz
 """
-import argparse
 import datetime
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
 
-from config import BLANK_CHANNELS
 from fitting import MIN_COVERAGE, fit_blank
 from plotting import plot_main_group
 from utils import (C_KMS, DZ_MAX, blas_single_thread, build_s_field,
@@ -47,35 +36,29 @@ def _rel(p):
 
 
 @blas_single_thread
-def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=None,
+def fit_s_field(work, cube, classification, K, basis="svd",
         blank_channels="all", min_channel_coverage=MIN_COVERAGE, fix_blank_s_at=None,
         min_source_distance=15.0, min_main_source_distance=50.0, train_exclude_box=None,
-        train_xlim=None, train_ylim=None, train_clip_sigma=8.0, main_source_dz=DZ_MAX,
-        out=None, argv=None):
-    """Write s_hat.npy, s_free.npy, main_group.png and meta.json; return that directory.
-
-    argv is written into meta.json as the record of how the step was launched, and
-    only main() can know it: called directly, sys.argv belongs to whatever called
-    fit_s_field(), not to this step. It stays null in that case -- everything it would have
-    carried is already written out under its own name.
-    """
+        train_xlim=None, train_ylim=None, train_clip_sigma=8.0, main_source_dz=DZ_MAX):
+    """Write s_hat.npy, s_free.npy, main_group.png and meta.json into step05; return
+    that directory."""
     work = Path(work)
     STEP01 = work / "step01"
     STEP03 = work / "step03"
     CUBE = Path(cube)
-    out = Path(out) if out else work / "step05"
+    out = work / "step05"
     out.mkdir(parents=True, exist_ok=True)
 
-    seg_path = Path(seg) if seg else STEP01 / "seg.fits"
+    seg_path = STEP01 / "seg.fits"
     seg   = fits.getdata(seg_path)
     white = np.asarray(fits.getdata(STEP01 / "whitelight.fits"), float)
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
     # The sky model on disk is sampled on the grid of whatever cube step3 read. A
-    # --work and a --cube from two pointings need only agree in channel count to run
-    # to the end, with every channel of the model offset against the data it is
-    # fitted to, so the grid is checked against this cube instead of assumed.
+    # work directory and a cube from two pointings need only agree in channel count
+    # to run to the end, with every channel of the model offset against the data it
+    # is fitted to, so the grid is checked against this cube instead of assumed.
     wl_path = STEP03 / "wavelength.npy"
     wl_air  = np.load(wl_path)
     wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
@@ -86,10 +69,9 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
         raise SystemExit(f"★ {wl_path} was not built from {CUBE}: the two wavelength "
                          f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
 
-    sky_dir = Path(sky_dir) if sky_dir else STEP03
-    sky = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
-                     np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])
-    print(f"sky model from {sky_dir.name}")
+    sky = np.vstack([np.load(STEP03 / "sky_continuum.npy"),
+                     np.load(STEP03 / f"sky_basis_{basis}_K{K}.npy")])
+    print(f"sky model from {STEP03.name}")
 
     classification_file = Path(classification)
     if not classification_file.exists():
@@ -136,8 +118,8 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
             sf_box |= (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
 
     # main source group
-    # The redshifts must come from the fit --classification names; a workspace can hold the
-    # results of several step4 runs at once.
+    # The redshifts must come from the fit `classification` names; a workspace can hold
+    # the results of several step4 runs at once.
     tag = classification_file.stem.removeprefix("classification_")
     mg, mids, mk = main_source_group(seg, white, classification_file.parent,
                                      main_source_dz, tag=tag)
@@ -181,7 +163,7 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
 
     meta = dict(
         step="s_field",
-        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
+        cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(STEP03)),
         classification=str(_rel(classification_file)), basis=basis, K=K,
         blank_channels=blank_channels, fix_blank_s_at=fix_blank_s_at,
         min_channel_coverage=min_channel_coverage,
@@ -197,65 +179,8 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
         created=datetime.datetime.now().isoformat(timespec="seconds"),
         git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                                   capture_output=True, text=True,
-                                  cwd=ROOT).stdout.strip(),
-        argv=argv)
+                                  cwd=ROOT).stdout.strip())
     (out / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2))
     print(f"saved -> {out}")
     return out
-
-
-def main():
-    ap = argparse.ArgumentParser(
-        description="Build the sky-continuum spatial field from a free blank solve")
-    ap.add_argument("--basis", default="svd")
-    ap.add_argument("-K", type=int, required=True,
-                    help="number of sky-line basis vectors")
-    ap.add_argument("--classification", required=True,
-                    help="step4 classification file (.npz)")
-    ap.add_argument("--seg", default=None,
-                    help="segmentation map; default step01/seg.fits")
-    ap.add_argument("--sky-dir", default=None,
-                    help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-channels", choices=BLANK_CHANNELS, default="all",
-                    help="channels used for the free blank solve")
-    ap.add_argument("--min-channel-coverage", type=float, default=MIN_COVERAGE,
-                    help="fraction of wavelength channels that must carry data before "
-                         "a spaxel is fitted; the field-of-view edge ring falls below it")
-    ap.add_argument("--fix-blank-s-at", type=float, default=None,
-                    help="fix s in the free blank solve (diagnostic use only)")
-    ap.add_argument("--min-source-distance", type=float, default=15.0,
-                    help="training points must be >= this far (px) from any source")
-    ap.add_argument("--min-main-source-distance", type=float, default=50.0,
-                    help="extra exclusion radius around the main source; 0 to disable")
-    ap.add_argument("--train-exclude-box", type=int, nargs=4, default=None,
-                    metavar=("Y0", "Y1", "X0", "X1"),
-                    help="exclude spaxels inside this box from s-field training")
-    ap.add_argument("--train-xlim", type=int, nargs=2, default=None,
-                    metavar=("LO", "HI"),
-                    help="restrict s-field training to this x range (inclusive LO, exclusive HI)")
-    ap.add_argument("--train-ylim", type=int, nargs=2, default=None,
-                    metavar=("LO", "HI"),
-                    help="restrict s-field training to this y range")
-    ap.add_argument("--train-clip-sigma", type=float, default=8.0,
-                    help="reject training points with |s - median| > clip x robust scatter")
-    ap.add_argument("--main-source-dz", type=float, default=DZ_MAX,
-                    help="max redshift difference for main-source grouping")
-    ap.add_argument("--work", required=True,
-                    help="working directory (contains step01/step03/step04)")
-    ap.add_argument("--cube", required=True,
-                    help="sky-included (wsky) cube")
-    ap.add_argument("--out", default=None,
-                    help="output directory; default {work}/step05")
-    args = ap.parse_args()
-    fit_s_field(args.work, args.cube, args.classification, args.K, argv=sys.argv[1:], basis=args.basis,
-        seg=args.seg, sky_dir=args.sky_dir, blank_channels=args.blank_channels,
-        min_channel_coverage=args.min_channel_coverage, fix_blank_s_at=args.fix_blank_s_at,
-        min_source_distance=args.min_source_distance, min_main_source_distance=args.min_main_source_distance,
-        train_exclude_box=args.train_exclude_box, train_xlim=args.train_xlim,
-        train_ylim=args.train_ylim, train_clip_sigma=args.train_clip_sigma,
-        main_source_dz=args.main_source_dz, out=args.out)
-
-
-if __name__ == "__main__":
-    main()
