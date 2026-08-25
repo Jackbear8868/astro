@@ -57,3 +57,9 @@ s_field:
 spaxel_fit:
   blank_region: all         # all or line1: which channels solve the blank coefficients
   min_coverage: 0.9         # fraction of channels with data required before a spaxel is fitted
+
+# This pointing's segmentation and white light sit 0.33 px apart, where the other
+# thirteen are within 0.020 px. Raising the limit is a decision to run on headers
+# that disagree, and it is written here so that the decision travels with the
+# pointing: anything p14 produces from sky coordinates carries that offset.
+max_grid_offset: 0.5
