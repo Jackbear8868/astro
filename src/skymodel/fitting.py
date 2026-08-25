@@ -172,8 +172,20 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
         _unpack(th, j)
 
     if has_bounds:
-        violators = np.flatnonzero(np.any(out[:p] < lb[:, None], axis=0)
-                                   & np.isfinite(out[0]))
+        # lb is in the order the design columns were stacked; out is in the fixed
+        # report order. The two are different orders and line up only when n_comp
+        # happens to equal N_SRC, so the bounds are read through this map instead of
+        # against out row by row -- otherwise a bound is compared with someone else's
+        # coefficient and the violation it exists to catch never fires.
+        design_to_out = (list(range(n_comp))
+                         + ([N_SRC] if s_fix is None else [])
+                         + list(range(N_SRC + 1, N_SRC + K)))
+        theta = out[design_to_out]
+        # A column that got neither solve leaves its design rows NaN, and NaN fails
+        # every comparison; that is not a column within its bounds, it is a column
+        # with nothing to re-solve.
+        solved = np.isfinite(theta).all(axis=0)
+        violators = np.flatnonzero(np.any(theta < lb[:, None], axis=0) & solved)
         for j in violators:
             g = good[:, j]
             th = lsq_linear(design[:, g].T, y[g, j],

@@ -31,9 +31,8 @@ from astropy.io import fits
 
 from fitting import MIN_COVERAGE, fit_blank
 from plotting import plot_main_group
-from templates import air_to_vacuum
 from utils import (C_KMS, DZ_MAX, build_s_field, galaxy_redshifts,
-                   main_source_group)
+                   main_source_group, wavelength_grid)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -71,7 +70,20 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-    wl_vac = air_to_vacuum(np.load(STEP03 / "wavelength.npy"))
+    # The sky model on disk is sampled on the grid of whatever cube step3 read. A
+    # --work and a --cube from two pointings need only agree in channel count to run
+    # to the end, with every channel of the model offset against the data it is
+    # fitted to, so the grid is checked against this cube instead of assumed.
+    wl_path = STEP03 / "wavelength.npy"
+    wl_air  = np.load(wl_path)
+    wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
+    if wl_air.shape != wl_cube.shape:
+        raise SystemExit(f"★ {wl_path} has {wl_air.size} channels but {CUBE} has "
+                         f"{wl_cube.size}")
+    if not np.allclose(wl_air, wl_cube, atol=1e-6):
+        raise SystemExit(f"★ {wl_path} was not built from {CUBE}: the two wavelength "
+                         f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
+
     sky_dir = Path(sky_dir) if sky_dir else STEP03
     sky = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
                      np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])
@@ -155,6 +167,13 @@ def fit_s_field(work, cube, classification, K, basis="svd", seg=None, sky_dir=No
           f"NaN {int((~np.isfinite(s_hat[white != 0])).sum())} spaxels")
 
     # save
+    # step6 locks s to this field, so a field that is NaN everywhere makes the sky
+    # model NaN everywhere and the subtracted cube with it, and nothing further down
+    # separates that from a subtraction that worked.
+    if not np.isfinite(s_hat).any():
+        raise SystemExit("★ s_hat is NaN in every spaxel; the field was not estimated "
+                         f"from the {int(sf_train.sum()):,} training spaxels and is not "
+                         "written")
     np.save(out / "s_hat.npy", s_hat.astype(np.float32))
     np.save(out / "s_free.npy", s_free.reshape(ny, nx).astype(np.float32))
 

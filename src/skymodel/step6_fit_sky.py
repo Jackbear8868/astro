@@ -32,6 +32,7 @@ from astropy.io import fits
 
 from fitting import MIN_COVERAGE, N_SRC, build_templates, fit_blank, fit_source
 from templates import air_to_vacuum
+from utils import wavelength_grid
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,7 +79,22 @@ def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, 
     print(f"workdir {work}   cube {CUBE.name}")
     print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-    wl_vac = air_to_vacuum(np.load(STEP03 / "wavelength.npy"))
+    # The sky model on disk is sampled on the grid of whatever cube step3 read, and
+    # the source templates are about to be redshifted onto that same grid. A --work
+    # and a --cube from two pointings need only agree in channel count to run to the
+    # end, with model and data offset against each other, so the grid is checked
+    # against this cube instead of assumed.
+    wl_path = STEP03 / "wavelength.npy"
+    wl_air  = np.load(wl_path)
+    wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
+    if wl_air.shape != wl_cube.shape:
+        raise SystemExit(f"★ {wl_path} has {wl_air.size} channels but {CUBE} has "
+                         f"{wl_cube.size}")
+    if not np.allclose(wl_air, wl_cube, atol=1e-6):
+        raise SystemExit(f"★ {wl_path} was not built from {CUBE}: the two wavelength "
+                         f"grids differ by up to {np.abs(wl_air - wl_cube).max():.4g} A")
+
+    wl_vac = air_to_vacuum(wl_air)
     sky_dir = Path(sky_dir) if sky_dir else STEP03
     sky = np.vstack([np.load(sky_dir / "sky_continuum.npy"),
                      np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])

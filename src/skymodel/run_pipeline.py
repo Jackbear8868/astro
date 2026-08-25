@@ -55,7 +55,9 @@ from step6_fit_sky import subtract_sky
 # Which lines of a step reach the terminal while it runs; the rest is in the log.
 KEEP = {
     "step3": r"spatial restriction|exclude-box|blank spaxels|svd |pca ",
-    "step5": r"main source|s spatial field|saved",
+    # step5's s_hat median is the one number that shows the field was estimated at
+    # all; left in the log only, a field of NaN passes the terminal unremarked.
+    "step5": r"main source|s spatial field|s_hat median|saved",
     "step6": r"blank|source |saved",
 }
 

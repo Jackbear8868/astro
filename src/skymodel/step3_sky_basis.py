@@ -13,7 +13,7 @@ from astropy.io import fits
 from sklearn.decomposition import PCA, TruncatedSVD
 
 
-from utils import estimate_continuum
+from utils import estimate_continuum, wavelength_grid
 import argparse
 import json
 import sys
@@ -124,7 +124,9 @@ def sky_basis(work, cube, K, methods=METHODS, xlim=None, ylim=None, exclude_box=
     with fits.open(WSKY, memmap=True) as hdul:
         hdr = hdul["DATA"].header
         nz  = hdr["NAXIS3"]
-        wl  = hdr["CRVAL3"] + (np.arange(nz) + 1 - hdr["CRPIX3"]) * hdr["CD3_3"]
+        # This is the grid every later step reads back from wavelength.npy, so it is
+        # built by the shared rule rather than spelled out again here.
+        wl  = wavelength_grid(hdr)
 
         blank = np.empty((nz, int(blank_mask.sum())), np.float32)
         for j in range(0, nz, 200):

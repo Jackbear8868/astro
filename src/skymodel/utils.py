@@ -62,6 +62,28 @@ def fit_dirs(work, run=None):
     return d, d
 
 
+def wavelength_grid(header):
+    """The wavelength of every channel of a cube, from its DATA header.
+
+    The rule lives here rather than in the step that first needs it: every later
+    step has to rebuild the same grid to check that the one saved on disk belongs
+    to the cube it was handed, and a formula written in several places drifts.
+
+    CTYPE3 is checked rather than assumed. The arithmetic below is linear
+    sampling, which is what AWAV declares; on a log-sampled axis it would still
+    return a grid, correct only at the reference channel and wrong everywhere
+    else, and nothing downstream can tell that from a real one.
+    """
+    ctype = header.get("CTYPE3")
+    if ctype is not None and str(ctype).strip() != "AWAV":
+        raise SystemExit(f"★ CTYPE3 is {str(ctype).strip()!r}, not 'AWAV'; this "
+                         "wavelength axis is not linearly sampled in air wavelength "
+                         "and cannot be built by this formula")
+    nz = header["NAXIS3"]
+    return (header["CRVAL3"]
+            + (np.arange(nz, dtype=np.float64) + 1 - header["CRPIX3"]) * header["CD3_3"])
+
+
 def running_median(spectrum, window=300):
     half = window // 2
     n = len(spectrum)
@@ -530,11 +552,24 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
         typically have already computed this via main_source_group.
     """
     train = blank & (ndimage.distance_transform_edt(seg == 0) > r_far)
+    n_far = int(train.sum())
     if exclude is not None:
         train &= ~exclude
+    n_kept = int(train.sum())
     if r_far_haro:
         m = main if main is not None else main_source_mask(seg, main_id)[0]
         train &= ndimage.distance_transform_edt(~m) > r_far_haro
+    # With no training spaxel the median below is NaN, every later comparison is
+    # False, and the field comes out NaN everywhere -- a result that looks like an
+    # answer. The count after each cut is reported because which one emptied the
+    # set is what says which parameter to change.
+    if not train.any():
+        raise SystemExit(
+            "★ no spaxel is left to train the s field. Survivors after each cut: "
+            f"{n_far:,} more than {r_far:g} px from any source"
+            + (f", {n_kept:,} outside the exclude mask" if exclude is not None else "")
+            + (f", {int(train.sum()):,} more than {r_far_haro:g} px from the main source"
+               if r_far_haro else ""))
     med = float(np.median(s[train]))
     train &= np.abs(s - med) <= clip * scale(s[train])
 
