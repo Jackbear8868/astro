@@ -21,6 +21,23 @@ reads a file, checks the values and hands them out with the paths resolved.
 | `sky_amplitude` | the spatial field the sky continuum amplitude s is forced onto (step5) |
 | `spaxel_fit` | applying the model to every spaxel (step5 and step6) |
 | `max_grid_offset` | optional, default 0.1. How far apart the seg and white-light grids may be, in pixels, before the pointing is refused. Write it only to raise it, which is a decision to run on headers that disagree; the run then prints the offset and the limit that allowed it |
+| `keep_intermediate` | optional, default true. False makes steps 1 to 5 skip writing their products; step 6 always writes, being the deliverable. It changes what is left on disk and nothing else -- the step 6 of a run with it off is the step 6 of a run with it on |
+
+## Two values that are easy to misread
+
+`sky_line_basis.min_unmasked_frac` is a floor on how much of the spectrum
+survives the sky-line mask, not a target. The continuum is estimated by masking
+lines and re-fitting; if an iteration would leave less than this fraction of the
+channels unmasked, there is not enough continuum left to fit and the loop stops
+with the previous iteration's answer. Lowering it lets the mask grow further.
+
+`sky_amplitude.n_iter` is how many alternating median passes build the spatial
+field of s. The alternation converges -- the row and column offsets stop moving
+altogether -- so this only has to be past that point, and past is free: an
+iteration costs a few milliseconds against a step that takes seconds. Too few is
+the failure that matters, because the field is then still drifting, and it
+drifts most where it is extrapolating over the source, which is the part the
+field exists to supply.
 
 ## sky_region
 

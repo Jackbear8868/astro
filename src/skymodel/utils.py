@@ -167,7 +167,11 @@ def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
     return continuum, sigma, line_mask
 
 
-def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5, min_unmasked_frac=0.16):
+MIN_UNMASKED_FRAC = 0.16
+
+
+def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5,
+                       min_unmasked_frac=MIN_UNMASKED_FRAC):
     line_mask = None
     history = []
 
@@ -792,7 +796,10 @@ def nanmed(a, axis):
         return np.nan_to_num(np.nanmedian(a, axis=axis))
 
 
-def rowcol_field(s, w, n_iter=4):
+FIELD_ITER = 100
+
+
+def rowcol_field(s, w, n_iter=FIELD_ITER):
     """s ~ mu + a(y) + b(x), solved by alternating medians (Tukey's median
     polish).
 
@@ -818,9 +825,10 @@ def rowcol_field(s, w, n_iter=4):
 
     Why alternate: a and b are coupled. To measure "how much higher is this
     row", the column offsets must be subtracted first, otherwise the
-    measurement reflects "which columns happen to remain in this row". n_iter
-    defaults to 4, providing margin above the number of iterations needed for
-    convergence.
+    measurement reflects "which columns happen to remain in this row". The
+    alternation reaches a fixed point -- the step shrinks until a and b stop
+    moving at all -- so n_iter only has to be past that point; running further
+    costs a few milliseconds an iteration and changes nothing.
 
     Note the degeneracy: adding c to every a(y) and subtracting c from every
     b(x) leaves the field unchanged. So (mu, a, b) are individually
@@ -841,7 +849,7 @@ def rowcol_field(s, w, n_iter=4):
 
 
 def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
-                  main_id=None, exclude=None, main=None):
+                  main_id=None, exclude=None, main=None, n_iter=FIELD_ITER):
     """Build a spatial field from the per-spaxel s map. Returns (s_hat,
     training mask).
 
@@ -910,7 +918,7 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
     med = float(np.median(s[train]))
     train &= np.abs(s - med) <= clip * scale(s[train])
 
-    M, _, _ = rowcol_field(s, train)
+    M, _, _ = rowcol_field(s, train, n_iter)
     return M, train
 
 

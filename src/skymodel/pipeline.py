@@ -75,7 +75,8 @@ import matplotlib.pyplot as plt
 # ROOT comes from config rather than being resolved again here: that module sits in
 # this directory too, so its parents[2] is the same repository root.
 from config import MAX_GRID_OFFSET, ROOT, load
-from utils import (C_KMS, DWARF_DIR, DZ_MAX, MIN_COVERAGE, STAR_LIBRARY,
+from utils import (C_KMS, DWARF_DIR, DZ_MAX, FIELD_ITER, MIN_COVERAGE,
+                   MIN_UNMASKED_FRAC, STAR_LIBRARY,
                    air_to_vacuum, blas_single_thread, build_s_field,
                    build_templates, estimate_continuum, fit_blank, fit_source,
                    load_ascii_template, load_eigen_galaxy, load_line_masks,
@@ -166,6 +167,7 @@ def run_pointing(cfg_path):
                         continuum_window=basis["continuum_window"],
                         line_thresholds=basis["line_thresholds"],
                         max_iter=basis["max_iter"], clip_sigma=basis["clip_sigma"],
+                        min_unmasked_frac=basis["min_unmasked_frac"],
                         keep_intermediate=keep_intermediate,
                         **basis_region),
                    out / "step3.log", keep=KEEP["step3"])
@@ -200,6 +202,7 @@ def run_pointing(cfg_path):
                             min_main_source_distance=amp["min_main_source_distance"],
                             train_clip_sigma=amp["train_clip_sigma"],
                             main_source_dz=amp["main_source_dz"],
+                            n_iter=amp["n_iter"],
                             keep_intermediate=keep_intermediate,
                             **train_region),
                        out / "step5.log", keep=KEEP["step5"])
@@ -765,7 +768,7 @@ def learn_sky_basis(residual, K=10, method="pca", seed=SEED, chunk=200):
 def sky_basis(work, cube, white, seg, K, methods=METHODS, xlim=None, ylim=None,
         exclude_box=None, seed=SEED, continuum_window=WINDOW,
         line_thresholds=THRESHOLDS, max_iter=MAX_ITER, clip_sigma=CLIP_SIGMA,
-        keep_intermediate=True):
+        min_unmasked_frac=MIN_UNMASKED_FRAC, keep_intermediate=True):
     """Learn the sky continuum, the line mask and the sky-line basis; return them.
 
     white and seg come from step1 and from the segmentation check, in memory. With
@@ -858,7 +861,8 @@ def sky_basis(work, cube, white, seg, K, methods=METHODS, xlim=None, ylim=None,
           f"{keep.size:,} elements ({100*(~keep).mean():.6f}%)")
     C_sky, sigma, line_mask, history = estimate_continuum(
         mean_sky, thresholds=tuple(line_thresholds),
-        window=continuum_window, max_iter=max_iter)
+        window=continuum_window, max_iter=max_iter,
+        min_unmasked_frac=min_unmasked_frac)
     print(f"line_mask: {100*line_mask.mean():.1f}% of channels  "
           f"({len(history)} iterations: "
           f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
@@ -1666,7 +1670,7 @@ def fit_s_field(work, cube, white, seg, sky, classification, K, basis="svd",
         blank_channels="all", min_channel_coverage=MIN_COVERAGE, fix_blank_s_at=None,
         min_source_distance=15.0, min_main_source_distance=50.0, train_exclude_box=None,
         train_xlim=None, train_ylim=None, train_clip_sigma=8.0, main_source_dz=DZ_MAX,
-        keep_intermediate=True):
+        n_iter=FIELD_ITER, keep_intermediate=True):
     """Build the sky-continuum spatial field; return it.
 
     white, seg, sky and classification are what steps 1, 3 and 4 returned, in
@@ -1757,7 +1761,7 @@ def fit_s_field(work, cube, white, seg, sky, classification, K, basis="svd",
     t0 = time.time()
     s_hat, sf_train = build_s_field(
         s2d, seg, ok2d, min_source_distance, min_main_source_distance or None,
-        train_clip_sigma, exclude=sf_box, main=mg)
+        train_clip_sigma, exclude=sf_box, main=mg, n_iter=n_iter)
     print(f"s spatial field: {int(sf_train.sum()):,} training spaxels"
           f" (dist > {min_source_distance:g} px from sources"
           + (f", Haro 11 > {min_main_source_distance:g} px" if min_main_source_distance else "")
@@ -1799,7 +1803,7 @@ def fit_s_field(work, cube, white, seg, sky, classification, K, basis="svd",
             train_clip_sigma=train_clip_sigma,
             train_exclude_box=train_exclude_box,
             train_xlim=train_xlim, train_ylim=train_ylim,
-            main_source_dz=main_source_dz),
+            main_source_dz=main_source_dz, n_iter=n_iter),
         main_ids=[int(i) for i in mids],
         n_blank=int(blank.sum()), n_train=int(sf_train.sum()),
         created=datetime.datetime.now().isoformat(timespec="seconds"),

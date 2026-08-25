@@ -129,6 +129,10 @@ def load(path):
         _fail(f"sky_line_basis.K must be a positive integer, got {b.get('K')!r}")
     b["line_thresholds"] = _pair(b.get("line_thresholds"),
                                  "sky_line_basis.line_thresholds")
+    # A fraction of the channels, so it lives in [0, 1]. At 1 no mask could ever
+    # be accepted and at 0 one covering every channel would be.
+    _number(b.get("min_unmasked_frac"),
+            "sky_line_basis.min_unmasked_frac", ge=0, le=1)
 
     s = cfg["source_fit"]
     s["fit_window"] = _pair(s.get("fit_window"), "source_fit.fit_window")
@@ -152,6 +156,9 @@ def load(path):
             "sky_amplitude.min_main_source_distance", ge=0)
     _number(a.get("train_clip_sigma"), "sky_amplitude.train_clip_sigma", gt=0)
     _number(a.get("main_source_dz"), "sky_amplitude.main_source_dz", ge=0)
+    if not isinstance(a.get("n_iter"), int) or a["n_iter"] < 1:
+        _fail(f"sky_amplitude.n_iter must be a positive integer, "
+              f"got {a.get('n_iter')!r}")
 
     sp = cfg["spaxel_fit"]
     if sp.get("blank_channels") not in BLANK_CHANNELS:

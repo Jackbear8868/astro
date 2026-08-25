@@ -32,6 +32,7 @@ sky_line_basis:
   line_thresholds: [1, 2]   # line detection, (positive, negative) sigma
   max_iter: 5                           # iterations of the continuum / line-mask loop
   clip_sigma: 30                        # sigma clip applied to the mean sky spectrum
+  min_unmasked_frac: 0.16               # stop if the line mask would cover more than 1 - this
 
 # Fitting a template to every detected source, which gives it a class and a
 # redshift.
@@ -54,6 +55,7 @@ sky_amplitude:
   min_main_source_distance: 50          # extra exclusion radius around the main source; 0 disables it
   train_clip_sigma: 8                   # reject training points beyond this x the robust scatter
   main_source_dz: 0.005                 # largest redshift difference still counted as the same source
+  n_iter: 100                           # median-polish iterations for the spatial field
 
 # Applying the model to every spaxel.
 spaxel_fit:
