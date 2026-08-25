@@ -20,6 +20,7 @@ reads a file, checks the values and hands them out with the paths resolved.
 | `source_fit` | the template fit that gives every source a class and a redshift (step4) |
 | `s_field` | the spatial field the sky continuum amplitude s is forced onto (step5) |
 | `spaxel_fit` | applying the model to every spaxel (step5 and step6) |
+| `max_grid_offset` | optional, default 0.1. How far apart the seg and white-light grids may be, in pixels, before the pointing is refused. Write it only to raise it, which is a decision to run on headers that disagree; the run then prints the offset and the limit that allowed it |
 
 ## sky_region
 

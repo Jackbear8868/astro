@@ -28,7 +28,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.wcs.utils import proj_plane_pixel_scales
 
-from config import ROOT, load
+from config import MAX_GRID_OFFSET, ROOT, load
 from step4_fit_source import make_suffix, make_tag
 
 HERE = Path(__file__).resolve().parent
@@ -95,12 +95,6 @@ def run_step(label, script, argv, log_path, keep=None, tail=0):
         raise SystemExit(f"★ {label} failed (exit {code}); full output in {log_path}")
 
 
-# How far apart the seg and white-light grids may be before the pointing is
-# refused, in pixels. The 13 pointings that pass sit at 0.000-0.020 px, so this is
-# loose by more than an order of magnitude and still catches a real mismatch.
-MAX_GRID_OFFSET = 0.1
-
-
 def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
     """Copy the professor's segmentation next to the white light and confirm the
     two share a pixel grid.
@@ -111,9 +105,9 @@ def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
     both of which a literal comparison would report as a mismatch.
 
     max_offset above the default is a decision to run anyway on a pointing whose
-    headers disagree. It is a parameter rather than something to edit in place so
-    that the raised limit is printed and lands in the step log: a bypass nobody can
-    see afterwards is worse than the mismatch it was working around.
+    headers disagree. It comes from that pointing's config and is printed when it
+    is above the default, so the bypass is recorded twice -- in the file and in
+    the step log -- rather than living in whoever's shell history raised it.
     """
     dst = out / "step01/seg.fits"
     shutil.copy(seg_src, dst)
@@ -133,18 +127,18 @@ def place_segmentation(seg_src, out, max_offset=MAX_GRID_OFFSET):
     if off > max_offset:
         raise SystemExit(f"★ seg and white light grids are {off:.2f} px apart "
                          "(largest of the four corners and the centre); "
-                         f"the limit is {max_offset:g} px. Raise it with "
-                         "--max-grid-offset to run anyway")
+                         f"the limit is {max_offset:g} px. Raise "
+                         "max_grid_offset in this pointing's config to run anyway")
     print(f"    {len(np.unique(s)) - 1} sources, mask {100 * (s > 0).mean():.1f}%, "
           f"grid offset {off:.3f} px")
     if off > MAX_GRID_OFFSET:
         print(f"    ! grid offset {off:.3f} px exceeds the usual limit "
-              f"{MAX_GRID_OFFSET:g} px and was allowed by --max-grid-offset "
-              f"{max_offset:g}. Anything this pointing produces from sky "
+              f"{MAX_GRID_OFFSET:g} px and was allowed by max_grid_offset "
+              f"{max_offset:g} in the config. Anything this pointing produces from sky "
               f"coordinates carries that offset.")
 
 
-def run_pointing(cfg_path, max_grid_offset=MAX_GRID_OFFSET):
+def run_pointing(cfg_path):
     cfg = load(cfg_path)
     out = cfg["output"]
     inp = cfg["input"]
@@ -173,7 +167,7 @@ def run_pointing(cfg_path, max_grid_offset=MAX_GRID_OFFSET):
              [inp["nosky"], "--out", out / "step01"], out / "step1.log")
 
     print("--- [2/7] the professor's segmentation")
-    place_segmentation(inp["seg"], out, max_grid_offset)
+    place_segmentation(inp["seg"], out, cfg["max_grid_offset"])
 
     print("--- [3/7] step2 source spectra (nosky, for classification)")
     run_step("step2", "step2_object_spectra.py",
@@ -245,14 +239,9 @@ def main():
         description="Run the sky reconstruction pipeline for one or more pointings")
     ap.add_argument("config", nargs="+",
                     help="pointing config file(s), e.g. configs/p01.yaml")
-    ap.add_argument("--max-grid-offset", type=float, default=MAX_GRID_OFFSET,
-                    help=f"how far apart the seg and white-light grids may be, in "
-                         f"pixels, before the pointing is refused (default "
-                         f"{MAX_GRID_OFFSET:g}). Raising it runs a pointing whose "
-                         f"headers disagree; the offset is printed either way")
     args = ap.parse_args()
     for path in args.config:
-        run_pointing(path, args.max_grid_offset)
+        run_pointing(path)
 
 
 if __name__ == "__main__":

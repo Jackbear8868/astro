@@ -262,22 +262,6 @@ def scale(a):
     return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2) if a.size else np.nan
 
 
-def noise_floor(img, m, axis=1):
-    """Estimate the per-solve noise from adjacent-pixel differences.
-    var(a - b) = 2 var(noise), so divide by sqrt(2).
-
-    Assumes the true value is approximately the same in adjacent pixels. If
-    there is genuine structure at the 1 px scale, this estimate is biased
-    high -- it is therefore an upper bound on the noise, i.e. a conservative
-    estimate of the "compressible headroom".
-    """
-    if axis == 0:
-        d, mm = img[1:] - img[:-1], m[1:] & m[:-1]
-    else:
-        d, mm = img[:, 1:] - img[:, :-1], m[:, 1:] & m[:, :-1]
-    return scale(d[mm]) / np.sqrt(2.0)
-
-
 def nanmed(a, axis):
     """Median along axis; returns 0 instead of NaN when an entire row/column
     is all NaN.

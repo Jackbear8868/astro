@@ -21,6 +21,13 @@ APPLY_TO = ("basis", "s_field")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit", "s_field",
             "spaxel_fit")
 
+# How far apart the seg and white-light grids may be before the pointing is
+# refused, in pixels. The 13 pointings that pass sit at 0.000-0.020 px, so this is
+# loose by more than an order of magnitude and still catches a real mismatch.
+# Optional in the file: a pointing writes it only to raise it, and raising it is
+# a decision to run on headers that disagree.
+MAX_GRID_OFFSET = 0.1
+
 
 def _fail(msg):
     raise SystemExit(f"★ config: {msg}")
@@ -98,5 +105,12 @@ def load(path):
         _fail(f"source_fit.fit_window must increase, got {s['fit_window']}")
     if not isinstance(s.get("line_mask_iter"), list) or not s["line_mask_iter"]:
         _fail("source_fit.line_mask_iter must be a non-empty list of iteration numbers")
+
+    # Optional, so it is filled in here rather than required of all 14 files. It
+    # still lives only in the config: a limit raised on the command line would be
+    # a bypass that leaves no record of which pointing it was applied to.
+    g = cfg.setdefault("max_grid_offset", MAX_GRID_OFFSET)
+    if not isinstance(g, (int, float)) or g <= 0:
+        _fail(f"max_grid_offset must be a positive number, got {g!r}")
 
     return cfg
