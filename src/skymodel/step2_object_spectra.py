@@ -1,4 +1,20 @@
+"""Sum every source's spectrum over the spaxels its segmentation ID covers.
+
+These summed spectra are what step4 classifies: one spectrum per source, with its
+variance and the number of contributing spaxels per channel. They come from a
+sky-subtracted cube -- classifying a spectrum that still holds the sky gives output
+that looks entirely normal with every template and redshift wrong.
+
+run() does the work and can be called directly; main() is the same thing driven from
+the command line.
+
+    conda run -n astro python src/skymodel/step2_object_spectra.py \\
+        --work results/skymodel/p01 --cube data/nosky/DATACUBE_FINAL_ESOSKY_1.fits \\
+        --out results/skymodel/p01/step02
+"""
+import argparse
 from pathlib import Path
+
 import numpy as np
 from astropy.io import fits
 
@@ -80,8 +96,49 @@ def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
     return flux, var, nspax
 
 
+def run(work, cube, out=None, var_cube=None, top=20):
+    """Write the summed spectra of `work`'s sources into `out`; return that directory.
+
+    top only sets how many rows of the SNR table are printed. It changes nothing that
+    is saved -- the table is there to notice a source that came out far weaker than
+    the rest, which no saved array announces on its own.
+    """
+    work = Path(work)
+    step01 = work / "step01"
+    out = Path(out) if out else work / "step02"
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"workspace {work}   cube {Path(cube).name}")
+
+    white = fits.getdata(step01 / "whitelight.fits")
+    seg = fits.getdata(step01 / "seg.fits")
+
+    valid_mask  = white != 0
+    source_mask = (seg > 0) & valid_mask
+    seg_valid   = np.where(valid_mask, seg, 0)      # outside FoV -> 0, excluded from sum
+
+    ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
+    print(f"{len(ids)} sources, {counts.sum()} source spaxels")
+
+    print(f"DATA <- {Path(cube).name}   STAT <- {Path(var_cube or cube).name}")
+    flux, var, nspax = sum_spectra_by_id(cube, seg_valid, ids, var_path=var_cube)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        snr = np.nanmedian(flux / np.sqrt(var), axis=1)
+
+    order = np.argsort(snr)[::-1]
+    print(f"{'ID':>5} {'N':>7} {'sqrt(N)':>9} {'median SNR':>12}")
+    for k in order[:top]:
+        print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
+
+    np.save(out / "object_ids.npy",   ids)
+    np.save(out / "object_flux.npy",  flux)
+    np.save(out / "object_var.npy",   var)
+    np.save(out / "object_nspax.npy", nspax)
+    print("saved ->", out)
+    return out
+
+
 def main():
-    import argparse
     ap = argparse.ArgumentParser(description="sum source spectra by segmentation ID")
     ap.add_argument("--cube", required=True,
                     help="cube to extract (reads its DATA). Classification needs a "
@@ -96,40 +153,7 @@ def main():
     ap.add_argument("--work", required=True, help="working directory for this cube")
     ap.add_argument("--out", required=True, help="output directory")
     args = ap.parse_args()
-    work   = Path(args.work)
-    STEP01 = work / "step01"
-    out    = Path(args.out) if args.out else work / "step02"
-    out.mkdir(parents=True, exist_ok=True)
-    print(f"workspace {work}   cube {Path(args.cube).name}")
-
-    white = fits.getdata(STEP01 / "whitelight.fits")
-    seg   = fits.getdata(STEP01 / "seg.fits")
-
-    valid_mask  = white != 0
-    source_mask = (seg > 0) & valid_mask
-    seg_valid   = np.where(valid_mask, seg, 0)      # outside FoV -> 0, excluded from sum
-
-    ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
-    print(f"{len(ids)} sources, {counts.sum()} source spaxels")
-
-    print(f"DATA <- {Path(args.cube).name}   STAT <- "
-          f"{Path(args.var_cube or args.cube).name}")
-    flux, var, nspax = sum_spectra_by_id(args.cube, seg_valid, ids,
-                                         var_path=args.var_cube)
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        snr = np.nanmedian(flux / np.sqrt(var), axis=1)
-
-    order = np.argsort(snr)[::-1]
-    print(f"{'ID':>5} {'N':>7} {'sqrt(N)':>9} {'median SNR':>12}")
-    for k in order[:20]:
-        print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
-
-    np.save(out / "object_ids.npy",   ids)
-    np.save(out / "object_flux.npy",  flux)
-    np.save(out / "object_var.npy",   var)
-    np.save(out / "object_nspax.npy", nspax)
-    print("saved ->", out)
+    run(args.work, args.cube, out=args.out, var_cube=args.var_cube)
 
 
 if __name__ == "__main__":
