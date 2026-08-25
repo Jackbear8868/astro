@@ -391,7 +391,9 @@ def main():
 
     # 主源分組要用的紅移必須出自畫的是哪一次擬合;工作區裡可能有好幾次 step4。
     meta = json.loads((run / "meta.json").read_text())
-    tag  = Path(meta["best"]).stem.removeprefix("classification_")
+    # "classification" is the key; "best" is what step5 wrote before the parameter
+    # was renamed, and products made then are still on disk.
+    tag  = Path(meta.get("classification") or meta["best"]).stem.removeprefix("classification_")
     boxes, notes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
                                           args.edge, args.margin, W / "step04", tag)
     print(f"main source {int(main.sum()):,} px, brightest pixel (y, x) = {peak}")

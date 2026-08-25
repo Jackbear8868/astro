@@ -282,7 +282,7 @@ def main():
                     help="output directory; if omitted writes to {work}/step03 (overwrites); "
                          "specify explicitly for experiments")
     args = ap.parse_args()
-    run(args.work, args.cube, args.K, argv=sys.argv[1:], methods=args.methods,
+    sky_basis(args.work, args.cube, args.K, argv=sys.argv[1:], methods=args.methods,
         xlim=args.xlim, ylim=args.ylim, exclude_box=args.exclude_box,
         seed=args.seed, continuum_window=args.continuum_window,
         line_thresholds=args.line_thresholds, max_iter=args.max_iter,

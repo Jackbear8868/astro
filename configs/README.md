@@ -18,7 +18,7 @@ reads a file, checks the values and hands them out with the paths resolved.
 | `sky_region` | which part of the field the sky is learned from |
 | `sky_line_basis` | the sky model: continuum estimation and the K line-basis vectors (step3) |
 | `source_fit` | the template fit that gives every source a class and a redshift (step4) |
-| `s_field` | the spatial field the sky continuum amplitude s is forced onto (step5) |
+| `sky_amplitude` | the spatial field the sky continuum amplitude s is forced onto (step5) |
 | `spaxel_fit` | applying the model to every spaxel (step5 and step6) |
 | `max_grid_offset` | optional, default 0.1. How far apart the seg and white-light grids may be, in pixels, before the pointing is refused. Write it only to raise it, which is a decision to run on headers that disagree; the run then prints the offset and the limit that allowed it |
 
@@ -36,7 +36,7 @@ keeps its outer ring: the same single box, excluded rather than kept, so there
 is no second mechanism to reason about.
 
 `apply_to` may name `basis` (step3, which spaxels the sky basis is learned from)
-and `s_field` (step5, which spaxels train the spatial field of s). All 14
+and `sky_amplitude` (step5, which spaxels train the spatial field of s). All 14
 configs currently restrict `basis` only.
 
 These boxes are read off the pseudo-r isophotes of each pointing by eye, not

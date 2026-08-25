@@ -41,7 +41,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import build_s_field, fit_dirs, main_source_group, rowcol_field, scale  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, rowcol_field, scale, sky_amplitude_params  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -108,7 +108,7 @@ def main():
     W = ROOT / args.work
     run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
-    p = meta["s_field_params"]
+    p = sky_amplitude_params(meta)
     seg   = fits.getdata(W / "step01/seg.fits").astype(int)
     white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
     s     = np.load(run / "s_free.npy").astype(float)
@@ -125,8 +125,8 @@ def main():
 
     tab = {}
     for hi, (hole, ctr) in enumerate(hs):
-        _, train = build_s_field(s, seg, blank, p["r_far"], p["r_far_haro"],
-                                        p["clip"],
+        _, train = build_s_field(s, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
+                                        p["train_clip_sigma"],
                                 main=main, exclude=hole)
         M, _, _ = rowcol_field(s, train)
         truth = s[hole]

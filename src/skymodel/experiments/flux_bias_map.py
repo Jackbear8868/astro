@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fitting import build_templates                     # noqa: E402
 from templates import air_to_vacuum                      # noqa: E402
-from utils import build_s_field, fit_dirs, main_source_group, scale  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, scale, sky_amplitude_params  # noqa: E402
 from s_flux_bias import wls                              # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -57,7 +57,7 @@ def main():
     W = ROOT / args.work
     run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
-    p = meta["s_field_params"]
+    p = sky_amplitude_params(meta)
     seg   = fits.getdata(W / "step01/seg.fits").astype(int)
     white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
     wl    = np.load(W / "step03/wavelength.npy")
@@ -68,11 +68,13 @@ def main():
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
     blank = valid & (seg == 0) & np.isfinite(s_free)
-    s_hat, _ = build_s_field(s_free, seg, blank, p["r_far"], p["r_far_haro"],
-                                p["clip"],
+    s_hat, _ = build_s_field(s_free, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
+                                p["train_clip_sigma"],
                                 main=mg)
 
-    best = np.load(ROOT / meta["best"])
+    # "classification" is the key; "best" is what step5 wrote before the
+    # parameter was renamed, and products made then are still on disk.
+    best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T_all = build_templates(best, air_to_vacuum(wl))
     tid = args.tpl_id if args.tpl_id else int(best["id"][np.nanargmax(
         np.nansum(np.abs(best["A"]), axis=1))])

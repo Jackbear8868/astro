@@ -16,7 +16,7 @@ thing driven from the command line.
     conda run -n astro python src/skymodel/step6_fit_sky.py \\
         --basis svd -K 30 --work results/skymodel/p01 \\
         --cube data/wsky/DATACUBE_FINAL_1.fits \\
-        --best results/skymodel/p01/step04/classification_*.npz \\
+        --classification results/skymodel/p01/step04/classification_*.npz \\
         --s-field results/skymodel/p01/step05/s_hat.npy
 """
 import argparse
@@ -56,8 +56,8 @@ def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
     fits.HDUList(hdus).writeto(path, overwrite=True)
 
 
-def subtract_sky(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=None,
-        blank_region="all", min_coverage=MIN_COVERAGE, out=None, argv=None):
+def subtract_sky(work, cube, classification, s_field, K, basis="svd", seg=None, sky_dir=None,
+        blank_channels="all", min_channel_coverage=MIN_COVERAGE, out=None, argv=None):
     """Write the sky-subtracted and sky-model cubes into `out`; return that directory.
 
     argv is written into meta.json as the record of how the step was launched, and
@@ -84,19 +84,19 @@ def subtract_sky(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=No
                      np.load(sky_dir / f"sky_basis_{basis}_K{K}.npy")])
     print(f"sky model from {sky_dir.name}")
 
-    best_file = Path(best)
-    if not best_file.exists():
-        raise SystemExit(f"file not found: {best_file}")
-    best = np.load(best_file)
-    print(f"source model from {best_file.name}: {len(best['id'])} sources")
+    classification_file = Path(classification)
+    if not classification_file.exists():
+        raise SystemExit(f"file not found: {classification_file}")
+    classification = np.load(classification_file)
+    print(f"source model from {classification_file.name}: {len(classification['id'])} sources")
 
-    templates = build_templates(best, wl_vac)
+    templates = build_templates(classification, wl_vac)
 
     s_hat_2d = np.load(s_field)
     print(f"s-field from {s_field}  median {np.nanmedian(s_hat_2d):.5f}")
 
     fit_mask = None
-    if blank_region == "line1":
+    if blank_channels == "line1":
         f = STEP03 / "iter_line_mask.npy"
         if not f.exists():
             raise SystemExit(f"{f.name} not found; re-run step3")
@@ -121,7 +121,7 @@ def subtract_sky(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=No
         raise SystemExit(f"s-field shape {s_hat_2d.shape} != cube spatial shape ({ny}, {nx})")
 
     coverage = np.isfinite(D).sum(axis=0) / nz
-    valid    = (white != 0).reshape(-1) & (coverage >= min_coverage)
+    valid    = (white != 0).reshape(-1) & (coverage >= min_channel_coverage)
     sky_model = np.full((nz, ny * nx), np.nan, np.float32)
     A_map     = np.full((N_SRC, ny * nx), np.nan, np.float32)
     s_map     = np.full(ny * nx, np.nan, np.float32)
@@ -174,9 +174,9 @@ def subtract_sky(work, cube, best, s_field, K, basis="svd", seg=None, sky_dir=No
     meta = dict(
         step="fit_sky",
         cube=str(_rel(CUBE)), seg=str(_rel(seg_path)), sky_dir=str(_rel(sky_dir)),
-        best=str(_rel(best_file)), basis=basis, K=K,
+        classification=str(_rel(classification_file)), basis=basis, K=K,
         s_field=str(_rel(Path(s_field))),
-        blank_region=blank_region, min_coverage=min_coverage,
+        blank_channels=blank_channels, min_channel_coverage=min_channel_coverage,
         n_blank=int(blank.sum()), n_source=n_src_tot,
         n_source_regions=len(rids), n_template_regions=len(templates),
         created=datetime.datetime.now().isoformat(timespec="seconds"),
@@ -202,7 +202,7 @@ def main():
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, required=True,
                     help="number of sky-line basis vectors")
-    ap.add_argument("--best", required=True,
+    ap.add_argument("--classification", required=True,
                     help="step4 classification file (.npz)")
     ap.add_argument("--s-field", required=True,
                     help="s_hat.npy from step5")
@@ -210,9 +210,9 @@ def main():
                     help="segmentation map; default step01/seg.fits")
     ap.add_argument("--sky-dir", default=None,
                     help="directory containing sky_continuum.npy and sky_basis_*.npy; default step03")
-    ap.add_argument("--blank-region", choices=["all", "line1"], default="all",
+    ap.add_argument("--blank-channels", choices=["all", "line1"], default="all",
                     help="channels used to solve blank coefficients")
-    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE,
+    ap.add_argument("--min-channel-coverage", type=float, default=MIN_COVERAGE,
                     help="fraction of wavelength channels that must carry data before "
                          "a spaxel is fitted; the field-of-view edge ring falls below it")
     ap.add_argument("--work", required=True,
@@ -222,9 +222,9 @@ def main():
     ap.add_argument("--out", default=None,
                     help="output directory; default {work}/step06")
     args = ap.parse_args()
-    run(args.work, args.cube, args.best, args.s_field, args.K, argv=sys.argv[1:],
+    subtract_sky(args.work, args.cube, args.classification, args.s_field, args.K, argv=sys.argv[1:],
         basis=args.basis, seg=args.seg, sky_dir=args.sky_dir,
-        blank_region=args.blank_region, min_coverage=args.min_coverage,
+        blank_channels=args.blank_channels, min_channel_coverage=args.min_channel_coverage,
         out=args.out)
 
 

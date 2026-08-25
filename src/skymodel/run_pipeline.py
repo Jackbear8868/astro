@@ -68,7 +68,9 @@ BEYOND_EDGE = 9999
 def region_kwargs(reg, prefix=""):
     """sky_region -> the keyword arguments step3 and step5 take.
 
-    prefix is "sf_" for step5, whose parameters carry that prefix. Config ranges
+    prefix is "train_" for step5, whose parameters carry that prefix -- there the
+    range restricts the spaxels that train the s field, not the ones the sky is
+    learned from. Config ranges
     are half-open with null for "no bound"; xlim/ylim have the same meaning,
     while exclude_box includes both endpoints, so its upper bound loses one.
     """
@@ -226,7 +228,7 @@ def run_pointing(cfg_path):
     out = cfg["output"]
     inp = cfg["input"]
     basis, src = cfg["sky_line_basis"], cfg["source_fit"]
-    sfield, spx = cfg["s_field"], cfg["spaxel_fit"]
+    amp, spx = cfg["sky_amplitude"], cfg["spaxel_fit"]
 
     for key, path in inp.items():
         if not path.exists():
@@ -235,7 +237,7 @@ def run_pointing(cfg_path):
 
     reg = cfg["sky_region"]
     basis_region  = region_kwargs(reg) if "basis" in reg["apply_to"] else {}
-    sfield_region = region_kwargs(reg, "sf_") if "s_field" in reg["apply_to"] else {}
+    train_region = region_kwargs(reg, "train_") if "sky_amplitude" in reg["apply_to"] else {}
 
     print("=" * 70)
     print(f"  pointing #{cfg['pointing']}  ->  {out.relative_to(ROOT)}"
@@ -274,7 +276,7 @@ def run_pointing(cfg_path):
     # same naming rule written twice, and the two would drift.
     best = run_step("step4", classify_sources,
                     dict(work=out, K=basis["K"], id="all", basis=basis["method"],
-                         s_fix=src["s_fix"], s_free=src["s_fix"] is None,
+                         fix_s_at=src["fix_s_at"],
                          star_window=src["fit_window"],
                          gal_window=src["fit_window"],
                          line_mask_iter=src["line_mask_iter"],
@@ -287,22 +289,24 @@ def run_pointing(cfg_path):
     line_iter = src["line_mask_iter"][-1]
     print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")
     run_step("step5", fit_s_field,
-             dict(work=out, cube=inp["cube"], best=best, K=basis["K"],
+             dict(work=out, cube=inp["cube"], classification=best, K=basis["K"],
                   basis=basis["method"],
-                  blank_region=spx["blank_region"],
-                  min_coverage=spx["min_coverage"],
-                  sf_r_far=sfield["r_far"], sf_r_far_haro=sfield["r_far_main"],
-                  sf_clip=sfield["clip"], main_dz_max=sfield["main_dz_max"],
-                  **sfield_region),
+                  blank_channels=spx["blank_channels"],
+                  min_channel_coverage=spx["min_channel_coverage"],
+                  min_source_distance=amp["min_source_distance"],
+                  min_main_source_distance=amp["min_main_source_distance"],
+                  train_clip_sigma=amp["train_clip_sigma"],
+                  main_source_dz=amp["main_source_dz"],
+                  **train_region),
              out / "step5.log", keep=KEEP["step5"])
 
     print("--- [7/7] step6 final sky subtraction")
     run_step("step6", subtract_sky,
-             dict(work=out, cube=inp["cube"], best=best, K=basis["K"],
+             dict(work=out, cube=inp["cube"], classification=best, K=basis["K"],
                   basis=basis["method"],
                   s_field=out / "step05/s_hat.npy",
-                  blank_region=spx["blank_region"],
-                  min_coverage=spx["min_coverage"]),
+                  blank_channels=spx["blank_channels"],
+                  min_channel_coverage=spx["min_channel_coverage"]),
              out / "step6.log", keep=KEEP["step6"])
 
     free = shutil.disk_usage(ROOT).free / 1024 ** 3

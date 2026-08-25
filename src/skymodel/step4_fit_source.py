@@ -100,7 +100,7 @@ FULL_RANGE  = (4600.0, 9400.0)      # the whole MUSE range, kept as a control
 _SHARED = {}
 
 
-def make_tag(basis, K, s_fix, star_window, gal_window, sky_basis, line_iter,
+def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
              cumulative=True, aperture=False, suffix=""):
     """The output filename. Every setting that changes the result is encoded into it,
     so a re-run cannot quietly overwrite the previous one.
@@ -112,7 +112,7 @@ def make_tag(basis, K, s_fix, star_window, gal_window, sky_basis, line_iter,
     turns into "reading the wrong file".
     """
     base = f"{basis}_K{K}" if sky_basis else "nobasis"
-    return (f"{base}_s{'free' if s_fix is None else s_fix}"
+    return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
             f"_{star_window[0]:.0f}-{star_window[1]:.0f}"
             f"_{gal_window[0]:.0f}-{gal_window[1]:.0f}"
             f"_L{line_iter}{'cum' if cumulative else 'raw'}"
@@ -136,7 +136,7 @@ def make_suffix(spec_dir_name):
             + f"_{STAR_LIBRARY}star")
 
 
-def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
+def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
                 allow_partial=False):
     """Scan templates and redshifts for one summed spectrum, over the channel set fit.
 
@@ -152,7 +152,7 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
     coefficient cannot physically be negative. The sky-line coefficients are left free,
     because that basis is learned from residuals and is signed by construction.
 
-    When s_fix is given, s*C_sky is subtracted from the data first and s stops being a
+    When fix_s_at is given, s*C_sky is subtracted from the data first and s stops being a
     free parameter (one fewer). The point is to break the degeneracy between A*T and
     s*C_sky -- the data cannot separate them, and left free the template absorbs the
     sky continuum.
@@ -163,10 +163,10 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
     n_full = int(base.sum())            # channels the data offers -- the ceiling every
                                         # candidate shares
 
-    if s_fix is None:
+    if fix_s_at is None:
         sky_free, y, s_free = sky, flux, True
     else:
-        sky_free, y, s_free = sky[1:], flux - s_fix * sky[0], False
+        sky_free, y, s_free = sky[1:], flux - fix_s_at * sky[0], False
 
     skyw = np.ascontiguousarray((sky_free / sig).T)
     yw   = y / sig
@@ -221,7 +221,7 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, s_fix=None,
             ok       = np.isfinite(flux) & np.all(np.isfinite(T), axis=1)
 
             results.append(dict(group=group, template=name, z=float(z),
-                    A=theta[:n_comp], s=theta[n_comp] if s_free else s_fix,
+                    A=theta[:n_comp], s=theta[n_comp] if s_free else fix_s_at,
                     chi2=chi2, chi2_all=chi2_all, red_chi2=chi2 / (n - p),
                     n_good=n, src_min=float(src[ok].min())))
 
@@ -268,10 +268,10 @@ def _scan_one(t):
         v = S["var"][k]  / S["nspax"][k] ** 2
 
     r1 = scan_object(f, v, S["sky"], S["star_jobs"], S["wl_vac"],
-                     S["fit_star"], s_fix=S["s_fix"],
+                     S["fit_star"], fix_s_at=S["fix_s_at"],
                      allow_partial=S["allow_partial"])
     r2 = scan_object(f, v, S["sky"], S["gal_jobs"], S["wl_vac"],
-                     S["fit_gal"], s_fix=S["s_fix"],
+                     S["fit_gal"], fix_s_at=S["fix_s_at"],
                      allow_partial=S["allow_partial"])
     if not r1 and not r2:
         return t, None
@@ -368,7 +368,7 @@ def write_classification(out_dir, tag, best, ids=None, over=None):
 def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, gal_window=GAL_WINDOW,
         full_range=False, line_mask_iter=[1, 2, 3, 4], sky_basis=False,
         zmin=0.0, zmax=1.5, zstep=1e-4, star_dz=0.005, aperture=False,
-        allow_partial=False, spec_dir=None, raw_mask=False, s_fix=1.0, s_free=False,
+        allow_partial=False, spec_dir=None, raw_mask=False, fix_s_at=1.0,
         ids=None, z_override=[], num_workers=0):
     """Fit every source of `work`, writing one best_*.npz and one classification_*.npz
     per mask iteration into step04; return the last iteration's classification path.
@@ -387,7 +387,6 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     STEP03  = work / "step03"
     STEP04 = work / "step04"
     print(f"workspace {work}")
-    s_fix = None if s_free else s_fix
     if full_range:
         star_window = gal_window = FULL_RANGE
 
@@ -476,7 +475,8 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     print(f"galaxy  {gal_window[0]:.0f}-{gal_window[1]:.0f} A  "
           f"window {int(win_gal.sum())} channels   galaxy eigenspectra x {z_exg.size} z values")
     print("classification = lower reduced chi2 on the same channel set (no absolute threshold)")
-    print("s is a free parameter" if s_fix is None else f"sky continuum fixed to {s_fix} x C_sky, subtracted first")
+    print("s is a free parameter" if fix_s_at is None else
+          f"sky continuum fixed to {fix_s_at} x C_sky, subtracted first")
     print("source model = A x template" + ("  + sky-line basis" if sky_basis
                                           else "   (1 free parameter)"))
     print(f"spectra from {src.name}"
@@ -496,7 +496,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
     for it in line_mask_iter:
         line = line_masks[it - 1]
         fit_star, fit_gal = win_star & ~line, win_gal & ~line
-        tag = make_tag(basis, K, s_fix, star_window,
+        tag = make_tag(basis, K, fix_s_at, star_window,
                        gal_window, sky_basis, it, not raw_mask,
                        aperture, suffix)
 
@@ -514,7 +514,7 @@ def classify_sources(work, K, id="all", basis="svd", star_window=STAR_WINDOW, ga
         _SHARED.update(ids=ids, flux=flux, var=var, nspax=nspax, sky=sky,
                        star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
                        fit_star=fit_star, fit_gal=fit_gal,
-                       tag=tag, s_fix=s_fix,
+                       tag=tag, fix_s_at=fix_s_at,
                        allow_partial=allow_partial)
 
         summary = []
@@ -619,8 +619,13 @@ def main():
                          "Default is cumulative -- step3's raw iterations are not strictly "
                          "nested (some channels drop out); cumulative mode produces a clean "
                          "'progressively more masked' sequence.")
-    ap.add_argument("--s-fix", type=float, default=1.0)
-    ap.add_argument("--s-free", action="store_true")
+    ap.add_argument("--fix-s-at", type=float, default=1.0,
+                    help="hold the sky continuum amplitude s at this value while "
+                         "classifying, subtracting s x C_sky from the data first. "
+                         "It breaks the degeneracy between the source template and "
+                         "the sky continuum, which the data cannot separate")
+    ap.add_argument("--solve-s", action="store_true",
+                    help="solve s as a free parameter instead of fixing it")
     ap.add_argument("--ids", type=int, nargs="+", default=None,
                     help="classification file includes only these seg IDs. Omit = all fitted sources")
     ap.add_argument("--z-override", nargs="*", default=[], metavar="ID=Z",
@@ -637,7 +642,8 @@ def main():
         sky_basis=args.sky_basis, zmin=args.zmin, zmax=args.zmax, zstep=args.zstep,
         star_dz=args.star_dz, aperture=args.aperture,
         allow_partial=args.allow_partial, spec_dir=args.spec_dir,
-        raw_mask=args.raw_mask, s_fix=args.s_fix, s_free=args.s_free, ids=args.ids,
+        raw_mask=args.raw_mask, fix_s_at=None if args.solve_s else args.fix_s_at,
+        ids=args.ids,
         z_override=args.z_override, num_workers=args.num_workers)
 
 

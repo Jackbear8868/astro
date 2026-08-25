@@ -47,7 +47,9 @@ def source_residual(cube_dir, seg, sid, lam_vac):
     設成 NaN 會讓那一段從統計裡消失,等於把「模型蓋不到」偽裝成「沒有問題」。
     """
     meta = json.loads((cube_dir / "meta.json").read_text())
-    best = np.load(ROOT / meta["best"])
+    # "classification" is the key; "best" is what step5 wrote before the
+    # parameter was renamed, and products made then are still on disk.
+    best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T = build_templates(best, lam_vac).get(int(sid))
 
     mask = seg == sid

@@ -42,7 +42,7 @@ import matplotlib.patches as mpatches
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
-from utils import build_s_field, fit_dirs, main_source_group  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, sky_amplitude_params  # noqa: E402
 
 
 def region_args(step03):
@@ -84,11 +84,11 @@ def main():
 
     # --- step5: back further off the sources, and reject the pixels where the fit
     #     failed ---
-    p = json.loads((run / "meta.json").read_text())["s_field_params"]
+    p = sky_amplitude_params(json.loads((run / "meta.json").read_text()))
     s = np.load(run / "s_free.npy").astype(float)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
     ok = valid & (seg == 0) & np.isfinite(s)
-    _, s_train = build_s_field(s, seg, ok, p["r_far"], p["r_far_haro"], p["clip"],
+    _, s_train = build_s_field(s, seg, ok, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
                                main=main)
 
     img, vmax = arcsinh_stretch(white, valid)

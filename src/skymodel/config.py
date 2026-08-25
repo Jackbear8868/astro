@@ -17,9 +17,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 METHODS  = ("svd", "pca")
-APPLY_TO = ("basis", "s_field")
-SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit", "s_field",
-            "spaxel_fit")
+APPLY_TO = ("basis", "sky_amplitude")
+SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
+            "sky_amplitude", "spaxel_fit")
 
 # How far apart the seg and white-light grids may be before the pointing is
 # refused, in pixels. The 13 pointings that pass sit at 0.000-0.020 px, so this is

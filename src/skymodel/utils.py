@@ -21,6 +21,25 @@ import matplotlib.patheffects as pe
 from scipy.stats import skew, kurtosis
 
 
+OLD_AMP_KEYS = {"r_far": "min_source_distance",
+                "r_far_haro": "min_main_source_distance",
+                "clip": "train_clip_sigma",
+                "exclude_box": "train_exclude_box",
+                "xlim": "train_xlim", "ylim": "train_ylim",
+                "main_dz_max": "main_source_dz"}
+
+
+def sky_amplitude_params(meta):
+    """The s-field settings out of a step5 meta.json, under their current names.
+
+    Products written before the parameters were renamed carry the old spelling, and
+    they are the results now on disk. Translating here means the readers ask for one
+    set of names and the compatibility lives in one place instead of six.
+    """
+    p = meta.get("sky_amplitude_params") or meta.get("s_field_params") or {}
+    return {OLD_AMP_KEYS.get(k, k): v for k, v in p.items()}
+
+
 def fit_dirs(work, run=None):
     """Where one pointing's fitted products are -- (s-field dir, cube dir).
 

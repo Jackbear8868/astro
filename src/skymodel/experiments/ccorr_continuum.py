@@ -49,7 +49,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fitting import fit_blank                           # noqa: E402
-from utils import build_s_field, fit_dirs, main_source_group, running_median, scale  # noqa: E402
+from utils import build_s_field, fit_dirs, main_source_group, running_median, scale, sky_amplitude_params  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -75,7 +75,7 @@ def main():
     W = ROOT / args.work
     run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
-    p = meta["s_field_params"]
+    p = sky_amplitude_params(meta)
     sky_dir = ROOT / meta["sky_dir"]
 
     seg   = fits.getdata(W / "step01/seg.fits").astype(int)
@@ -90,8 +90,8 @@ def main():
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
     blank2d = valid & (seg == 0) & np.isfinite(s_free)
-    s_hat, _ = build_s_field(s_free, seg, blank2d, p["r_far"], p["r_far_haro"],
-                                p["clip"],
+    s_hat, _ = build_s_field(s_free, seg, blank2d, p["min_source_distance"], p["min_main_source_distance"],
+                                p["train_clip_sigma"],
                                 main=mg)
 
     ys, xs = np.nonzero(blank2d)

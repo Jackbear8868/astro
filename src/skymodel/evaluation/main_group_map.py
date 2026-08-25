@@ -55,8 +55,11 @@ def step04_tag(W, run=None):
     meta = fit_dirs(W, run)[0] / "meta.json"
     if not meta.exists():
         return None
-    best = json.loads(meta.read_text()).get("best")
-    return Path(best).stem.removeprefix("classification_") if best else None
+    m = json.loads(meta.read_text())
+    # "classification" is the key; "best" is what step5 wrote before the parameter
+    # was renamed, and products made then are still on disk.
+    c = m.get("classification") or m.get("best")
+    return Path(c).stem.removeprefix("classification_") if c else None
 
 
 def main():
