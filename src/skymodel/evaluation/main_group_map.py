@@ -40,7 +40,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, load_field, pointing_dir  # noqa: E402
 from plotting import plot_main_group  # noqa: E402
-from utils import DZ_MAX, fit_dirs, main_source_group  # noqa: E402
+from products import fit_dirs  # noqa: E402
+from utils import DZ_MAX, main_source_group  # noqa: E402
 
 
 def step04_tag(W, run=None):

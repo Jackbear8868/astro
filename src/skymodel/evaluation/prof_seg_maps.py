@@ -15,7 +15,7 @@ is **the professor's own pseudo_r**, not our whitelight -- the mask grew out of
 pseudo_r, and pairing it with a different background image would give the illusion of
 a misalignment.
 
-The drawing itself is left entirely to utils.id_map, with no second implementation:
+The drawing itself is left entirely to products.id_map, with no second implementation:
 one kind of figure can only have one way of being drawn in this project, otherwise
 putting two of them side by side would make them look like different data merely
 because the stretch, the colours, or the labelling rules differ.
@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT, arcsinh_stretch, pointing_dir  # noqa: E402
-from utils import id_map  # noqa: E402
+from products import id_map  # noqa: E402
 
 SEGDIR  = ROOT / "data/wsky_seg"
 FIGURES = EVAL / "masking/prof_seg"    # overview.png belongs to no single pointing
@@ -58,7 +58,7 @@ def rows_from(seg, min_area):
             continue
         y, x = np.nonzero(seg == i)
         # id_map only uses the group field when by_group=True, but the fields of rows
-        # have to be complete, otherwise GROUP_COLOR in utils raises KeyError.
+        # have to be complete, otherwise GROUP_COLOR in products raises KeyError.
         out.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                         group="galaxy"))
     return out, len(ids)

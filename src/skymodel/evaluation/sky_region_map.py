@@ -42,7 +42,8 @@ import matplotlib.patches as mpatches
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
-from utils import build_s_field, fit_dirs, main_source_group, sky_amplitude_params  # noqa: E402
+from products import fit_dirs, sky_amplitude_params  # noqa: E402
+from utils import build_s_field, main_source_group  # noqa: E402
 
 
 def region_args(step03):

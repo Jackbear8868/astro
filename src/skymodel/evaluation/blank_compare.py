@@ -53,11 +53,11 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, pointing_dir  # noqa: E402
-from utils import spectrum_stats  # noqa: E402
+from products import spectrum_stats  # noqa: E402
 
 C_OURS, C_ESO, C_RESID, C_ZERO = "#1f77b4", "#e8710a", "#b30000", "0.55"
 
-# What utils.spectrum_stats returns, in the order it is shown, with the label used on
+# What products.spectrum_stats returns, in the order it is shown, with the label used on
 # the figure. rms_from_zero keeps its full name: "rms" alone is unambiguous only while
 # sigma is next to it, and a number quoted out of the figure loses that.
 #

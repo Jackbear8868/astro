@@ -154,7 +154,7 @@ step5 與 step6(界定源區)—— 都是從那裡讀的。要和原本的結�
 ### 已知重複
 
 `exp02_basis_solver_matrix.py` 內含 `semi_NMF`、`spectrum_stats`、`plot_compare`、
-`per_spaxel_continuum` 的本地副本。這些函式已收納進 `src/skymodel/utils.py`;
+`per_spaxel_continuum` 的本地副本。這些函式已收納進 `src/skymodel/products.py`;
 封存檔保留自己的副本,以確保重跑時得到與 2026-07-24 完全相同的結果。
 
 ---

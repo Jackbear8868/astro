@@ -29,7 +29,7 @@ from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import id_map
+from products import id_map
 
 ROOT    = Path(__file__).resolve().parents[3]
 EXPDIR  = ROOT / "results/skymodel/experiments/blank_geometry/seg_dilated"

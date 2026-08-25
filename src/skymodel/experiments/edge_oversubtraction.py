@@ -32,7 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import fit_dirs                                # noqa: E402
+from products import fit_dirs                             # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"

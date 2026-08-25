@@ -1,12 +1,12 @@
-"""The source ID map of any segmentation -- drawn the same way as utils.id_map.
+"""The source ID map of any segmentation -- drawn the same way as products.id_map.
 
-The rows of utils.id_map() need to carry the group,
+The rows of products.id_map() need to carry the group,
 redshift and similar fields). But sometimes all we want to see is "which things does
 this mask circle as sources", with nothing to do with the fitting -- for instance when
 comparing the professor's 1 sigma and 2 sigma segmentations.
 
 This script does one thing only: assemble the rows id_map() needs (id and centroid)
-from one seg image, and leave the rest of the drawing entirely to utils.id_map, with
+from one seg image, and leave the rest of the drawing entirely to products.id_map, with
 no second implementation. One figure can only have one way of being drawn in this
 project, otherwise putting two of them side by side would make them look like
 different data merely because the stretch, the colours, or the labelling rules
@@ -27,7 +27,7 @@ from astropy.io import fits
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT
-from utils import id_map
+from products import id_map
 
 FIGURES = EVAL / "masking"
 
@@ -66,7 +66,7 @@ def main():
         y, x = np.nonzero(seg == i)
         # id_map only uses the group field when by_group=True, and here it is always
         # by_group=False, but the fields of rows have to be complete, otherwise
-        # GROUP_COLOR over in utils raises KeyError.
+        # GROUP_COLOR over in products raises KeyError.
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 

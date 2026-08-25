@@ -43,7 +43,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, S_CMAP, diverging_range, load_field, pointing_dir  # noqa: E402
-from utils import fit_dirs, main_source_group  # noqa: E402
+from products import fit_dirs  # noqa: E402
+from utils import main_source_group  # noqa: E402
 
 
 def main():

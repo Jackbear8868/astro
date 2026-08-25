@@ -40,7 +40,8 @@ from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
 from blank_compare import data_hdu, our_cube  # noqa: E402
 from halo_spectra import (C_LINE, CHUNK, LINES, Z_HARO, panel_ylim,  # noqa: E402
                           zone_labels)
-from utils import DZ_MAX, main_source_group, spectrum_stats  # noqa: E402
+from products import spectrum_stats  # noqa: E402
+from utils import DZ_MAX, main_source_group  # noqa: E402
 
 C_OURS, C_ESO, C_ZERO = "#1f77b4", "#e8710a", "0.55"
 # Transparency for the reference curve only. It is the lower of the two, so fading it

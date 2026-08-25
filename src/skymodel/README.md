@@ -33,17 +33,24 @@ the wsky cube lifts the whole image, which makes the brightest pixel unreliable.
 Step 2 also runs on the nosky cube. Classifying a spectrum that still holds the sky
 produces output that looks entirely normal, with every template and redshift wrong.
 
-## Why the products go to disk
+## Why the products still go to disk
 
-Each step writes to `{output}/stepNN/` and the next reads from there, rather than
-passing arrays in memory. That is deliberate:
+A step hands its results to the next one in memory -- `run_pointing` is where you can
+see what each produces and who reads it -- and writes them to `{output}/stepNN/` as
+well. The writing is not how the steps communicate; it is there because:
 
 - the products are the interface the 23 scripts under `evaluation/` read
 - every intermediate result stays there to be looked at after the run, instead of
   existing only inside one process
-- peak memory stays at the cost of the largest single step (about 6 GB, step 6)
-  instead of the sum of all six
 - `sky_subtracted.fits` is 4 GB and is the deliverable anyway
+
+`keep_intermediate: false` in a config turns off everything except step 6, which
+always writes. It changes what is left on disk and nothing else; a run with it off
+produces the same step 6 as a run with it on.
+
+Peak memory is the cost of the largest single step (about 6 GB, step 6), not the sum
+of all six: what passes between steps is under 9 MB, and the cube each step opens is
+memmapped and released when that step returns.
 
 ## One entrance
 
@@ -77,6 +84,7 @@ edited afterwards and then nothing else says; it is not a command to re-run.
 | `fitting.py` | the per-spaxel solves shared by steps 5 and 6 |
 | `templates.py` | the source templates: eigenspectra and the stellar library, read as splines |
 | `plotting.py` | figures the pipeline itself produces |
+| `products.py` | reading a finished run back: where its products are, the settings recorded beside them, and the figures `evaluation/` and `experiments/` share. No step imports it |
 
 ## The segmentation
 

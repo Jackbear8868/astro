@@ -111,6 +111,6 @@ spline 自己的定義域 —— 所以畫出來的就是擬合看得到的，�
 `zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`
 的逐方框光譜取代。`pNN/point/` 與 `pNN/zone/` 是它們留下來的舊輸出，現在沒有程式會寫。
 
-`ROOT` 與 `import utils` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
+`ROOT` 與 `import utils`、`import products` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
 `experiments/` 在同一層，所以搬動不需要改路徑。`poster/` 在下一層，它的兩行
 `sys.path.insert` 用的是 `parents[1]` 與 `parents[2]`。

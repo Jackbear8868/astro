@@ -72,7 +72,7 @@ def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
 
     h, w = white.shape
     fig, ax = plt.subplots(figsize=(12, 12 * h / w))
-    # The project's one stretch, the same one utils.id_map uses, so the two
+    # The project's one stretch, the same one products.id_map uses, so the two
     # figures of the same field cannot end up looking like different data.
     if background:
         bg, vmax = arcsinh_stretch(white, soft=soft)

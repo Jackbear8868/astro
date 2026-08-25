@@ -34,7 +34,8 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fitting import build_templates                     # noqa: E402
 from templates import air_to_vacuum                      # noqa: E402
-from utils import build_s_field, fit_dirs, main_source_group, scale, sky_amplitude_params  # noqa: E402
+from products import fit_dirs, sky_amplitude_params  # noqa: E402
+from utils import build_s_field, main_source_group, scale  # noqa: E402
 from s_flux_bias import wls                              # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
