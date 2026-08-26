@@ -296,7 +296,10 @@ def build_templates(best, lam_vac):
     dict
         {segmentation ID: model redshifted to lam_vac, shape (nz, n_comp)}
     """
-    eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
+    # Galaxy only: step4 scans the stellar templates against these eigenspectra and
+    # nothing else, so "galaxy" and "star" are the only groups a classification can
+    # carry, and a star is read from its own file below.
+    eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL)}
     # A file without this field predates it, and all of those came from the SDSS
     # library. Membership is asked of `best` itself, not of .files, so step6 can
     # hand over step4's fields without going through an npz to get that attribute.
@@ -516,7 +519,7 @@ C_KMS = 299792.458
 # How close in redshift a member must be to the main source to count as part of the
 # same galaxy. The galaxy has internal rotation and outflows, so the criterion is
 # "within its velocity range": loose enough to keep its own bright knots, tight
-# enough to reject background galaxies. evaluation/main_group_spec.py scans it.
+# enough to reject background galaxies.
 DZ_MAX = 0.005
 
 

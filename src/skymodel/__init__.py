@@ -17,8 +17,8 @@ pointing's config file, which is where every value they take comes from.
     run_pointing("configs/p01.yaml")
 
 Each step is handed what the earlier ones returned; only the cube is opened again by
-every step that needs it. The products under {output}/step01 ... step06 are written
-for the evaluation scripts, and nothing in the pipeline reads them back;
+every step that needs it. The products under {output}/step01 ... step06 are the record
+of the middle of a run, and nothing in the pipeline reads them back;
 `keep_intermediate: false` writes only step06's, which are the deliverable.
 
 The four fitting steps hold BLAS at one thread while they work, which is what makes

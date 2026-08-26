@@ -23,9 +23,9 @@ The file follows run()'s order: the products the steps hand each other, then the
 with a section per step, then the helpers and constants each step uses.
 
 The products under {output}/stepNN are written unless the config turns
-keep_intermediate off; step6's are written either way. They are what the evaluation
-scripts read and the only record of the middle of a run, but nothing in the pipeline
-reads them back. Each step's full output goes to {output}/stepN.log, headed by the
+keep_intermediate off; step6's are written either way. They are the only record of
+the middle of a run, but nothing in the pipeline reads them back. Each step's full
+output goes to {output}/stepN.log, headed by the
 call that produced it, and only the lines listed in KEEP reach the terminal. The
 config as it was read is in {output}/config.json, because the file itself can be
 edited afterwards.
@@ -238,7 +238,7 @@ class Pipeline:
 
         reg = self.cfg["sky_region"]
         print("=" * 70)
-        print(f"  pointing #{self.cfg['pointing']}  ->  {self.out.relative_to(ROOT)}"
+        print(f"  pointing #{self.cfg['pointing']}  ->  {_rel(self.out)}"
               f"   [{self.cfg_path.name}]")
         print(f"  sky region {reg['x']} x {reg['y']}  "
               f"{'include' if reg['include'] else 'exclude'} -> {reg['apply_to']}")
@@ -303,7 +303,8 @@ class Pipeline:
             return v
 
         (self.out / "config.json").write_text(
-            json.dumps(plain(self.cfg), indent=2, ensure_ascii=False) + "\n")
+            json.dumps(plain(self.cfg), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
 
     def run_step(self, label, fn, kwargs, keep=None, tail=0):
         """Call one step in this process, sending its output to {output}/{label}.log.
@@ -313,7 +314,7 @@ class Pipeline:
         """
         log_path = self.out / f"{label}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("w") as log:
+        with log_path.open("w", encoding="utf-8") as log:
             log.write(call_repr(fn, kwargs) + "\n\n")
             log.flush()
             tee = _Tee(log, keep, tail)
@@ -337,16 +338,15 @@ class Pipeline:
     # Collapse a cube along wavelength into a white light image.
     #
     # Everything downstream that has to say "where is the source" works on this image
-    # rather than on the cube: the segmentation is checked against it, the main source
-    # is the blob holding its brightest pixel, and the evaluation figures use it as
-    # their background.
+    # rather than on the cube: the segmentation is checked against it, and the main
+    # source is the blob holding its brightest pixel.
 
     def whitelight(self, rows=32):
         """Collapse `cube` along wavelength; return the image and its WCS.
 
         With keep_intermediate the same image is written to `out` as whitelight.fits
-        plus a preview png, which is what the evaluation scripts read. rows is the
-        number of image rows collapsed at a time -- memory and speed only.
+        plus a preview png. rows is the number of image rows collapsed at a time --
+        memory and speed only.
         """
         cube = self.inp["nosky"]
         out = self.out / "step01"
@@ -401,8 +401,8 @@ class Pipeline:
         a CD matrix while the cube uses PC + CDELT, and their CRPIX differ, both of
         which a literal comparison would report as a mismatch.
 
-        With keep_intermediate the map is copied next to the white light, which is
-        where the evaluation scripts read the segmentation a run used.
+        With keep_intermediate the map is copied next to the white light, so the
+        output directory records which segmentation the run was given.
 
         max_offset above the default is a decision to run anyway on a pointing whose
         headers disagree. It comes from that pointing's config and is printed when it
@@ -681,7 +681,7 @@ class Pipeline:
                 max_iter=max_iter, clip_sigma=clip_sigma,
                 xlim=xlim, ylim=ylim, exclude_box=exclude_box,
                 n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
-            ), indent=2, ensure_ascii=False) + "\n")
+            ), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             print(f"meta -> {out_dir / 'meta.json'}")
         return SkyModel(wl, C_sky, bases, iter_line_mask)
 
@@ -1114,7 +1114,7 @@ class Pipeline:
                                       cwd=ROOT).stdout.strip())
         if keep_intermediate:
             (out / "meta.json").write_text(
-                json.dumps(meta, ensure_ascii=False, indent=2))
+                json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"saved -> {out}")
         return SField(s_hat32, s_hat_path)
 
@@ -1272,7 +1272,7 @@ class Pipeline:
                                       capture_output=True, text=True,
                                       cwd=ROOT).stdout.strip())
         (out / "meta.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2))
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
         region = ("all channels" if fit_mask is None
                   else f"line1 {int(fit_mask.sum())}/{fit_mask.size} channels")

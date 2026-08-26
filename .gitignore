@@ -18,8 +18,17 @@ results/
 *.tgz
 *.zip
 
-# Raw MUSE cubes and exposures (139 GB) — never belongs in git
-data/
+# Raw MUSE cubes and exposures (139 GB) — never belongs in git. Written as
+# data/* rather than data/ so that git still descends into it: a file inside an
+# excluded directory cannot be brought back, and the templates below have to be.
+data/*
+
+# The templates a source is fitted against: small, and the pipeline cannot run
+# without them. l5v is left out here as it is at run time -- its data starts at
+# 5392 A and cannot cover the rest range MUSE needs.
+!data/stellar_templates/
+data/stellar_templates/l5v.dat
+!data/eigen_galaxy_Bolton2012.fits
 
 # Stray figures at the repo root. Keepers go under results/skymodel/figures/,
 # which is already covered by results/ above.

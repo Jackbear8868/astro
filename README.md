@@ -22,21 +22,56 @@ fraction of the field, which is what makes "where is there no source" the hard p
 
 ## Install
 
+Python 3.12 or newer, on Linux, macOS or Windows. Pick either tool; both install
+the same package from the same `pyproject.toml`.
+
 ```bash
-git clone --recursive <url> astro     # --recursive: libs/zap is a submodule
+git clone <url> astro
 cd astro
+```
+
+**conda**
+
+```bash
 conda env create -f environment.yml
 conda activate astro
 ```
 
-If you already cloned without `--recursive`:
+**uv**
 
 ```bash
-git submodule update --init
+uv venv --python 3.12
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+uv pip install -e .
 ```
 
-The submodule is only needed for the ZAP comparison arm under `src/zap/`. The pipeline
-itself does not import it; `pip install -e .` is enough to use `skymodel` alone.
+Either way, `skymodel` becomes a command:
+
+```bash
+skymodel configs/p01.yaml
+```
+
+### Checking it took
+
+```bash
+python -c "from skymodel import run_pointing, load_config; print('ok')"
+```
+
+That imports the pipeline without touching any data, so it fails on a broken
+install and not on a missing cube.
+
+### On Windows
+
+Run under UTF-8:
+
+```
+set PYTHONUTF8=1
+```
+
+The pipeline writes its logs as UTF-8 and its messages contain non-ASCII
+characters. Without this, redirecting the output to a file on a system whose
+locale is not UTF-8 fails on the first such message. Python 3.15 makes UTF-8 mode
+the default and the setting stops being necessary.
 
 ## Input
 
@@ -53,9 +88,10 @@ here is 14 pointings of about 4 GB each. The segmentation is a 2-d integer map, 
 per source and 0 for background, sharing the white light image's WCS -- the pipeline
 checks that agreement and refuses a pointing whose grids disagree.
 
-Also required, and small enough to keep beside the code: the galaxy eigenspectra
-(`data/eigen_galaxy_Bolton2012.fits`), the QSO eigenspectra
-(`data/qso_eigen_linear_55732.dat`) and the stellar library (`data/stellar_templates/`).
+The templates a source is fitted against ship with the code, since they are small
+and nothing runs without them: the four galaxy eigenspectra of Bolton et al. 2012
+(`data/eigen_galaxy_Bolton2012.fits`) and seven stellar templates, O through M
+(`data/stellar_templates/`). The cubes and the segmentation are yours to supply.
 
 ## Run
 

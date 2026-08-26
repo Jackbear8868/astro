@@ -1,9 +1,10 @@
-# Recreate this env with:
-#   SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ZAP=2.1 conda env create -f environment.yml
+# The pipeline. Create the environment with:
 #
-# The env var is needed because libs/zap uses setuptools-scm but its git
-# metadata (a dangling submodule link) is not available here, so the version
-# cannot be auto-detected. See README for details.
+#   conda env create -f environment.yml
+#   conda activate astro
+#
+# The ZAP comparison arm under src/zap needs the libs/zap submodule and is not
+# part of this; environment-zap.yml adds it.
 name: astro
 channels:
   - conda-forge
@@ -11,5 +12,4 @@ dependencies:
   - python=3.12
   - pip
   - pip:
-      - -e ./libs/zap
       - -e .

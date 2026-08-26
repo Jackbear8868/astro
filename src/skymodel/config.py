@@ -28,8 +28,8 @@ SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
 MAX_GRID_OFFSET = 0.1
 
 # Whether steps 1-5 leave their products on disk. The steps hand their results to
-# each other in memory, so those products exist for the evaluation scripts and as the
-# only record of the middle of a run. step6's are written whatever this says.
+# each other in memory, so those products are the only record of the middle of a
+# run rather than the way it runs. step6's are written whatever this says.
 KEEP_INTERMEDIATE = True
 
 
@@ -83,7 +83,7 @@ def load(path):
     path = Path(path)
     if not path.exists():
         _fail(f"file not found: {path}")
-    cfg = yaml.safe_load(path.read_text())
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         _fail(f"{path} does not contain a mapping")
 
