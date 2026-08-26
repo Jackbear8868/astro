@@ -1912,6 +1912,12 @@ def run_pointing(cfg_path):
 
 
 def main():
+    """The command line: run each config given, in the order given.
+
+    Pointings do not depend on each other, so a failure stops the run rather than
+    being collected -- the ones already finished keep their products, and the
+    command can be given the rest.
+    """
     ap = argparse.ArgumentParser(
         description="Run the sky reconstruction pipeline for one or more pointings")
     ap.add_argument("config", nargs="+",

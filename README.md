@@ -148,8 +148,16 @@ Runs are bit-reproducible: the same config gives the same products, byte for byt
 fitting step holds BLAS at one thread while it works, which is what makes it so -- the
 randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
 the basis moves by about 1 part in 10⁴. Steps 3, 5 and 6 stamp the git commit into
-their `meta.json`, and each `stepN.log` opens with the call that produced the products
-beside it.
+their `meta.json`, each `stepN.log` opens with the call that produced the products
+beside it, and `{output}/config.json` records the config the run was given.
+
+```bash
+python scripts/verify.py p05 p14
+```
+
+re-runs those pointings and compares every product against the stored ones, which
+is how a change meant to leave the answer alone is held to it. `scripts/README.md`
+covers that and two faster checks beside it.
 
 ## Repository
 
@@ -160,6 +168,7 @@ src/skymodel/              the pipeline
   experiments/             one-off "should we do it differently" tests
 src/zap/                   the ZAP comparison arm -- a different method, same data
 configs/                   one file per pointing
+scripts/                   checking a change did what it says (see its README)
 docs/                      method notes, parameter references, what was rejected
 ```
 

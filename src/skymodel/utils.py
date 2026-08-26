@@ -119,6 +119,11 @@ def air_to_vacuum(lam_air):
 
 
 def running_median(spectrum, window=300):
+    """The median of the `window` channels around each channel, ignoring NaN.
+
+    Returns an array the length of `spectrum`. The window shortens at the two
+    ends rather than being padded, so the result is defined everywhere.
+    """
     half = window // 2
     n = len(spectrum)
     result = np.empty(n)
@@ -128,6 +133,20 @@ def running_median(spectrum, window=300):
 
 
 def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
+    """One pass of "where is the continuum, and which channels sit off it".
+
+    Returns (continuum, sigma, line_mask), each the length of `mean_sky`. The
+    continuum is a running median smoothed by a cubic spline; sigma is a running
+    median of the distance to it; a channel is masked when it lies more than
+    thresholds[0] sigma above or thresholds[1] sigma below. The two sides have
+    their own threshold because emission and absorption are not the same
+    question of the sky.
+
+    `exclude` blanks channels before the continuum is measured, so that lines
+    found earlier do not drag it upwards. The mask itself is still tested against
+    the untouched `mean_sky`, so a channel excluded this time can come back: what
+    is returned is where the lines are, not where they have ever been.
+    """
     m = mean_sky.copy()
     if exclude is not None:
         m[exclude] = np.nan                        # the previous iteration's lines, kept out of the continuum
@@ -151,6 +170,19 @@ MIN_UNMASKED_FRAC = 0.16
 
 def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5,
                        min_unmasked_frac=MIN_UNMASKED_FRAC):
+    """detect_lines repeated, each pass keeping the last one's lines out of the
+    continuum.
+
+    Returns (continuum, sigma, line_mask) from the final pass, and the history of
+    all of them -- what each iteration saw is worth keeping, since the mask is
+    what every later step fits around.
+
+    It stops when a pass reproduces the previous mask, or after max_iter, or when
+    a mask would leave less than min_unmasked_frac of the channels: past that
+    there is not enough continuum left to measure one from, and the pass is
+    discarded rather than used. A first pass already over that floor raises,
+    because there is then no answer to return at all.
+    """
     line_mask = None
     history = []
 
