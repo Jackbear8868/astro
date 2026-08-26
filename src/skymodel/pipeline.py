@@ -245,21 +245,22 @@ class Pipeline:
         print("=" * 70)
         t0 = time.time()
 
-        print("--- [1/7] step1 white light (from the nosky cube)")
+        # The segmentation belongs to step 1 rather than counting as a step of its
+        # own: it is checked against the white light and written beside it, into the
+        # same step01 directory.
+        print("--- [1/6] step1 white light (from the nosky cube), and the segmentation")
         white = self.run_step("step1", self.whitelight, {})
-
-        print("--- [2/7] the professor's segmentation")
         seg = self.place_segmentation(white)
 
-        print("--- [3/7] step2 source spectra (nosky, for classification)")
+        print("--- [2/6] step2 source spectra (nosky, for classification)")
         spectra = self.run_step("step2", self.object_spectra,
                                 dict(white=white, seg=seg))
 
-        print("--- [4/7] step3 sky basis")
+        print("--- [3/6] step3 sky basis")
         sky = self.run_step("step3", self.sky_basis, dict(white=white, seg=seg),
                             keep=KEEP["step3"])
 
-        print("--- [5/7] step4 template fitting and classification")
+        print("--- [4/6] step4 template fitting and classification")
         # step4's result is the last mask iteration asked for: the classification
         # fields step6 rebuilds the sources from, the galaxy-branch redshifts step5
         # groups the main source by, and the file all of that was written to.
@@ -267,13 +268,13 @@ class Pipeline:
                                    dict(sky=sky, spectra=spectra), tail=3)
 
         line_iter = self.source_fit["line_mask_iter"][-1]
-        print(f"--- [6/7] step5 build the s field   [mask iter {line_iter}]")
+        print(f"--- [5/6] step5 build the s field   [mask iter {line_iter}]")
         s_field = self.run_step("step5", self.fit_s_field,
                                 dict(white=white, seg=seg, sky=sky,
                                      classification=classified),
                                 keep=KEEP["step5"])
 
-        print("--- [7/7] step6 final sky subtraction")
+        print("--- [6/6] step6 final sky subtraction")
         self.run_step("step6", self.subtract_sky,
                       dict(white=white, seg=seg, sky=sky,
                            classification=classified, s_field=s_field),
@@ -393,8 +394,12 @@ class Pipeline:
     # =========================================================================
 
     def place_segmentation(self, white):
-        """Read the professor's segmentation and confirm it shares a pixel grid with
-        the white light; return it.
+        """Read the segmentation this pointing was given and confirm it shares a
+        pixel grid with the white light; return it.
+
+        The pipeline does not detect sources. Which spaxels hold one is an input,
+        named by the config, and the only thing checked here is that it describes
+        the same sky as the cube.
 
         Equal shapes do not prove the same grid, so the check is "where on the sky
         does this pixel point", not a keyword-by-keyword comparison: the seg carries

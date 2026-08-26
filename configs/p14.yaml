@@ -6,7 +6,7 @@ pointing: 14
 input:
   cube:  data/wsky/DATACUBE_FINAL_14.fits           # sky included: the sky is learned and subtracted here
   nosky: data/nosky/DATACUBE_FINAL_ESOSKY_14.fits   # ESO-subtracted: white light and the spectra used for classification
-  seg:   data/wsky_seg/DATACUBE_FINAL_14_seg.fits   # segmentation delivered by the professor
+  seg:   data/wsky_seg/DATACUBE_FINAL_14_seg.fits   # which spaxels hold a source; the pipeline does not detect them
 
 output: results/skymodel/p14
 

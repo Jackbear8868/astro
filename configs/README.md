@@ -13,7 +13,7 @@ reads a file, checks the values and hands them out with the paths resolved.
 
 | key | what it settles |
 |---|---|
-| `input` | the three files: the wsky cube the sky is learned from, the ESO nosky cube used for the white light and the source spectra, and the segmentation delivered by the professor |
+| `input` | the three files: the wsky cube the sky is learned from, the ESO nosky cube used for the white light and the source spectra, and the segmentation saying which spaxels hold a source |
 | `output` | where this pointing's `step01` … `step06` directories go |
 | `sky_region` | which part of the field the sky is learned from |
 | `sky_line_basis` | the sky model: continuum estimation and the K line-basis vectors (step3) |

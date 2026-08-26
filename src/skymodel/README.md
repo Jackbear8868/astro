@@ -19,7 +19,7 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 | | function | reads | writes |
 |---|---|---|---|
 | 1 | `whitelight` | the ESO nosky cube | `step01/whitelight.fits` + preview |
-| — | `place_segmentation` | the delivered seg map | `step01/seg.fits`, after checking the two share a pixel grid |
+| — | `place_segmentation` | the segmentation it is given | `step01/seg.fits`, after checking the two share a pixel grid |
 | 2 | `object_spectra` | nosky cube, seg | `step02/object_{ids,flux,var,nspax}.npy` |
 | 3 | `sky_basis` | wsky cube, seg | `step03/` continuum, line mask, `sky_basis_{method}_K{K}.npy` |
 | 4 | `classify_sources` | `step02/`, `step03/` | `step04/scan{1,2}_id*.npz`, `best_*.npz`, `classification_*.npz` |

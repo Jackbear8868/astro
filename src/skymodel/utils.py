@@ -607,8 +607,8 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
     The redshifts come either as `redshifts`, the {ID: z} mapping step4 returned,
     which is how the pipeline passes them, or by reading step04's files, with
     `tag` naming one run when the directory holds several. Give one or the other.
-    With neither, only criterion (1) applies -- the professor's delivered seg has
-    no template fit, so no redshift is available.
+    With neither, only criterion (1) applies -- a segmentation that has not been
+    through step4 has no redshift to offer.
 
     The returned mask is intersected with the blob, not `isin(seg, ids)`:
     SExtractor's CLEAN merges scattered spurious detections into the bright
