@@ -1,9 +1,9 @@
 """Read one pointing's configuration.
 
 Everything the pipeline needs for a pointing lives in a single YAML file
-(configs/pNN.yaml). load() reads that file, checks the values and returns a
-plain nested dict, with the paths resolved to absolute Paths so that callers
-never join paths themselves.
+(configs/pNN.yaml). load() reads it, checks the values and returns a plain
+nested dict, with the paths resolved to absolute Paths so that callers never
+join paths themselves.
 
 Pixel ranges are written [lo, hi] and read half-open: lo <= i < hi. Either end
 may be null, which means "no bound on that side".
@@ -22,14 +22,13 @@ BLANK_CHANNELS = ("all", "line1")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
             "sky_amplitude", "spaxel_fit")
 
-# How far apart the seg and white-light grids may be before the pointing is
-# refused, in pixels. Optional in the file: a pointing writes it only to raise it,
-# and raising it is a decision to run on headers that disagree.
+# How far apart the seg and white-light grids may be before the pointing is refused,
+# in pixels. Optional in the file: a pointing writes it only to raise it, and raising
+# it is a decision to run on headers that disagree.
 MAX_GRID_OFFSET = 0.1
 
-# Whether steps 1-5 leave their products on disk. The steps hand their results to
-# each other in memory, so those products are the only record of the middle of a
-# run rather than the way it runs. step6's are written whatever this says.
+# Whether steps 1-5 leave their products on disk; step6's are written whatever this
+# says. Optional in the file: a config writes it only to turn it off.
 KEEP_INTERMEDIATE = True
 
 
@@ -64,8 +63,7 @@ def _number(v, name, ge=None, gt=None, le=None):
 
     Only bounds that hold whatever the data looks like belong here -- a distance
     cannot be negative, a fraction of the channels cannot exceed 1. How far apart
-    two things should be, or how hard to clip, is not a question this file can
-    answer.
+    two things should be, or how hard to clip, this file cannot answer.
     """
     if not isinstance(v, (int, float)):
         _fail(f"{name} must be a number, got {v!r}")
@@ -160,15 +158,14 @@ def load(path):
     _number(sp.get("min_channel_coverage"),
             "spaxel_fit.min_channel_coverage", ge=0, le=1)
 
-    # Optional, so it is filled in here rather than required of all 14 files. It
-    # lives only in the config, so raising it leaves a record of which pointing it
-    # was applied to.
+    # Filled in here rather than required of all 14 files; it lives only in the
+    # config, so raising it leaves a record of which pointing it was applied to.
     g = cfg.setdefault("max_grid_offset", MAX_GRID_OFFSET)
     if not isinstance(g, (int, float)) or g <= 0:
         _fail(f"max_grid_offset must be a positive number, got {g!r}")
 
-    # Optional for the same reason: a config writes it only to turn it off, which
-    # is a decision to keep nothing but step6's cubes.
+    # Filled in for the same reason; turning it off is a decision to keep nothing
+    # but step6's cubes.
     k = cfg.setdefault("keep_intermediate", KEEP_INTERMEDIATE)
     if not isinstance(k, bool):
         _fail(f"keep_intermediate must be true or false, got {k!r}")

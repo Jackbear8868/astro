@@ -18,13 +18,11 @@ pointing's config file, which is where every value they take comes from.
 
 Each step is handed what the earlier ones returned; only the cube is opened again by
 every step that needs it. The products under {output}/step01 ... step06 are the record
-of the middle of a run, and nothing in the pipeline reads them back;
-`keep_intermediate: false` writes only step06's, which are the deliverable.
+of the middle of a run, and nothing in the pipeline reads them back.
 
-The four fitting steps hold BLAS at one thread while they work, which is what makes
-the products reproducible: a threaded BLAS adds a sum up in as many pieces as it has
-threads, and the last bits follow the thread count. Importing this package leaves the
-threading of the importing process alone.
+The fitting steps hold BLAS at one thread while they work, which is what makes the
+products reproducible (see utils.blas_single_thread). Importing this package leaves
+the threading of the importing process alone.
 """
 # The modules address each other by bare name (`from utils import ...`), which needs
 # this directory on the path.

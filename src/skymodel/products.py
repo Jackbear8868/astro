@@ -4,9 +4,7 @@ No pipeline step imports this module. It holds what the scripts under
 `evaluation/` and `experiments/` share when they work from a finished run --
 locating a pointing's fitted products, reading the settings recorded beside
 them, condensing a spectrum into numbers, and the figures more than one script
-draws.
-
-It sits next to `utils.py` rather than inside `evaluation/` so that
+draws. It sits next to `utils.py` rather than inside `evaluation/` so that
 `experiments/` scripts do not have to import from `evaluation/`.
 """
 
@@ -107,7 +105,6 @@ def per_spaxel_continuum(
     Parameters
     ----------
     spectra : ndarray, shape (nz, n_spaxels)
-        One column per spaxel.
     line_mask : ndarray of bool, shape (nz,)
         Sky-line channels, left out of the running median.
     window : int
@@ -162,9 +159,9 @@ PLAIN_COLOR = "#ff7b7b"     # not grouping; pale red stays visible on greyscale
 def id_map(seg, white, rows, out, by_group=False):
     """White light background + source outlines + ID labels.
 
-    The background uses an asinh stretch -- logarithmic where bright, linear
-    where faint: white light spans several orders of magnitude, and a linear
-    display makes everything outside the galaxy body black.
+    The background is asinh-stretched: white light spans several orders of
+    magnitude, and a linear display makes everything outside the galaxy body
+    black.
 
     by_group=False (the default) draws no group colours. Classification is
     step4's conclusion, and putting it on a locator map invites reading it as

@@ -3,8 +3,7 @@
     conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
     conda run -n astro python src/skymodel/pipeline.py configs/p0[1-4].yaml
 
-Pipeline.run() below is the whole method in one place: six named steps in the order
-they happen, plus the segmentation check between the first two.
+Pipeline.run() below is the whole method in one place:
 
     step 1  whitelight        collapse a cube along wavelength into a white light image
     step 2  object_spectra    sum each source's spectrum over the spaxels its seg ID covers
@@ -15,30 +14,25 @@ they happen, plus the segmentation check between the first two.
 
 Each step is handed what the earlier ones returned rather than reopening the files
 they wrote, because a step that reads its input from disk can be handed a file some
-earlier run left there, and nothing says so. The cube is the exception: it is the one
-input large enough that holding it across steps would cost real memory, and it is
-memmapped, so every step that needs it opens it again.
+earlier run left there, and nothing says so. The cube is the exception: it is large
+enough that holding it across steps would cost real memory, and it is memmapped, so
+every step that needs it opens it again.
 
-The worker pool step4 fits through comes first: it is the one part of the pipeline
-that cannot sit in the class, and the comment heading it says why. After it the file
-follows run()'s order -- the products the steps hand each other, then the class, each
-step's section carrying the helpers and constants that step uses.
+After the worker pool at the top, the file follows run()'s order -- the products the
+steps hand each other, then the class, each step's section carrying the helpers and
+constants that step uses.
 
 The products under {output}/stepNN are written unless the config turns
-keep_intermediate off; step6's are written either way. They are the only record of
-the middle of a run, but nothing in the pipeline reads them back. Each step's full
-output goes to {output}/stepN.log, headed by the call that produced it, and only
-the lines listed in Pipeline.TERMINAL_LINES reach the terminal. The config as it
-was read is in {output}/config.json, because the file itself can be edited
-afterwards.
+keep_intermediate off; step6's are written either way. They are the only record of the
+middle of a run, but nothing in the pipeline reads them back. Each step's full output
+goes to {output}/stepN.log and the config as it was read to {output}/config.json.
 
 The white light is computed from the nosky cube: downstream locates the main source by
 its brightest pixel, and the sky continuum of the wsky cube lifts the whole image,
 which makes that pixel unreliable.
 
-Nothing here fixes the BLAS thread count. Each fitting step holds BLAS at one thread
-around its own work (utils.blas_single_thread), so the products do not follow the
-thread count of the machine the pipeline is run on.
+Nothing here fixes the BLAS thread count; each fitting step holds BLAS at one thread
+around its own work (utils.blas_single_thread).
 """
 import argparse
 import contextlib
@@ -84,18 +78,14 @@ from utils import (C_KMS, DWARF_DIR, EIGEN_GAL, STAR_LIBRARY,
 #
 # classify_sources runs Pool(n_workers, initializer=_init_worker,
 # initargs=(_SHARED, STEP04)) and maps _scan_one over the sources, so all seven
-# names have to be reachable from a worker process. None of them can be a
-# method: a bound method is pickled together with the object it is bound to, so
-# every worker would be sent the whole Pipeline, its config and its paths with
-# it. Under the spawn start method -- the default on macOS and Windows -- a
-# worker is a fresh interpreter that holds nothing but what it was sent, which
-# is why what crosses into one is kept to these seven. N_COMPONENTS is one of them
-# because _save_scan and _scan_one read it; steps 4 and 6 read the same
-# module-level name.
+# names have to be reachable from a worker process. None of them can be a method: a
+# bound method is pickled together with the object it is bound to, so every worker
+# would be sent the whole Pipeline, its config and its paths with it. Under the spawn
+# start method -- the default on macOS and Windows -- a worker is a fresh interpreter
+# that holds nothing but what it was sent, which is why what crosses into one is kept
+# to these seven.
 
-# Where the scans are written. This and _SHARED below are the two names _scan_one
-# reads from inside a worker process, where the locals of the call that started the
-# Pool do not exist; _init_worker fills both in.
+# Where the scans are written; _init_worker fills it and _SHARED in inside a worker.
 STEP04 = None
 
 
@@ -117,16 +107,15 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
 
     jobs is a list of (group, name, spline, z grid). The z grid belongs to each
     candidate rather than being shared: a star needs only the peculiar velocities
-    inside the Galaxy scanned, a galaxy needs the cosmological range.
+    inside the Galaxy scanned, a galaxy the cosmological range.
 
-    A and s are constrained non-negative, because a source's amplitude and the sky
-    continuum's coefficient cannot physically be negative. The sky-line coefficients
-    are left free, that basis being learned from residuals and signed by construction.
+    A and s are constrained non-negative, a source's amplitude and the sky continuum's
+    coefficient not being physically able to go negative. The sky-line coefficients are
+    left free, that basis being learned from residuals and signed by construction.
 
-    When fix_s_at is given, s*C_sky is subtracted from the data first and s stops
-    being a free parameter. That breaks the degeneracy between A*T and s*C_sky: the
-    data cannot separate the two, and left free the template absorbs the sky
-    continuum.
+    When fix_s_at is given, s*C_sky is subtracted from the data first and s stops being
+    a free parameter, which breaks the degeneracy between A*T and s*C_sky: the data
+    cannot separate the two, and left free the template absorbs the sky continuum.
     """
     base = (fit & np.isfinite(flux) & np.isfinite(var) & (var > 0)
             & np.all(np.isfinite(sky), axis=0))
@@ -185,7 +174,7 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
                 continue
             # A candidate not covering the whole window is dropped: chi2 is a sum, so
             # fewer channels is smaller for free, and the scan would run to whatever z
-            # leaves the template on a handful of them and call that perfect.
+            # leaves the template on a handful of them.
             if not allow_partial and not covers:
                 continue
 
@@ -205,12 +194,11 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
                 r     = M @ theta - yw[good]
                 chi2  = float(r @ r)
 
-            # Negative source flux is checked over the whole range, not just inside
-            # the window: it is a physical problem with the model, and it does not
-            # stop existing because those channels were left out of chi2.
+            # Negative source flux is a physical problem with the model, so it is
+            # checked over the whole range and not only inside the window.
             #
-            # A template is NaN for a whole channel at once -- the components share
-            # one spline domain -- so column 0 answers for all of them.
+            # A template is NaN for a whole channel at once -- the components share one
+            # spline domain -- so column 0 answers for all of them.
             ok  = flux_ok & np.isfinite(T[:, 0])
             src = T @ theta[:n_comp]
 
@@ -241,10 +229,8 @@ def _save_scan(path, results):
 def _init_worker(shared, step04):
     """Give a worker process the two names _scan_one reads.
 
-    Only a forked worker inherits the parent's memory. Under spawn and forkserver a
-    worker is a fresh interpreter where both names are still empty and every fit
-    would fail; passed through the initializer they arrive whichever way the worker
-    was started.
+    Only a forked worker inherits the parent's memory; passed through the initializer
+    the two names arrive whichever way the worker was started.
 
     The thread limit is re-applied for the same reason: a fresh interpreter starts at
     the machine default, so a spawned worker would fit with more threads than the
@@ -265,8 +251,8 @@ def _scan_one(t):
     The two reduced chi2 can be compared because reduced chi2 = chi2 /
     (n_good - n_param) already accounts for the difference in degrees of freedom, 4
     components for the galaxy eigenspectra against 1 for a stellar template. That
-    holds only if both used the same channels, which is why the two branches are
-    given the same window, and it is what makes an absolute threshold unnecessary.
+    holds only if both used the same channels, which is why the two branches are given
+    the same window, and it is what makes an absolute threshold unnecessary.
     """
     S = _SHARED
     k = int(np.flatnonzero(S["seg_ids"] == t)[0])
@@ -282,8 +268,8 @@ def _scan_one(t):
                      allow_partial=S["allow_partial"])
     if not r1 and not r2:
         return t, None
-    # The whole scan of each branch is a product, not how the result travels: the
-    # row below comes back through the Pool either way.
+    # The whole scan of each branch is a product, not how the result travels: the row
+    # below comes back through the Pool either way.
     if S["keep_intermediate"]:
         if r1:
             _save_scan(STEP04 / f"scan1_id{t}_{S['tag']}.npz", r1)
@@ -300,7 +286,7 @@ def _scan_one(t):
     # is smaller, and without them nothing downstream can ask by how much it won.
     #
     # gal_z is the galaxy branch's own redshift, the lowest reduced chi2 over that
-    # branch's whole scan. It is not "z" above, which belongs to whichever branch won;
+    # branch's whole scan, and not "z" above, which belongs to whichever branch won.
     # step5 needs the galaxy value even for a source classified as a star.
     return t, dict(id=t, nspax=int(np.median(S["nspax"][k])),
                    star_red_chi2=r1[0]["red_chi2"] if r1 else np.nan,
@@ -316,15 +302,13 @@ def _scan_one(t):
 # what one step hands the next
 # =========================================================================
 #
-# These are the arguments of run(): a step's signature names the ones it takes,
-# and they stay locals of run() so nothing of one pointing is left for the next.
+# These are the arguments of run(): a step's signature names the ones it takes.
 
 
 class WhiteLight(NamedTuple):
     """What step1 hands the ones after it.
 
-    The header travels with the image because the segmentation check asks where
-    each pixel points on the sky, which the array alone cannot answer; every other
+    The header travels with the image for the segmentation check; every other
     consumer reads only `data`.
     """
     data: np.ndarray          # (ny, nx), the collapsed image, 0 outside the field
@@ -345,9 +329,8 @@ class SourceSpectra(NamedTuple):
     """What step2 hands step4: one summed spectrum per source.
 
     `path` is the directory the four arrays were written to. It is carried because
-    step4 encodes that directory's name into its output tag -- a different spectrum
-    source is a different scientific product -- not because anything reads the
-    files back.
+    step4 encodes that directory's name into its output tag (see make_suffix), not
+    because anything reads the files back.
     """
     ids: np.ndarray           # (n_ids,)   segmentation IDs, ascending
     flux: np.ndarray          # (n_ids, nz)
@@ -373,11 +356,10 @@ class SkyModel(NamedTuple):
 class Classification(NamedTuple):
     """What step4 hands steps 5 and 6.
 
-    data holds the fields of classification_{tag}.npz -- step6 rebuilds each
-    source's model from them. galaxy_z is the galaxy branch's best redshift for
-    every source it could fit, a different number from data["z"], which belongs to
-    the winning branch and for a star is a radial velocity; step5 groups the main
-    source by redshift and needs the galaxy branch's.
+    data holds the fields of classification_{tag}.npz -- step6 rebuilds each source's
+    model from them. galaxy_z is the galaxy branch's best redshift for every source it
+    could fit, which step5 groups the main source by; it is not data["z"], the winning
+    branch's (see _scan_one).
 
     path and tag name the product these came from: steps 5 and 6 record the path in
     their meta.json, and step5 reads the tag to name the step4 run.
@@ -391,9 +373,8 @@ class Classification(NamedTuple):
 class SkyAmplitude(NamedTuple):
     """What step5 hands step6: the field, and where it was written.
 
-    data is the float32 the file holds, not the float64 the fit produced: step6
-    locks s to these numbers, and narrowing them afterwards instead would move the
-    last bits of every spaxel it fits.
+    data is the float32 the file holds, not the float64 the fit produced, so that the
+    file and the fit hold the same field.
     """
     data: np.ndarray          # (ny, nx) float32
     path: Path                # step05/s_hat.npy
@@ -407,8 +388,8 @@ class StepLog:
     """Collect a step's stdout: everything to the log, some of it to the terminal.
 
     Line-buffered because print() writes the text and the newline separately, and a
-    TERMINAL_LINES pattern has to be matched against a whole line. `tail` instead
-    holds back the last few non-matching lines, for a step whose summary is at the end.
+    TERMINAL_LINES pattern has to be matched against a whole line. `tail` instead holds
+    back the last few non-matching lines, for a step whose summary is at the end.
     """
 
     def __init__(self, log, echo=None, tail=0):
@@ -454,13 +435,13 @@ class Pipeline:
 
         Pipeline("configs/p01.yaml").run()
 
-    The config is read once, in __init__, and every step reaches the values it
-    needs through self.
+    The config is read once, in __init__, and every step reaches the values it needs
+    through self.
 
-    What one step hands the next stays an argument, so a method's signature is the
-    list of earlier steps it consumes and the products stay locals of run() --
-    main() runs several configs one after another, and a product left on the object
-    would be there for the next one to pick up.
+    What one step hands the next stays an argument, so a method's signature is the list
+    of earlier steps it consumes and the products stay locals of run() -- main() runs
+    several configs one after another, and a product left on the object would be there
+    for the next one to pick up.
     """
 
     # =========================================================================
@@ -481,13 +462,13 @@ class Pipeline:
     }
 
     # An upper bound past the edge of the field: the comparison is against pixel
-    # indices, and writing the real NAXIS instead would have to be correct for every
+    # indices, and writing the real NAXIS instead would have to be right for every
     # pointing, a value too small dropping part of the region without saying so.
     BEYOND_EDGE = 9999
 
     # How much of one argument the log prints before it says what the value is instead.
-    # The point of the head line is the paths and the tags, and a step is also handed
-    # whole spectra and maps.
+    # The point of the head line is the paths and the tags, not the spectra and maps a
+    # step is also handed.
     ARG_WIDTH = 160
 
     # Defined above learn_sky_basis, which takes it as a default argument: a
@@ -495,8 +476,7 @@ class Pipeline:
     SEED       = 0           # shared by all decompositions, so a basis is reproducible
 
     # The whole MUSE range, kept as a control: full_range widens both branches to it in
-    # place of the config's window. Both branches always get the same window, because
-    # reduced chi2 = chi2 / (n_good - n_param) is comparable only over the same channels.
+    # place of the config's window.
     FULL_RANGE  = (4600.0, 9400.0)
 
     def __init__(self, cfg_path):
@@ -512,9 +492,9 @@ class Pipeline:
         # of a step's output lines reach the terminal.
         self.keep_intermediate = self.cfg["keep_intermediate"]
 
-        # The one box in the config, translated into the xlim / ylim / exclude_box
-        # the steps read, and only for the steps apply_to names. A step the box
-        # does not apply to finds nothing here and restricts nothing.
+        # The one box in the config, translated into the xlim / ylim / exclude_box the
+        # steps read, and only for the steps apply_to names: a step the box does not
+        # apply to finds nothing here and restricts nothing.
         reg = self.cfg["sky_region"]
         self.basis_region = self.region_kwargs(reg) if "basis" in reg["apply_to"] else {}
         self.train_region = (self.region_kwargs(reg, "train_")
@@ -537,9 +517,8 @@ class Pipeline:
         print("=" * 70)
         t0 = time.time()
 
-        # The segmentation belongs to step 1 rather than counting as a step of its
-        # own: it is checked against the white light and written beside it, into the
-        # same step01 directory.
+        # The segmentation belongs to step 1 rather than counting as a step of its own:
+        # it is checked against the white light and written beside it, in step01.
         print("--- [1/6] step1 white light (from the nosky cube), and the segmentation")
         white = self.run_step("step1", self.whitelight, {})
         seg = self.place_segmentation(white)
@@ -553,9 +532,7 @@ class Pipeline:
                             echo=self.TERMINAL_LINES["step3"])
 
         print("--- [4/6] step4 template fitting and classification")
-        # step4's result is the last mask iteration asked for: the classification
-        # fields step6 rebuilds the sources from, the galaxy-branch redshifts step5
-        # groups the main source by, and the file all of that was written to.
+        # step4's result is the last mask iteration asked for (see Classification).
         classified = self.run_step("step4", self.classify_sources,
                                    dict(sky=sky, spectra=spectra), tail=3)
 
@@ -579,11 +556,10 @@ class Pipeline:
     def record_config(self):
         """Write the config this run used into the output directory.
 
-        A step log says which products the step was handed, not the values behind
-        them, so this file is where an output directory answers what it was run
-        with. It is the config as load() returned it -- optional keys filled in,
-        paths resolved -- not a copy of the file, which can be edited afterwards
-        and does not carry the defaults at all.
+        A step log says which products the step was handed, not the values behind them,
+        so this file is where an output directory answers what it was run with. It is
+        the config as load() returned it -- optional keys filled in, paths resolved --
+        not a copy of the file, which can be edited afterwards.
         """
         def plain(v):
             """The config as JSON takes it: paths shortened against the root."""
@@ -615,9 +591,9 @@ class Pipeline:
                 with contextlib.redirect_stdout(step_log):
                     result = fn(**kwargs)
             except BaseException:
-                # The traceback goes to the log too: the terminal only ever saw
-                # the TERMINAL_LINES lines, so the log would otherwise end
-                # mid-step with no reason.
+                # The traceback goes to the log too: the terminal only ever saw the
+                # TERMINAL_LINES lines, so the log would otherwise end mid-step with
+                # no reason.
                 step_log.close()
                 log.write("\n" + traceback.format_exc())
                 print(f"★ {label} failed; full output in {log_path}", flush=True)
@@ -668,10 +644,10 @@ class Pipeline:
     def _render(v):
         """One argument of a step call, written for the head of its log.
 
-        An array is written as its shape and dtype, the values themselves being in the
-        products beside the log, and the bundles the steps pass each other are opened up
-        so the paths and tags inside them stay visible. Paths are shortened against the
-        repository root, an absolute one from another machine being noise here.
+        An array is written as its shape and dtype, the values being in the products
+        beside the log; the bundles the steps pass each other are opened up so the paths
+        and tags inside them stay visible; paths are shortened against the repository
+        root, an absolute one from another machine being noise here.
         """
         if isinstance(v, np.ndarray):
             return f"<ndarray {v.shape} {v.dtype}>"
@@ -719,8 +695,6 @@ class Pipeline:
     # step 1 -- white light
     # =========================================================================
     #
-    # Collapse a cube along wavelength into a white light image.
-    #
     # Everything downstream that has to say "where is the source" works on this image
     # rather than on the cube: the segmentation is checked against it, and the main
     # source is the blob holding its brightest pixel.
@@ -745,14 +719,13 @@ class Pipeline:
         with fits.open(cube, memmap=True) as hdul:
             data = hdul["DATA"].data
             # A band of image rows at a time, so nanmean's copy of its input is one
-            # band's worth, not the cube's. The split must stay spatial: splitting
-            # along wavelength would change each pixel's summation order.
+            # band's worth, not the cube's. The split must stay spatial: splitting along
+            # wavelength would change each pixel's summation order.
             white = np.concatenate([np.nanmean(data[:, y:y + rows, :], axis=0)
                                     for y in range(0, data.shape[1], rows)])
             white = np.nan_to_num(white, nan=0.0)
-            # The cube's celestial WCS, the two sky axes without the wavelength one.
-            # Without it the white light is a bare array, and the segmentation check
-            # could compare only shapes, which do not guarantee alignment.
+            # The cube's celestial WCS, the two sky axes without the wavelength one;
+            # without it the segmentation check could compare only shapes.
             hdr = WCS(hdul["DATA"].header).celestial.to_header()
 
         if keep_intermediate:
@@ -764,8 +737,7 @@ class Pipeline:
                        vmax=np.nanpercentile(white, 99))
             plt.colorbar()
             fig.savefig(white_png, dpi=130)
-            # Closed explicitly: this runs in-process, so figures left open would
-            # accumulate for the whole run.
+            # Closed explicitly: this runs in-process, so open figures accumulate.
             plt.close(fig)
             print(f"saved -> {white_fits}")
 
@@ -780,21 +752,21 @@ class Pipeline:
         """Read the segmentation this pointing was given and confirm it shares a
         pixel grid with the white light; return it.
 
-        The pipeline does not detect sources. Which spaxels hold one is an input,
-        named by the config, and the only thing checked here is that it describes
-        the same sky as the cube.
+        The pipeline does not detect sources. Which spaxels hold one is an input, named
+        by the config, and the only thing checked here is that it describes the same sky
+        as the cube.
 
-        Equal shapes do not prove the same grid, so the check is "where on the sky
-        does this pixel point", not a keyword-by-keyword comparison: the seg carries
-        a CD matrix while the cube uses PC + CDELT, and their CRPIX differ, both of
-        which a literal comparison would report as a mismatch.
+        Equal shapes do not prove the same grid, so the check is "where on the sky does
+        this pixel point", not a keyword-by-keyword comparison: the seg carries a CD
+        matrix while the cube uses PC + CDELT, and their CRPIX differ, both of which a
+        literal comparison would report as a mismatch.
 
-        With keep_intermediate the map is copied next to the white light, so the
-        output directory records which segmentation the run was given.
+        With keep_intermediate the map is copied next to the white light, so the output
+        directory records which segmentation the run was given.
 
         max_offset above the default is a decision to run anyway on a pointing whose
-        headers disagree. It comes from that pointing's config and is printed when it
-        is above the default, so the bypass is recorded in the file and in the log.
+        headers disagree; it is printed when it is above the default, so the bypass is
+        recorded in the config and in the log.
         """
         seg_src = self.inp["seg"]
         out = self.out
@@ -837,8 +809,6 @@ class Pipeline:
     # step 2 -- source spectra
     # =========================================================================
     #
-    # Sum every source's spectrum over the spaxels its segmentation ID covers.
-    #
     # These summed spectra are what step4 classifies: one spectrum per source, with its
     # variance and the number of contributing spaxels per channel. They come from a
     # sky-subtracted cube -- classifying a spectrum that still holds the sky gives
@@ -860,7 +830,6 @@ class Pipeline:
             Segmentation map, 0 meaning no source. Pixels outside the field of view
             must be set to 0 before calling or they enter the summation.
         ids : ndarray, shape (n_ids,)
-            IDs to process.
         chunk : int
             Wavelength planes read at once; memory and speed only.
 
@@ -877,7 +846,7 @@ class Pipeline:
 
         All three count the same set of spaxels, because the ok mask zeros unusable
         positions before summing. np.nansum on flux and var separately would let each
-        skip different positions -- a pixel with valid flux but NaN variance would enter
+        skip different positions -- a pixel with valid flux but NaN variance entering
         flux and not var -- making the two inconsistent.
         """
         seg_flat = seg.ravel()
@@ -901,9 +870,9 @@ class Pipeline:
                 v  = np.where(ok, v, 0.0)
 
                 for k, idx in enumerate(members):
-                    # Widened before the sum, not during it: a source covers thousands of
-                    # spaxels and float32 accumulation loses digits, while sum()'s float64
-                    # accumulator depends on a blocking it does not promise to keep.
+                    # Widened before the sum, not during it: a source covers thousands
+                    # of spaxels and float32 accumulation loses digits, while sum()'s
+                    # float64 accumulator depends on a blocking it does not promise.
                     flux[k,  j:j+chunk] = d[:, idx].astype(np.float64).sum(axis=1)
                     var[k,   j:j+chunk] = v[:, idx].astype(np.float64).sum(axis=1)
                     nspax[k, j:j+chunk] = ok[:, idx].sum(axis=1)
@@ -913,12 +882,12 @@ class Pipeline:
     def object_spectra(self, white, seg, var_cube=None, top=20):
         """Sum every source's spectrum over the spaxels its segmentation ID covers.
 
-        white and seg come from step1 and from the segmentation check, in memory.
-        With keep_intermediate the four summed arrays are written into `out` as well.
+        white and seg come from step1 and from the segmentation check, in memory. With
+        keep_intermediate the four summed arrays are written into `out` as well.
 
-        top sets how many rows of the SNR table are printed and changes nothing that
-        is saved. The table is there to notice a source far weaker than the rest,
-        which no saved array announces on its own.
+        top sets how many rows of the SNR table are printed and changes nothing that is
+        saved. The table is there to notice a source far weaker than the rest, which no
+        saved array announces on its own.
         """
         cube = self.inp["nosky"]
         out = self.out / "step02"
@@ -961,11 +930,9 @@ class Pipeline:
     # step 3 -- the sky model
     # =========================================================================
     #
-    # Learn the two components of the sky model from blank spaxels: the sky continuum
-    # C_sky and K sky-line basis vectors.
-    #
-    # Output is consumed by step4's template fitting. The decomposition method for
-    # the sky-line basis is interchangeable.
+    # The two components learned from blank spaxels: the sky continuum C_sky and K
+    # sky-line basis vectors. Step4's template fitting consumes them, and the
+    # decomposition method for the basis is interchangeable.
 
     @staticmethod
     def learn_sky_basis(residual, K=10, method="pca", seed=SEED, chunk=200):
@@ -987,7 +954,7 @@ class Pipeline:
         Returns
         -------
         basis : ndarray, shape (K, nz)
-            K sky-line basis vectors, in the downstream coefficient order.
+            In the downstream coefficient order.
         """
         # (n_blank, nz), a block of spaxels at a time so only a block is ever float64.
         # nan_to_num must come before the narrowing cast, never after: narrowing first
@@ -997,7 +964,7 @@ class Pipeline:
             X[i:i+chunk] = np.nan_to_num(residual.T[i:i+chunk])
 
         # random_state is essential, not a precaution: both TruncatedSVD and PCA default
-        # to randomized SVD, so without a fixed seed the basis changes on every run.
+        # to randomized SVD, so without a fixed seed the basis changes every run.
         if method == "pca":
             p = PCA(n_components=K - 1, random_state=seed).fit(X)
             return np.vstack([p.mean_[None, :], p.components_])
@@ -1015,8 +982,8 @@ class Pipeline:
         keep_intermediate everything learned here is written into step03 as well,
         together with the meta.json recording which spatial range it came from.
 
-        Steps 3, 4 and 6 must all be given the same K and the same decomposition
-        method; they read both from the one config section, so they cannot come apart.
+        Steps 3, 4 and 6 must all be given the same K and decomposition method; they
+        read both from the one config section, so they cannot come apart.
         """
         b = self.sky_line_basis
         work = self.out
@@ -1028,8 +995,8 @@ class Pipeline:
         line_thresholds = b["line_thresholds"]
         max_iter = b["max_iter"]
         # A sigma clip on mean_sky, in units of the robust spread sg. It rejects
-        # bad-pixel-level outliers and must not trim the real cross-spaxel variation,
-        # so it has to sit far above that variation's natural amplitude.
+        # bad-pixel-level outliers and must not trim the real cross-spaxel variation, so
+        # it has to sit far above that variation's natural amplitude.
         clip_sigma = b["clip_sigma"]
         min_unmasked_frac = b["min_unmasked_frac"]
         # The spatial restriction, empty unless this pointing's sky_region applies
@@ -1088,25 +1055,25 @@ class Pipeline:
                 d = np.asarray(hdul["DATA"].data[j:j+200], np.float32)
                 blank[j:j+200] = d[:, blank_mask]
 
-        # Spectrally complete spaxels only: differential atmospheric refraction leaves
-        # edge spaxels covered at some wavelengths only, and learn_sky_basis would
-        # nan_to_num the rest to 0 -- fabricated data the decomposition would fit.
+        # Spectrally complete spaxels only: differential atmospheric refraction covers
+        # edge spaxels at some wavelengths only, and learn_sky_basis would nan_to_num
+        # the rest to 0 -- fabricated data the decomposition would fit.
         complete = np.isfinite(blank).all(axis=0)
         print(f"spectrally complete {int(complete.sum()):,} / {blank.shape[1]:,} "
               f"({100*complete.mean():.1f}%), remainder are partially covered spaxels at field edges, excluded")
         blank = blank[:, complete]
 
-        # Sigma-clip per channel before averaging: the mean's breakdown point is 0%,
-        # so a handful of extreme negatives in one channel pulls its mean down, and
+        # Sigma-clip per channel before averaging: the mean's breakdown point is 0%, so
+        # a handful of extreme negatives in one channel pulls its mean down, and
         # estimate_continuum then masks it as a "negative line" -- invisible data loss.
         #
-        # The clip runs within one channel across spaxels, never along wavelength: a
-        # sky emission line is bright in every spaxel, so its brightness sits inside
-        # that channel's median and is never clipped.
+        # The clip runs within one channel across spaxels, never along wavelength: a sky
+        # emission line is bright in every spaxel, so its brightness sits inside that
+        # channel's median and is never clipped.
         #
         # Centre and spread are robust estimators, but the last step still takes the
-        # mean, because the cross-spaxel distribution is right-skewed in bright-line
-        # channels and the median would be biased low however many samples there are.
+        # mean, the cross-spaxel distribution being right-skewed in bright-line channels
+        # where the median would be biased low however many samples there are.
         p16, med, p84 = np.percentile(blank, [16, 50, 84], axis=1)
         sg   = np.maximum((p84 - p16) / 2, 1e-6)
         keep = np.abs(blank - med[:, None]) <= clip_sigma * sg[:, None]
@@ -1121,8 +1088,8 @@ class Pipeline:
               f"({len(history)} iterations: "
               f"{' -> '.join(f'{100*h[2].mean():.1f}%' for h in history)})")
 
-        # Per-iteration intermediate results. The mask is not cumulative -- see
-        # utils.load_line_masks, which is where that is applied.
+        # Per-iteration intermediate results; the masks are not cumulative --
+        # utils.load_line_masks is where that is applied.
         iter_line_mask = np.array([h[2] for h in history])
 
         if keep_intermediate:
@@ -1138,9 +1105,8 @@ class Pipeline:
         # The same keep mask applies: blank - C_sky differs by a per-channel constant
         # only, which shifts x and its median alike, so |x - med| / sg is unchanged.
         #
-        # Rejected positions are filled with the channel's typical residual
-        # med - C_sky, not 0: a 0 on a sky-line channel claims there is no line
-        # there, and med is the more honest value.
+        # Rejected positions are filled with the channel's typical residual med - C_sky,
+        # not 0: a 0 on a sky-line channel claims there is no line there.
         residual = blank - C_sky[:, None]
         np.copyto(residual, (med - C_sky)[:, None], where=~keep)
 
@@ -1152,9 +1118,9 @@ class Pipeline:
                 np.save(out_dir / f"sky_basis_{method}_K{K}.npy", basis)   # filename includes K so different K values can coexist
             print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
-        # Provenance of the products. Only method and K reach the filename, so a
-        # re-run with a different spatial range, segmentation or cube overwrites
-        # silently; this JSON is the sole record of those choices.
+        # Provenance of the products. Only method and K reach the filename, so a re-run
+        # with a different spatial range, segmentation or cube overwrites silently; this
+        # JSON is the sole record of those choices.
         def rel(q):
             q = Path(q)
             try:
@@ -1183,13 +1149,12 @@ class Pipeline:
     # step 4 -- template fitting and classification
     # =========================================================================
     #
-    # Template fitting for the sources -- one stage, a fixed wavelength window, sky-line
-    # channels kept out of chi2.
+    # One stage, a fixed wavelength window (source_fit.fit_window), sky-line channels
+    # kept out of chi2.
     #
     # The stellar templates and the galaxy eigenspectra are fitted separately on the
     # same set of channels; whichever branch reaches the lower reduced chi2 wins, and
-    # fixes the redshift at the same time. The window comes from the pointing's config
-    # (source_fit.fit_window) and is not repeated here.
+    # fixes the redshift at the same time.
     #
     # The sky-line channels are excluded because their residual is dominated by the
     # error of the sky subtraction rather than by the source, and counting them would
@@ -1197,10 +1162,9 @@ class Pipeline:
     # The rule for blank spaxels is the opposite -- there only the line channels are
     # used, because the sky is what is being learned.
     #
-    # The window is fixed, and the same for both branches, because reduced chi2 =
-    # chi2 / (n_good - n_param): channels that come and go with z would put steps into
-    # chi2(z) that are pure channel count, and two different windows are not the same
-    # statistic at all.
+    # The window is fixed rather than following z, because reduced chi2 =
+    # chi2 / (n_good - n_param): channels that came and went with z would put steps
+    # into chi2(z) that are pure channel count.
     #
     # There is no absolute threshold on "star-like enough": sky-line residuals and
     # flux-scale errors lift every source's reduced chi2 together, so any such
@@ -1211,13 +1175,13 @@ class Pipeline:
     @staticmethod
     def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
                  cumulative=True, suffix=""):
-        """The output filename. Every setting that changes the result is encoded into it,
-        so a re-run cannot quietly overwrite the previous one.
+        """The output filename. Every setting that changes the result is encoded into
+        it, so a re-run cannot quietly overwrite the previous one.
 
-        The windows and the mask iteration are in there because they decide which channels
-        enter chi2, and results from different channel sets are different scientific
-        products that have to coexist. The diagnostic scripts call this same function, so
-        a naming written out twice cannot drift into "reading the wrong file".
+        The windows and the mask iteration are in there because they decide which
+        channels enter chi2, and different channel sets are different scientific
+        products that have to coexist. The diagnostic scripts call this same function,
+        so a naming written out twice cannot drift into "reading the wrong file".
         """
         base = f"{basis}_K{K}" if sky_basis else "nobasis"
         return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
@@ -1230,11 +1194,9 @@ class Pipeline:
         """The tag's suffix: whatever changes the result but is not encoded by make_tag.
 
         A different spectrum source is a different scientific product, and one workspace
-        can hold several. The default source, step02, gets no suffix -- the suffix marks a
-        departure from the default.
-
-        _{STAR_LIBRARY}star names the stellar library, so that which library produced a
-        product is in the filename rather than only inside the file.
+        can hold several; the default source, step02, gets no suffix, so a suffix marks
+        a departure from it. _{STAR_LIBRARY}star names the stellar library, so which
+        library produced a product is in the filename and not only inside the file.
         """
         return (("" if spec_dir_name == "step02"
                  else f"_{spec_dir_name.replace('step02', '')}")
@@ -1245,9 +1207,9 @@ class Pipeline:
                              keep_intermediate=True):
         """Reduce the fit results to the list step6 rebuilds the sources from.
 
-        Returns (path, fields): the path of classification_{tag}.npz, and the fields that
-        went into it. With keep_intermediate the file is written; the fields are returned
-        either way, because that is how step6 receives them.
+        Returns (path, fields): the path of classification_{tag}.npz, and the fields
+        that went into it. With keep_intermediate the file is written; the fields are
+        returned either way, because that is how step6 receives them.
 
         The classification was already decided by the scan above and is not recomputed
         here -- the same decision written in two places drifts apart the moment one is
@@ -1258,9 +1220,7 @@ class Pipeline:
         over {id: z} overrides one source's redshift, for sensitivity tests only. The
              amplitude is re-solved at that z, the template's shape changing with z.
 
-        The stellar library's name is stored alongside, because a template name alone
-        does not say which library it came from and the wrong one would rebuild the
-        source from the wrong spectrum, silently.
+        The stellar library's name is stored alongside (see utils.build_templates).
         """
         over = over or {}
         idx  = {int(i): k for k, i in enumerate(best["id"])}
@@ -1316,9 +1276,9 @@ class Pipeline:
     def _visible_cpus():
         """How many CPUs this process is allowed to run on.
 
-        cpu_count() answers for the machine, which is the wrong number under an affinity
-        mask or inside a cpuset, and sched_getaffinity is right but Linux-only.
-        process_cpu_count() is both; the fallbacks are for interpreters predating it.
+        cpu_count() answers for the machine, the wrong number under an affinity mask or
+        inside a cpuset; sched_getaffinity is right but Linux-only. process_cpu_count()
+        is both; the fallbacks are for interpreters predating it.
         """
         if hasattr(os, "process_cpu_count"):            # 3.13+
             n = os.process_cpu_count()
@@ -1343,8 +1303,8 @@ class Pipeline:
         K = self.sky_line_basis["K"]
         basis = self.sky_line_basis["method"]
         fix_s_at = s["fix_s_at"]
-        # One window from the config, handed to both branches: the two reduced chi2
-        # are comparable only if both were fitted over the same channels.
+        # One window from the config, handed to both branches: the two reduced chi2 are
+        # comparable only over the same channels (see _scan_one).
         star_window = gal_window = s["fit_window"]
         line_mask_iter = s["line_mask_iter"]
         zmin, zmax, zstep = s["z_min"], s["z_max"], s["z_step"]
@@ -1362,23 +1322,22 @@ class Pipeline:
         if full_range:
             star_window = gal_window = self.FULL_RANGE
 
-        # z_override re-solves one source at a redshift taken from its galaxy scan,
-        # and that scan is on disk or nowhere -- only its winning row comes back
-        # through the Pool.
+        # z_override re-solves one source at a redshift taken from its galaxy scan, and
+        # that scan is on disk or nowhere -- only its winning row comes back from a
+        # worker.
         if over and not keep_intermediate:
             raise SystemExit("★ z_override reads the scan files, which "
                              "keep_intermediate false does not write")
         if keep_intermediate:
             STEP04.mkdir(parents=True, exist_ok=True)
 
-        # Where the source spectra came from. It has to be a sky-subtracted set:
-        # classifying from spectra that still contain the sky produces output that
-        # looks entirely normal, with every source's template and redshift wrong.
+        # Where the source spectra came from; it has to be a sky-subtracted set (see the
+        # step 2 section).
         suffix = self.make_suffix(spectra.path.name)
 
-        # Row i of iter_line_mask is step3's iteration i+1, so the number of rows is
-        # the number of iterations there are to ask for. That count is known only
-        # here, a config being written before step3 has run.
+        # Row i of iter_line_mask is step3's iteration i+1, so the number of rows is the
+        # number of iterations there are to ask for -- a count known only here, a config
+        # being written before step3 has run.
         line_masks = load_line_masks(sky.iter_line_mask, cumulative=not raw_mask)
         for it in line_mask_iter:
             if not isinstance(it, (int, np.integer)) or not 1 <= it <= len(line_masks):
@@ -1406,8 +1365,8 @@ class Pipeline:
         if not files:
             raise SystemExit(f"★ no .dat templates under {DWARF_DIR}")
         # A template's rest range has to cover the whole MUSE band: steps 5 and 6
-        # evaluate templates across all of it, and a channel that is NaN in the design
-        # matrix is dropped for every spaxel and never solved again.
+        # evaluate templates across all of it, and a channel NaN in the design matrix is
+        # dropped for every spaxel and never solved again.
         need_lo = wl_vac.min() / (1 + z_star.max())
         need_hi = wl_vac.max() / (1 + z_star.min())
         star_jobs = []
@@ -1419,8 +1378,8 @@ class Pipeline:
                       f"cover the {need_lo:.0f}-{need_hi:.0f} A needed")
                 continue
             # The scan reads a candidate's coverage off the spline's domain, so a hole
-            # inside that domain would pass unseen. It is a property of the file, not
-            # of any one redshift, so it is settled here.
+            # inside that domain would pass unseen. It belongs to the file, not to any
+            # one redshift, so it is settled here.
             if not np.all(np.isfinite(sp.c)):
                 print(f"  skipping {f.stem}: the spline has a hole inside its own "
                       f"{lo:.0f}-{hi:.0f} A range")
@@ -1434,8 +1393,8 @@ class Pipeline:
         # four-component model whose linear combinations interpolate continuously
         # between types, so no list of discrete representative spectra is needed.
         gal_jobs = [("galaxy", "eigen", load_eigen_galaxy(EIGEN_GAL), z_exg)]
-        # The same check, but fatal: there is only one galaxy job, and without it the
-        # branch would be empty and nothing could be classified.
+        # The same check, but fatal: there is only one galaxy job, and without it that
+        # branch is empty and nothing can be classified.
         if not np.all(np.isfinite(gal_jobs[0][2].c)):
             raise SystemExit(f"★ {EIGEN_GAL.name} has a hole inside its own rest range")
 
@@ -1464,9 +1423,9 @@ class Pipeline:
         outs = []
         classified = None
 
-        # Each mask iteration is a separate set of results: a different channel set
-        # gives different chi2, and the two cannot be mixed. Only the mask changes
-        # inside the loop; the templates, spectra and z grids are prepared once.
+        # Each mask iteration is a separate set of results, a different channel set
+        # giving chi2 that cannot be mixed with the others. Only the mask changes inside
+        # the loop; the templates, spectra and z grids are prepared once.
         for it in line_mask_iter:
             line = line_masks[it - 1]
             fit_star, fit_gal = win_star & ~line, win_gal & ~line
@@ -1523,16 +1482,16 @@ class Pipeline:
                         new = {k: np.concatenate([old[k][keep], new[k]]) for k in KEYS}
                         print(f"merged {int(keep.sum())} existing sources")
             o = np.argsort(new["id"])
-            # The rows in the order they are written. Every value is already an array
-            # of the dtype np.savez stores and np.load returns, so writing the file and
+            # The rows in the order they are written. Every value is already an array of
+            # the dtype np.savez stores and np.load returns, so writing the file and
             # reading it back would hand on exactly this dict.
             best = {k: v[o] for k, v in new.items()}
             if keep_intermediate:
                 np.savez(out, **best)
             cls_path, fields = self.write_classification(STEP04, tag, best, ids, over,
                                                          keep_intermediate)
-            # The galaxy branch's redshift for every source it could fit. Rebuilt each
-            # iteration, so what is returned belongs to the same iteration as cls_path.
+            # The galaxy branch's redshift for every source it could fit, rebuilt each
+            # iteration, so what is returned belongs to the same one as cls_path.
             galaxy_z = {int(x["id"]): x["gal_z"] for x in summary
                         if x["gal_z"] is not None}
             classified = Classification(cls_path, tag, fields, galaxy_z)
@@ -1556,17 +1515,14 @@ class Pipeline:
     # step 5 -- the sky continuum's spatial field
     # =========================================================================
     #
-    # Build the sky-continuum spatial field s_hat(x, y).
-    #
     #     (1) Solve all blank spaxels freely to get s_free -- each spaxel's own
     #         sky-continuum coefficient, unconstrained.
     #     (2) Identify the main source group (brightest-pixel blob + redshift filter).
     #     (3) From s_free, build a smooth spatial field s_hat using only training
     #         points far from all sources.
     #
-    # step6 locks s to that field. Replacing per-spaxel freedom with a smooth surface
-    # leaves source light nowhere to hide inside the sky model, so it is preserved in
-    # the residual.
+    # step6 then locks s to that field, which leaves source light nowhere to hide
+    # inside the sky model (see the amplitude field section of utils.py).
 
     @blas_single_thread
     def fit_sky_amplitude(self, white, seg, sky, classification, fix_blank_s_at=None):
@@ -1605,9 +1561,9 @@ class Pipeline:
         print(f"workdir {work}   cube {CUBE.name}")
         print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-        # The sky model was learned on the grid of whatever cube step3 read, and a
-        # config naming one pointing's cube there and another's here need only agree
-        # in channel count to run to the end with the two offset against each other.
+        # The sky model was learned on the grid of whatever cube step3 read, and configs
+        # naming one pointing's cube there and another's here need only agree in channel
+        # count to run to the end with the two offset against each other.
         wl_air = sky.wavelength
         wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
         if wl_air.shape != wl_cube.shape:
@@ -1658,8 +1614,8 @@ class Pipeline:
                 sf_box |= (yy >= by0) & (yy <= by1) & (xx >= bx0) & (xx <= bx1)
 
         # main source group
-        # The redshifts come from the same step4 result the classification does, so
-        # the grouping and the source models cannot come from two different fits.
+        # The redshifts come from the same step4 result the classification does, so the
+        # grouping and the source models cannot come from two different fits.
         mg, mids, mk = main_source_group(seg, white, dz_max=main_source_dz,
                                          redshifts=classification.galaxy_z)
         all_ids = main_source_group(seg, white)[1]
@@ -1691,15 +1647,16 @@ class Pipeline:
               f"NaN {int((~np.isfinite(s_hat[white != 0])).sum())} spaxels")
 
         # save
-        # step6 locks s to this field, so a field that is NaN everywhere makes the sky
-        # model and the subtracted cube NaN too, and nothing further down separates
-        # that from a subtraction that worked.
+        # step6 locks s to this field, so a field NaN everywhere makes the sky model and
+        # the subtracted cube NaN too, which nothing further down separates from a
+        # subtraction that worked.
         if not np.isfinite(s_hat).any():
             raise SystemExit("★ s_hat is NaN in every spaxel; the field was not estimated "
                              f"from the {int(sf_train.sum()):,} training spaxels and is not "
                              "written")
         # Narrowed once, here, and step6 is given these numbers rather than the float64
-        # they came from: the file and the fit have to hold the same field.
+        # they came from: the file and the fit have to hold the same field, and
+        # narrowing afterwards instead would move the last bits of every spaxel.
         s_hat32 = s_hat.astype(np.float32)
         s_hat_path = out / "s_hat.npy"
         if keep_intermediate:
@@ -1736,10 +1693,7 @@ class Pipeline:
     # step 6 -- the sky subtraction
     # =========================================================================
     #
-    # Final per-spaxel sky subtraction using the s-field from step5.
-    #
-    # Reads the spatial field s_hat built in step5 and fits every spaxel with s
-    # locked to s_hat(x, y):
+    # Every spaxel fitted with s locked to the field s_hat(x, y) step5 built:
     #
     #     blank  (seg = 0)   D = s_hat * C_sky + Sum_k c_k L_k
     #     source (seg > 0)   D = Sum_j a_j T_j + s_hat * C_sky + Sum_k c_k L_k
@@ -1764,9 +1718,9 @@ class Pipeline:
     def subtract_sky(self, white, seg, sky, classification, s_field):
         """Write the sky-subtracted and sky-model cubes into step06; return that directory.
 
-        white, seg, sky, classification and s_field are what the earlier steps
-        returned, in memory. This step's products are the deliverable, so they are
-        written whatever keep_intermediate said about the ones before them.
+        white, seg, sky, classification and s_field are what the earlier steps returned,
+        in memory. This step's products are the deliverable, so they are written
+        whatever keep_intermediate said about the ones before them.
         """
         work = self.out
         cube = self.inp["cube"]
@@ -1785,9 +1739,8 @@ class Pipeline:
         print(f"workdir {work}   cube {CUBE.name}")
         print(f"segmentation: {seg_path.name}  source spaxels {int((seg > 0).sum()):,}")
 
-        # The sky model was learned on the grid of whatever cube step3 read, and the
-        # source templates are about to be redshifted onto that same grid, so the grid
-        # is checked instead of assumed (see the same check in fit_sky_amplitude).
+        # The source templates are about to be redshifted onto the sky model's grid, so
+        # the grid is checked instead of assumed (see fit_sky_amplitude).
         wl_air  = sky.wavelength
         wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
         if wl_air.shape != wl_cube.shape:
@@ -1876,7 +1829,7 @@ class Pipeline:
         sub  = np.subtract(D, sky_model, out=D)
         cube = lambda x: x.reshape(nz, ny, nx)
         # STAT is passed through untouched, so it goes to the writer straight from the
-        # input file: on disk it is already the big-endian float32 that goes back out.
+        # input file, where it is already the big-endian float32 that goes back out.
         with fits.open(CUBE, memmap=True) as hdul:
             self.write_cube(out / "sky_subtracted.fits", cube(sub),
                             hdr_pri, hdr_data, hdul["STAT"].data, hdr_stat)
@@ -1917,7 +1870,7 @@ def run_pointing(cfg_path):
     """Run one pointing's config through the pipeline.
 
     The public entrance: __init__.py exports it, and the command line below calls it
-    once per config file it was given.
+    once per config file.
     """
     Pipeline(cfg_path).run()
 
@@ -1925,9 +1878,9 @@ def run_pointing(cfg_path):
 def main():
     """The command line: run each config given, in the order given.
 
-    Pointings do not depend on each other, so a failure stops the run rather than
-    being collected -- the ones already finished keep their products, and the
-    command can be given the rest.
+    Pointings do not depend on each other, so a failure stops the run rather than being
+    collected -- the ones already finished keep their products, and the command can be
+    given the rest.
     """
     ap = argparse.ArgumentParser(
         description="Run the sky reconstruction pipeline for one or more pointings")

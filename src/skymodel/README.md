@@ -92,6 +92,15 @@ Four of them, plus an `__init__.py` that exports `run_pointing` and `load_config
 | `utils.py` | everything the six steps share: the wavelength axis and the air-to-vacuum conversion, continuum estimation and line detection, the source templates (eigenspectra and the stellar library, read as splines), the per-spaxel solves steps 5 and 6 share, the main source group, the s-field construction, the figures the pipeline itself produces, and the one-thread BLAS limit the fitting steps run under |
 | `products.py` | reading a finished run back: where its products are, the settings recorded beside them, and the figures `evaluation/` and `experiments/` share. No step imports it |
 
+## The main source group
+
+Step 5 needs the whole footprint of the main galaxy, and `utils.main_source_group`
+assembles it from several segmentation IDs rather than picking one. A single
+"largest-area" or "brightest" ID does not work: SExtractor's deblender splits the main
+galaxy into a number of pieces that varies with the exposure's seeing and dither, so
+any "pick one ID" rule gets part of it, and downstream uses that piece to decide which
+side to mask and how far to exclude around it.
+
 ## The segmentation
 
 The pipeline does not detect sources -- it is given a segmentation map. `SExtractor/`
