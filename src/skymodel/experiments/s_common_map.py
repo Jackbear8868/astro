@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs  # noqa: E402
-from utils import main_source_group, rowcol_field, scale  # noqa: E402
+from utils import main_source_group, median_polish, robust_spread  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 FIG  = ROOT / "results/skymodel/evaluation/s_field"
@@ -63,7 +63,7 @@ def load_all(ns):
         mg, _, pk = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
         blank = valid & (seg == 0) & np.isfinite(s)
-        M, _, _ = rowcol_field(s, blank)     # 各顆自己的條紋各自扣掉
+        M, _, _ = median_polish(s, blank)     # 各顆自己的條紋各自扣掉
         h = fits.getheader(ROOT / f"data/wsky/DATACUBE_FINAL_{n}.fits", 1)
         out[n] = dict(R=np.where(blank, s - M, np.nan), blank=blank, white=white,
                       crpix=(h["CRPIX1"], h["CRPIX2"]), peak=pk, main=mg)
@@ -109,7 +109,7 @@ def main():
     wl_common = np.where(cnt >= args.min_n, np.nanmedian(wstack, axis=0), np.nan)
     ok = np.isfinite(common)
     print(f"共同圖:{int(ok.sum()):,} 格有 >= {args.min_n} 顆貢獻   "
-          f"振幅 穩健散布 {scale(common[ok]):.5f}")
+          f"振幅 穩健散布 {robust_spread(common[ok]):.5f}")
 
     yy, xx = np.mgrid[0:H, 0:Wd]
     dist = np.hypot(yy - py, xx - px)
@@ -131,7 +131,7 @@ def main():
     print(f"  (暈的話:離越近值越高 -> 與距離負相關、與白光正相關)")
 
     fig, ax = plt.subplots(1, 3, figsize=(17, 5))
-    v = 3 * scale(common[ok])
+    v = 3 * robust_spread(common[ok])
     im = ax[0].imshow(common, origin="lower", cmap="RdBu_r", vmin=-v, vmax=v)
     plt.colorbar(im, ax=ax[0], fraction=.046)
     ax[0].plot(px, py, "k+", ms=14, mew=2)

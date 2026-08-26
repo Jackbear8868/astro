@@ -49,8 +49,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import (build_s_field, fit_blank, main_source_group,  # noqa: E402
-                   running_median, scale)
+from utils import (build_amplitude_field, fit_blank, main_source_group,  # noqa: E402
+                   running_median, robust_spread)
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -91,7 +91,7 @@ def main():
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
     blank2d = valid & (seg == 0) & np.isfinite(s_free)
-    s_hat, _ = build_s_field(s_free, seg, blank2d, p["min_source_distance"], p["min_main_source_distance"],
+    s_hat, _ = build_amplitude_field(s_free, seg, blank2d, p["min_source_distance"], p["min_main_source_distance"],
                                 p["train_clip_sigma"],
                                 main=mg)
 
@@ -105,7 +105,7 @@ def main():
     del D
 
     med = np.nanmedian(R, axis=1)
-    se  = 1.253 * scale(R[np.isfinite(R)].ravel()[:200000]) / np.sqrt(ys.size)
+    se  = 1.253 * robust_spread(R[np.isfinite(R)].ravel()[:200000]) / np.sqrt(ys.size)
     cont = ~lmask & np.isfinite(med)
     print(f"逐通道中位的標準誤 ≈ {se:.4f}   連續譜通道 {int(cont.sum()):,} / {len(wl):,}")
     print(f"平均殘差(連續譜通道):中位 {np.median(med[cont]):+.4f}   "
@@ -115,7 +115,7 @@ def main():
     # 天光線通道的殘差被線的擬合誤差主導,拿它決定連續譜的形狀是錯的。
     x = np.flatnonzero(cont).astype(float)
     y = running_median(med[cont], args.window)
-    spl = UnivariateSpline(x, y, k=3, s=len(x) * (args.smooth * scale(y)) ** 2, ext=3)
+    spl = UnivariateSpline(x, y, k=3, s=len(x) * (args.smooth * robust_spread(y)) ** 2, ext=3)
     dC = spl(np.arange(len(wl), dtype=float))
     print(f"delta_C:中位 {np.median(dC):+.4f}   "
           f"藍端 {dC[:400].mean():+.4f}  紅端 {dC[-400:].mean():+.4f}   "

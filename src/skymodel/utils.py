@@ -12,8 +12,8 @@ The sections below, in order:
   * linear solves -- the per-spaxel solves steps 5 and 6 share
   * the main source group -- the whole galaxy, reassembled from the seg IDs
     the deblender split it into
-  * the s field -- the spatial direction: a smooth field built from the
-    per-spaxel sky-continuum coefficients
+  * the amplitude field -- the spatial direction: a smooth field built
+    from the per-spaxel sky-continuum amplitudes
   * figures and display
 
 fit_blank and fit_source both minimise the unweighted sum of squared
@@ -365,7 +365,7 @@ def build_templates(best, lam_vac):
 # ---------------------------------------------------------------------------
 
 
-N_SRC        = 4
+N_COMPONENTS = 4
 MIN_COVERAGE = 0.9
 SPAXEL_CHUNK = 256      # must be a power of two -- see fit_blank
 
@@ -469,13 +469,13 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
 
     Returns
     -------
-    ndarray, shape (N_SRC+K, n)
+    ndarray, shape (N_COMPONENTS+K, n)
         Fixed layout (a1...a4, s, c1...c_{K-1}).
     """
     K      = sky.shape[0]
     n_comp = 0 if T is None else T.shape[1]
     n      = D.shape[1]
-    out    = np.full((N_SRC + K, n), np.nan)
+    out    = np.full((N_COMPONENTS + K, n), np.nan)
 
     rows   = (([] if T is None else list(T.T))
               + ([] if s_fix is not None else [sky[0]])
@@ -500,10 +500,10 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
     clean = good.all(axis=0)
 
     def _unpack(th, j):
-        out[:n_comp, j]    = th[:n_comp]
-        out[N_SRC, j]      = th[n_comp] if sv is None else (
+        out[:n_comp, j]           = th[:n_comp]
+        out[N_COMPONENTS, j]      = th[n_comp] if sv is None else (
             sv[j] if sv.ndim else float(sv))
-        out[N_SRC + 1:, j] = th[n_comp + (sv is None):]
+        out[N_COMPONENTS + 1:, j] = th[n_comp + (sv is None):]
 
     n_clean = int(clean.sum())
     if n_clean:
@@ -520,11 +520,11 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
 
     if has_bounds:
         # lb is in design-column order and out is in the fixed report order; the two
-        # line up only when n_comp happens to equal N_SRC. Read the bounds through
+        # line up only when n_comp happens to equal N_COMPONENTS. Read the bounds through
         # this map, or a bound is compared with someone else's coefficient.
         design_to_out = (list(range(n_comp))
-                         + ([N_SRC] if s_fix is None else [])
-                         + list(range(N_SRC + 1, N_SRC + K)))
+                         + ([N_COMPONENTS] if s_fix is None else [])
+                         + list(range(N_COMPONENTS + 1, N_COMPONENTS + K)))
         theta = out[design_to_out]
         # A column that got neither solve is NaN, and NaN fails every comparison:
         # not a column inside its bounds, a column with nothing to re-solve.
@@ -674,8 +674,8 @@ def main_source_mask(seg, source_id=None, main_blob=True):
 
 
 # ---------------------------------------------------------------------------
-# s field -- build a spatial field from the per-spaxel sky-continuum
-# coefficient s
+# the amplitude field -- a spatial field built from the per-spaxel sky-
+# continuum amplitude s
 # ---------------------------------------------------------------------------
 # Solved freely per spaxel, s is the channel through which the sky model absorbs
 # source flux: a spaxel next to a source can explain leaked source light only by
@@ -683,7 +683,7 @@ def main_source_mask(seg, source_id=None, main_blob=True):
 # extrapolated inward, no one spaxel's data can budge the field, so source light
 # has nowhere to go inside the sky model and stays in the residual.
 #
-# The form of the field (see rowcol_field) is
+# The form of the field (see median_polish) is
 #
 #     s_hat(x, y) = mu + a(y) + b(x)
 #
@@ -691,7 +691,7 @@ def main_source_mask(seg, source_id=None, main_blob=True):
 # along entire rows and columns, and is neither sky nor source.
 
 
-def scale(a):
+def robust_spread(a):
     """Robust spread (p84 - p16) / 2.
 
     Not rms/std: s has a few spaxels with failed fits whose outlier values are
@@ -715,7 +715,7 @@ def nanmed(a, axis):
 FIELD_ITER = 100
 
 
-def rowcol_field(s, w, n_iter=FIELD_ITER):
+def median_polish(s, w, n_iter=FIELD_ITER):
     """s ~ mu + a(y) + b(x), solved by alternating medians (Tukey's median
     polish).
 
@@ -748,14 +748,14 @@ def rowcol_field(s, w, n_iter=FIELD_ITER):
     return mu + a[:, None] + b[None, :], a, b
 
 
-def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
-                  main_id=None, exclude=None, main=None, n_iter=FIELD_ITER):
+def build_amplitude_field(s, seg, blank, r_far, r_far_haro, clip,
+                          main_id=None, exclude=None, main=None, n_iter=FIELD_ITER):
     """Build a spatial field from the per-spaxel s map. Returns (s_hat,
     training mask).
 
     s is the (ny, nx) map of per-spaxel sky-continuum coefficients from the free
     solve, seg the segmentation (0 = blank, >0 = source) and blank the usable
-    blank spaxels. The field has the form mu + a(y) + b(x) (see rowcol_field),
+    blank spaxels. The field has the form mu + a(y) + b(x) (see median_polish),
     with a(y) shared along a row and b(x) down a column, which is what lets it
     extrapolate into the source region from training spaxels far outside it.
 
@@ -796,15 +796,16 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
     # answer. Which cut emptied the set is what says which parameter to change.
     if not train.any():
         raise SystemExit(
-            "★ no spaxel is left to train the s field. Survivors after each cut: "
+            "★ no spaxel is left to train the amplitude field. Survivors after "
+                "each cut: "
             f"{n_far:,} more than {r_far:g} px from any source"
             + (f", {n_kept:,} outside the exclude mask" if exclude is not None else "")
             + (f", {int(train.sum()):,} more than {r_far_haro:g} px from the main source"
                if r_far_haro else ""))
     med = float(np.median(s[train]))
-    train &= np.abs(s - med) <= clip * scale(s[train])
+    train &= np.abs(s - med) <= clip * robust_spread(s[train])
 
-    M, _, _ = rowcol_field(s, train, n_iter)
+    M, _, _ = median_polish(s, train, n_iter)
     return M, train
 
 

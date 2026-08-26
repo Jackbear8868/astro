@@ -23,7 +23,7 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 | 2 | `object_spectra` | nosky cube, seg | `step02/object_{ids,flux,var,nspax}.npy` |
 | 3 | `sky_basis` | wsky cube, seg | `step03/` continuum, line mask, `sky_basis_{method}_K{K}.npy` |
 | 4 | `classify_sources` | `step02/`, `step03/` | `step04/scan{1,2}_id*.npz`, `best_*.npz`, `classification_*.npz` |
-| 5 | `fit_s_field` | wsky cube, `step03/`, `step04/` | `step05/s_free.npy`, `s_hat.npy`, `main_group.png` |
+| 5 | `fit_sky_amplitude` | wsky cube, `step03/`, `step04/` | `step05/s_free.npy`, `s_hat.npy`, `main_group.png` |
 | 6 | `subtract_sky` | wsky cube, `step03/`–`step05/` | `step06/sky_subtracted.fits`, `sky_model.fits`, `s_map.npy`, `A_map.npy` |
 
 The white light comes from the **nosky** cube, not the wsky one: downstream needs it to

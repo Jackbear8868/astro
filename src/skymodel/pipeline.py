@@ -10,7 +10,7 @@ they happen, plus the segmentation check between the first two.
     step 2  object_spectra    sum each source's spectrum over the spaxels its seg ID covers
     step 3  sky_basis         learn the sky continuum and the sky-line basis from blank
     step 4  classify_sources  fit templates to every source, giving it a class and a redshift
-    step 5  fit_s_field       force the sky continuum amplitude s onto a spatial field
+    step 5  fit_sky_amplitude force the sky continuum amplitude s onto a spatial field
     step 6  subtract_sky      apply the model to every spaxel and write the subtracted cube
 
 Each step is handed what the earlier ones returned rather than reopening the files
@@ -71,7 +71,7 @@ import matplotlib.pyplot as plt
 # this directory too, so its parents[2] is the same root.
 from config import MAX_GRID_OFFSET, ROOT, load
 from utils import (C_KMS, DWARF_DIR, EIGEN_GAL, STAR_LIBRARY,
-                   air_to_vacuum, blas_single_thread, build_s_field,
+                   air_to_vacuum, blas_single_thread, build_amplitude_field,
                    build_templates, estimate_continuum, fit_blank, fit_source,
                    load_ascii_template, load_eigen_galaxy, load_line_masks,
                    main_source_group, plot_main_group, redshift_to_grid,
@@ -89,7 +89,7 @@ from utils import (C_KMS, DWARF_DIR, EIGEN_GAL, STAR_LIBRARY,
 # every worker would be sent the whole Pipeline, its config and its paths with
 # it. Under the spawn start method -- the default on macOS and Windows -- a
 # worker is a fresh interpreter that holds nothing but what it was sent, which
-# is why what crosses into one is kept to these seven. N_SRC is one of them
+# is why what crosses into one is kept to these seven. N_COMPONENTS is one of them
 # because _save_scan and _scan_one read it; steps 4 and 6 read the same
 # module-level name.
 
@@ -100,7 +100,7 @@ STEP04 = None
 
 
 # Step 6 reads this width too, for the A_map it writes.
-N_SRC    = 4                # fixed width of the A column: 4 eigenspectra, and a star
+N_COMPONENTS = 4            # fixed width of the A column: 4 eigenspectra, and a star
                             # uses only column 0
 
 
@@ -224,7 +224,7 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
 
 def _save_scan(path, results):
     """Write a whole scan to an npz the diagnostic scripts can read directly."""
-    A = np.full((len(results), N_SRC), np.nan)
+    A = np.full((len(results), N_COMPONENTS), np.nan)
     for i, x in enumerate(results):
         A[i, :len(x["A"])] = x["A"]
     np.savez(path, A=A,
@@ -294,7 +294,7 @@ def _scan_one(t):
     # [0] is each branch's best.
     best = min([x[0] for x in (r1, r2) if x], key=lambda d: d["red_chi2"])
 
-    A = np.full(N_SRC, np.nan)
+    A = np.full(N_COMPONENTS, np.nan)
     A[:len(best["A"])] = best["A"]
     # Both winning values are kept: the classification is decided by which of the two
     # is smaller, and without them nothing downstream can ask by how much it won.
@@ -561,7 +561,7 @@ class Pipeline:
 
         line_iter = self.source_fit["line_mask_iter"][-1]
         print(f"--- [5/6] step5 build the s field   [mask iter {line_iter}]")
-        s_field = self.run_step("step5", self.fit_s_field,
+        s_field = self.run_step("step5", self.fit_sky_amplitude,
                                 dict(white=white, seg=seg, sky=sky,
                                      classification=classified),
                                 echo=self.TERMINAL_LINES["step5"])
@@ -1285,7 +1285,7 @@ class Pipeline:
                 group, tpl = "galaxy", str(s2["template"][j])
                 z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
 
-            a = np.full(N_SRC, np.nan)
+            a = np.full(N_COMPONENTS, np.nan)
             a[:len(A)] = A
             rows.append(dict(id=t, group=group, template=tpl, z=z, A=a))
             mark = "  <- overridden" if t in over else ""
@@ -1569,7 +1569,7 @@ class Pipeline:
     # the residual.
 
     @blas_single_thread
-    def fit_s_field(self, white, seg, sky, classification, fix_blank_s_at=None):
+    def fit_sky_amplitude(self, white, seg, sky, classification, fix_blank_s_at=None):
         """Build the sky-continuum spatial field; return it.
 
         white, seg, sky and classification are what steps 1, 3 and 4 returned, in
@@ -1675,7 +1675,7 @@ class Pipeline:
 
         # build field
         t0 = time.time()
-        s_hat, sf_train = build_s_field(
+        s_hat, sf_train = build_amplitude_field(
             s2d, seg, ok2d, min_source_distance, min_main_source_distance or None,
             train_clip_sigma, exclude=sf_box, main=mg, n_iter=n_iter)
         print(f"s spatial field: {int(sf_train.sum()):,} training spaxels"
@@ -1787,7 +1787,7 @@ class Pipeline:
 
         # The sky model was learned on the grid of whatever cube step3 read, and the
         # source templates are about to be redshifted onto that same grid, so the grid
-        # is checked instead of assumed (see the same check in fit_s_field).
+        # is checked instead of assumed (see the same check in fit_sky_amplitude).
         wl_air  = sky.wavelength
         wl_cube = wavelength_grid(fits.getheader(CUBE, "DATA"))
         if wl_air.shape != wl_cube.shape:
@@ -1832,7 +1832,7 @@ class Pipeline:
         coverage = np.isfinite(D).sum(axis=0) / nz
         valid    = (white != 0).reshape(-1) & (coverage >= min_channel_coverage)
         sky_model = np.full((nz, ny * nx), np.nan, np.float32)
-        A_map     = np.full((N_SRC, ny * nx), np.nan, np.float32)
+        A_map     = np.full((N_COMPONENTS, ny * nx), np.nan, np.float32)
         s_map     = np.full(ny * nx, np.nan, np.float32)
 
         blank = valid & (seg_f == 0)
@@ -1858,9 +1858,9 @@ class Pipeline:
             m = valid & (seg_f == rid)
             T = templates.get(int(rid))
             c = fit_source(D[:, m], sky, T, s_fix=s_hat[m], progress=True)
-            A_map[:, m] = c[:N_SRC]
-            sky_model[:, m] = sky.T @ c[N_SRC:]
-            s_map[m] = c[N_SRC]
+            A_map[:, m] = c[:N_COMPONENTS]
+            sky_model[:, m] = sky.T @ c[N_COMPONENTS:]
+            s_map[m] = c[N_COMPONENTS]
 
             done += int(m.sum())
             el = time.time() - t0
@@ -1881,7 +1881,7 @@ class Pipeline:
             self.write_cube(out / "sky_subtracted.fits", cube(sub),
                             hdr_pri, hdr_data, hdul["STAT"].data, hdr_stat)
         self.write_cube(out / "sky_model.fits", cube(sky_model), hdr_pri, hdr_data)
-        np.save(out / "A_map.npy", A_map.reshape(N_SRC, ny, nx))
+        np.save(out / "A_map.npy", A_map.reshape(N_COMPONENTS, ny, nx))
         np.save(out / "s_map.npy", s_map.reshape(ny, nx))
 
         meta = dict(

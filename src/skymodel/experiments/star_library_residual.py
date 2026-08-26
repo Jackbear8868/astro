@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, spectrum_stats  # noqa: E402
-from utils import N_SRC, air_to_vacuum, build_templates  # noqa: E402
+from utils import N_COMPONENTS, air_to_vacuum, build_templates  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 COLORS = ["#ff7f0e", "#1f77b4", "#2ca02c", "#d62728"]
@@ -39,7 +39,7 @@ def source_residual(cube_dir, seg, sid, lam_vac):
     """一個源的平均殘差、平均 sigma,以及模板蓋不到的通道數。
 
     A_map 的第 j 列是第 j 條模板成分的係數,超過該源成分數的列是 NaN(step6 用
-    固定寬度 N_SRC 存),所以要照模板實際的欄數去切。
+    固定寬度 N_COMPONENTS 存),所以要照模板實際的欄數去切。
 
     模板的靜止範圍蓋不到的通道,源模型是 **0** 而不是 NaN —— 那才是交付出去的
     產物實際的樣子:step6 在那些通道沒有源模型,源的流量原封不動留在資料裡。

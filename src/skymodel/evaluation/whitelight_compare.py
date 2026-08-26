@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
                     pointing_dir)  # noqa: E402
 from products import fit_dirs  # noqa: E402
-from utils import main_source_group, scale  # noqa: E402
+from utils import main_source_group, robust_spread  # noqa: E402
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
     # pedestal would only hide it.
     # Both panels share the same ruler, otherwise "which one is brighter" would be an
     # artefact created by the colour scale.
-    sig = scale(imgs["ours"][valid & (seg == 0)])
+    sig = robust_spread(imgs["ours"][valid & (seg == 0)])
     zmax = np.arcsinh(np.nanmax(imgs["ours"][valid]) / sig)
     fig, ax = plt.subplots(1, 2, figsize=(14.5, 6.8))
     for a, lab in zip(ax, ("ESO nosky", "ours")):

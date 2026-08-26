@@ -39,7 +39,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import main_source_group, scale  # noqa: E402
+from utils import main_source_group, robust_spread  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 SEGDIR  = ROOT / "data/wsky_seg"
@@ -70,7 +70,7 @@ def prep(n, smooth, margin):
     ref = valid & (seg == 0) & (edge > 10) & (d_main > np.percentile(d_main[valid], 75))
     if ref.sum() < 500:
         ref = valid & (seg == 0) & (edge > 10)
-    bg, sd = float(np.median(img[ref])), float(scale(img[ref]))
+    bg, sd = float(np.median(img[ref])), float(robust_spread(img[ref]))
 
     # 平滑要避開無效格,否則邊緣會被拉黑:分子分母各自平滑再相除
     f = np.where(valid, img - bg, 0.0)

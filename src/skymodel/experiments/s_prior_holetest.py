@@ -58,8 +58,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import (air_to_vacuum, build_s_field, build_templates,  # noqa: E402
-                   main_source_group, rowcol_field, scale)
+from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noqa: E402
+                   main_source_group, median_polish, robust_spread)
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -152,10 +152,10 @@ def main():
           f"{int(hole.sum()):,} 格 = Haro 11 足跡的 {100*hole.sum()/main.sum():.0f}%")
 
     # 場與 M 都在「洞被排除」的條件下建 —— 模擬源區的處境
-    s_hat, train = build_s_field(
+    s_hat, train = build_amplitude_field(
         s_free, seg, blank, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
                                 main=main, exclude=hole)
-    M, _, _ = rowcol_field(s_free, train)
+    M, _, _ = median_polish(s_free, train)
     print(f"訓練點 {int(train.sum()):,} 格(洞已排除)")
     print(f"洞裡:真值 s 中位 {np.median(s_free[hole]):.5f}   "
           f"M 中位 {np.median(M[hole]):.5f}   場 中位 {np.median(s_hat[hole]):.5f}")
@@ -232,10 +232,10 @@ def main():
                 fr.append(float(np.sum((T @ a)[bnd])) / flux_true)
             ds, fr = np.array(ds), np.array(fr)
             rows.append(dict(f=f, tilt=tilt, method=name, n=ds.size,
-                             bias=float(np.median(ds)), sct=float(scale(ds)),
+                             bias=float(np.median(ds)), sct=float(robust_spread(ds)),
                              flux=float(np.median(fr))))
             print(f"  f={f:<4g} t={tilt:<4g} {name:<12} n={ds.size:<4} "
-                  f"s 偏差 {np.median(ds):+.5f}  散布 {scale(ds):.5f}   "
+                  f"s 偏差 {np.median(ds):+.5f}  散布 {robust_spread(ds):.5f}   "
                   f"源流量回收 {np.median(fr):.3f}")
 
         print(f"\n注入 f = {f:g}(源 = 天空的 {100*f:.0f}%),失配 tilt = {tilt:g}"

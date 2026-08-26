@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import build_s_field, main_source_group, rowcol_field, scale  # noqa: E402
+from utils import build_amplitude_field, main_source_group, median_polish, robust_spread  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
@@ -126,12 +126,12 @@ def main():
 
     tab = {}
     for hi, (hole, ctr) in enumerate(hs):
-        _, train = build_s_field(s, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
+        _, train = build_amplitude_field(s, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
                                         p["train_clip_sigma"],
                                 main=main, exclude=hole)
-        M, _, _ = rowcol_field(s, train)
+        M, _, _ = median_polish(s, train)
         truth = s[hole]
-        # build_s_field 回傳的就是 rowcol_field 的結果 —— 現行的場**就是** M,
+        # build_amplitude_field 回傳的就是 median_polish 的結果 —— 現行的場**就是** M,
         # 兩者分開列會看起來像兩個方法,實際上是同一個陣列
         cur   = M[hole]
         preds = {CUR: cur}
@@ -144,7 +144,7 @@ def main():
               f"{'配對勝率':>10}{'配對差中位':>12}")
         for nm, pr in preds.items():
             e = pr - truth
-            sc_ = scale(e)
+            sc_ = robust_spread(e)
             deconv = np.sqrt(max(sc_**2 - args.sigma_n**2, 0.0))
             win = np.mean(np.abs(e) < np.abs(cur - truth))
             dmed = np.median(np.abs(e) - np.abs(cur - truth))

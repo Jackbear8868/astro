@@ -33,8 +33,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import (air_to_vacuum, build_s_field, build_templates,  # noqa: E402
-                   main_source_group, scale)
+from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noqa: E402
+                   main_source_group, robust_spread)
 from s_flux_bias import wls                              # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -68,7 +68,7 @@ def main():
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
     blank = valid & (seg == 0) & np.isfinite(s_free)
-    s_hat, _ = build_s_field(s_free, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
+    s_hat, _ = build_amplitude_field(s_free, seg, blank, p["min_source_distance"], p["min_main_source_distance"],
                                 p["train_clip_sigma"],
                                 main=mg)
 
@@ -114,8 +114,8 @@ def main():
     print("-" * 48)
     for nc in args.ncomp:
         v = res[nc][np.isfinite(res[nc])]
-        se = 1.253 * scale(v) / np.sqrt(v.size)
-        print(f"{nc:>10}{np.median(v):>12.4f}{scale(v):>12.4f}{se:>14.4f}")
+        se = 1.253 * robust_spread(v) / np.sqrt(v.size)
+        print(f"{nc:>10}{np.median(v):>12.4f}{robust_spread(v):>12.4f}{se:>14.4f}")
 
     full = res[args.ncomp[-1]]
     ok = np.isfinite(full)
@@ -132,7 +132,7 @@ def main():
 
     fig, ax = plt.subplots(1, 3, figsize=(16, 4.4))
     cm = np.full(seg.shape, np.nan); cm[ys, xs] = full
-    v = 3 * scale(full[ok])
+    v = 3 * robust_spread(full[ok])
     im = ax[0].imshow(cm, origin="lower", cmap="RdBu_r",
                       vmin=np.median(full[ok]) - v, vmax=np.median(full[ok]) + v)
     plt.colorbar(im, ax=ax[0], fraction=.046)
@@ -146,7 +146,7 @@ def main():
     ax[1].set_title("② is it constant across the field?", fontsize=10)
     ax[2].errorbar(args.ncomp,
                    [np.median(res[n][np.isfinite(res[n])]) for n in args.ncomp],
-                   yerr=[1.253 * scale(res[n][np.isfinite(res[n])])
+                   yerr=[1.253 * robust_spread(res[n][np.isfinite(res[n])])
                          / np.sqrt(np.isfinite(res[n]).sum()) for n in args.ncomp],
                    fmt="o-")
     ax[2].axhline(0, color="k", lw=.8)

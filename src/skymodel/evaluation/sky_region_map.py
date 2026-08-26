@@ -43,7 +43,7 @@ import matplotlib.patches as mpatches
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import build_s_field, main_source_group  # noqa: E402
+from utils import build_amplitude_field, main_source_group  # noqa: E402
 
 
 def region_args(step03):
@@ -89,8 +89,8 @@ def main():
     s = np.load(run / "s_free.npy").astype(float)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
     ok = valid & (seg == 0) & np.isfinite(s)
-    _, s_train = build_s_field(s, seg, ok, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
-                               main=main)
+    _, s_train = build_amplitude_field(s, seg, ok, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
+                                       main=main)
 
     img, vmax = arcsinh_stretch(white, valid)
     fig, ax = plt.subplots(1, 2, figsize=(15.5, 7.4))

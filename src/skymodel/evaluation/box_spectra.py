@@ -79,7 +79,7 @@ import matplotlib.patheffects as pe
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
 from products import fit_dirs, spectrum_stats  # noqa: E402
-from utils import main_source_group, scale  # noqa: E402
+from utils import main_source_group, robust_spread  # noqa: E402
 
 Z_HARO = 0.0204
 LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
@@ -225,7 +225,7 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
         # spread. Switching to percentiles would be asymmetric about the centre and
         # narrower as well, and the same s field would look far more strongly
         # striped -- that is a difference of the colour scale, not of the data.
-        v = 3 * scale(s_hat[np.isfinite(s_hat)])
+        v = 3 * robust_spread(s_hat[np.isfinite(s_hat)])
         im = axes[0][1].imshow(s_hat, origin="lower", cmap="RdBu_r",
                                vmin=1 - v, vmax=1 + v)
         plt.colorbar(im, ax=axes[0][1], fraction=0.045, pad=0.01)

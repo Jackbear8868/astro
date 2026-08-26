@@ -35,8 +35,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
-from utils import (air_to_vacuum, build_s_field, build_templates,  # noqa: E402
-                   main_source_group, scale)
+from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noqa: E402
+                   main_source_group, robust_spread)
 from s_prior_holetest import pick_hole                   # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -94,7 +94,7 @@ def main():
 
     hole, ctr = pick_hole(blank, seg, valid, args.radius, args.margin)
     hole &= blank
-    s_hat, train = build_s_field(s_free, seg, blank, p["min_source_distance"],
+    s_hat, train = build_amplitude_field(s_free, seg, blank, p["min_source_distance"],
                                     p["min_main_source_distance"], p["train_clip_sigma"],
                                 main=main, exclude=hole)
 
@@ -165,7 +165,7 @@ def main():
         mw = float(np.median(fw)) if fw.size else float("nan")
         print(f"{K:>4}{mj:>11.4f}{mp:>11.4f}{mw:>13.4f}{mj - mp:>10.4f}")
         out.append(dict(K=K, joint=mj, project=mp, proj_window=mw, n=int(fj.size),
-                        joint_sct=float(scale(fj)), proj_sct=float(scale(fp))))
+                        joint_sct=float(robust_spread(fj)), proj_sct=float(robust_spread(fp))))
         spec_keep[K] = np.median(np.array(sj), axis=0)
 
     print(f"\n讀法:joint 是正式流程的做法。project 沒有競爭。")

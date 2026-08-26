@@ -7,7 +7,7 @@ it, in six steps:
     object_spectra     sum each source's spectrum over the spaxels its seg ID covers
     sky_basis          learn the sky continuum and the sky-line basis from blank
     classify_sources   fit templates to every source, giving it a class and a redshift
-    fit_s_field        force the sky continuum amplitude s onto a spatial field
+    fit_sky_amplitude  force the sky continuum amplitude s onto a spatial field
     subtract_sky       apply the model to every spaxel and write the subtracted cube
 
 `run_pointing` is the only way in: those six steps in order, driven by one

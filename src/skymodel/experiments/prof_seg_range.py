@@ -41,7 +41,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from utils import main_source_group, scale  # noqa: E402
+from utils import main_source_group, robust_spread  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 SEGDIR  = ROOT / "data/wsky_seg"
@@ -75,7 +75,7 @@ def profile(n, bin_px, r_other, margin, far):
         if m.sum() < 30:
             continue
         rows.append((0.5 * (lo + hi), int(m.sum()), float(np.median(v[m]) - base),
-                     float(scale(v[m]) / np.sqrt(m.sum()))))
+                     float(robust_spread(v[m]) / np.sqrt(m.sum()))))
     return np.array(rows), base, blank, main, seg, valid
 
 
@@ -94,7 +94,7 @@ def noise_floor_sys(rows, far):
     m = rows[:, 0] > far
     if m.sum() < 3:
         m = rows[:, 0] > np.percentile(rows[:, 0], 60)
-    return max(float(scale(rows[m, 2])), float(np.median(rows[:, 3])))
+    return max(float(robust_spread(rows[m, 2])), float(np.median(rows[:, 3])))
 
 
 def first_clean(rows, floor, nsigma):
