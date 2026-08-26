@@ -37,6 +37,7 @@ around its own work (utils.blas_single_thread).
 import argparse
 import contextlib
 import datetime
+import inspect
 import json
 import os
 import re
@@ -681,6 +682,24 @@ class Pipeline:
         args = ", ".join(f"{k}={Pipeline._render(v)}" for k, v in kwargs.items())
         return f"{fn.__module__}.{fn.__qualname__}({args})"
 
+    @staticmethod
+    def write_meta(out, **fields):
+        """Write out/meta.json: what the step was given, plus who wrote it and when.
+
+        The step's name is read off the calling method rather than written in, so
+        it cannot fall behind a rename -- it did twice, once as the step was
+        renamed and once as its config section was. Nothing reads the field, but a
+        record that disagrees with the code is worse than no record.
+        """
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, cwd=ROOT)
+        meta = dict(step=inspect.currentframe().f_back.f_code.co_name,
+                    created=datetime.datetime.now().isoformat(timespec="seconds"),
+                    git_commit=head.stdout.strip(), **fields)
+        (out / "meta.json").write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"meta -> {out / 'meta.json'}")
+
     # A path written against the repository root, so what is recorded does not
     # depend on where the run was started from.
     @staticmethod
@@ -1129,20 +1148,15 @@ class Pipeline:
                 return str(q)
 
         if keep_intermediate:
-            (out_dir / "meta.json").write_text(json.dumps(dict(
-                created=time.strftime("%Y-%m-%dT%H:%M:%S"),
-                git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                          capture_output=True, text=True,
-                                          cwd=ROOT).stdout.strip(),
+            self.write_meta(
+                out_dir,
                 cube=rel(cube), seg=rel(seg_f), work=rel(work),
                 methods=list(methods), K=K, seed=seed,
                 continuum_window=continuum_window,
                 line_thresholds=list(line_thresholds),
                 max_iter=max_iter, clip_sigma=clip_sigma,
                 xlim=xlim, ylim=ylim, exclude_box=exclude_box,
-                n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
-            ), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-            print(f"meta -> {out_dir / 'meta.json'}")
+                n_blank_all=n_all, n_blank_used=int(blank_mask.sum()))
         return SkyModel(wl, C_sky, bases, iter_line_mask)
 
     # =========================================================================
@@ -1663,29 +1677,24 @@ class Pipeline:
             np.save(s_hat_path, s_hat32)
             np.save(out / "s_free.npy", s_free.reshape(ny, nx).astype(np.float32))
 
-        meta = dict(
-            step="s_field",
-            cube=str(self._repo_path(CUBE)), seg=str(self._repo_path(seg_path)),
-            sky_dir=str(self._repo_path(work / "step03")),
-            classification=str(self._repo_path(classification.path)), basis=basis, K=K,
-            blank_channels=blank_channels, fix_blank_s_at=fix_blank_s_at,
-            min_channel_coverage=min_channel_coverage,
-            sky_amplitude_params=dict(
-                min_source_distance=min_source_distance,
-                min_main_source_distance=min_main_source_distance,
-                train_clip_sigma=train_clip_sigma,
-                train_exclude_box=train_exclude_box,
-                train_xlim=train_xlim, train_ylim=train_ylim,
-                main_source_dz=main_source_dz, n_iter=n_iter),
-            main_ids=[int(i) for i in mids],
-            n_blank=int(blank.sum()), n_train=int(sf_train.sum()),
-            created=datetime.datetime.now().isoformat(timespec="seconds"),
-            git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                      capture_output=True, text=True,
-                                      cwd=ROOT).stdout.strip())
         if keep_intermediate:
-            (out / "meta.json").write_text(
-                json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.write_meta(
+                out,
+                cube=str(self._repo_path(CUBE)), seg=str(self._repo_path(seg_path)),
+                sky_dir=str(self._repo_path(work / "step03")),
+                classification=str(self._repo_path(classification.path)),
+                basis=basis, K=K,
+                blank_channels=blank_channels, fix_blank_s_at=fix_blank_s_at,
+                min_channel_coverage=min_channel_coverage,
+                sky_amplitude_params=dict(
+                    min_source_distance=min_source_distance,
+                    min_main_source_distance=min_main_source_distance,
+                    train_clip_sigma=train_clip_sigma,
+                    train_exclude_box=train_exclude_box,
+                    train_xlim=train_xlim, train_ylim=train_ylim,
+                    main_source_dz=main_source_dz, n_iter=n_iter),
+                main_ids=[int(i) for i in mids],
+                n_blank=int(blank.sum()), n_train=int(sf_train.sum()))
             print(f"saved -> {out}")
         return SkyAmplitude(s_hat32, s_hat_path)
 
@@ -1837,21 +1846,15 @@ class Pipeline:
         np.save(out / "A_map.npy", A_map.reshape(N_COMPONENTS, ny, nx))
         np.save(out / "s_map.npy", s_map.reshape(ny, nx))
 
-        meta = dict(
-            step="fit_sky",
+        self.write_meta(
+            out,
             cube=str(self._repo_path(CUBE)), seg=str(self._repo_path(seg_path)),
             sky_dir=str(self._repo_path(work / "step03")),
             classification=str(self._repo_path(classification.path)), basis=basis, K=K,
             s_field=str(self._repo_path(s_field.path)),
             blank_channels=blank_channels, min_channel_coverage=min_channel_coverage,
             n_blank=int(blank.sum()), n_source=n_src_tot,
-            n_source_regions=len(rids), n_template_regions=len(templates),
-            created=datetime.datetime.now().isoformat(timespec="seconds"),
-            git_commit=subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                      capture_output=True, text=True,
-                                      cwd=ROOT).stdout.strip())
-        (out / "meta.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            n_source_regions=len(rids), n_template_regions=len(templates))
 
         region = ("all channels" if fit_mask is None
                   else f"line1 {int(fit_mask.sum())}/{fit_mask.size} channels")
