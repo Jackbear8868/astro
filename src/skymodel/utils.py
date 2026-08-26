@@ -6,7 +6,7 @@ The sections below, in order:
   * wavelength axis -- the channel grid of a cube, and the air-to-vacuum
     conversion everything downstream is evaluated in
   * sky continuum and line detection -- the spectral direction: running
-    median, iterative sky-line detection (estimate_continuum etc.)
+    median and iterative sky-line detection
   * source templates -- eigenspectra and the stellar library, read as
     splines, and the models step6 reconstructs its sources from
   * linear solves -- the per-spaxel solves steps 5 and 6 share
@@ -14,26 +14,13 @@ The sections below, in order:
     the deblender split it into
   * the s field -- the spatial direction: a smooth field built from the
     per-spaxel sky-continuum coefficients
-  * figures and display -- the asinh stretch, and the figures the pipeline
-    itself draws
+  * figures and display
 
 fit_blank and fit_source both minimise the unweighted sum of squared
 residuals. The design matrix is the same for every spaxel (within blank or
 within a source region), so a single pinv call solves all clean spaxels at
 once; only spaxels with bad channels need per-spaxel lstsq, and only those
 violating bounds need per-spaxel lsq_linear.
-
-build_templates selects sources that received a model in step4 and
-redshifts each model onto the MUSE wavelength grid.
-
-The solves run under whatever thread limit their caller set; the steps that
-call them hold BLAS at one thread (blas_single_thread), and so do the two
-solves themselves.
-
-Each figure function draws one self-contained figure and saves it to disk.
-The pipeline steps call these after the corresponding computation; the
-figures are not essential to the pipeline's data flow but let the user
-verify intermediate results without running evaluation scripts separately.
 """
 
 import functools
@@ -68,13 +55,10 @@ def blas_single_thread(fn):
     count. Held at one, what a step writes depends on the step alone and not on
     the machine it ran on.
 
-    The limit is applied when fn is called and lifted when it returns. That is
-    why it is here rather than in the OMP_NUM_THREADS family of variables: those
-    are read once, as each library loads, so they only bite when they are set
-    before anything imports numpy -- which a module cannot arrange for whoever
-    imports it, and which a step run on its own therefore never gets. Applying
-    the limit around the work instead makes the two ways of running a step the
-    same, and leaves the threading of a process that merely imported us alone.
+    The limit is applied when fn is called and lifted when it returns, rather
+    than through the OMP_NUM_THREADS family: those are read once as each library
+    loads, so they bite only when set before anything imports numpy, which a
+    module cannot arrange for whoever imports it.
     """
     @functools.wraps(fn)                # pipeline.py writes fn.__module__ and
                                         # fn.__name__ into the head of the step log
@@ -92,14 +76,10 @@ def blas_single_thread(fn):
 def wavelength_grid(header):
     """The wavelength of every channel of a cube, from its DATA header.
 
-    The rule lives here rather than in the step that first needs it: every later
-    step has to rebuild the same grid to check that the one saved on disk belongs
-    to the cube it was handed, and a formula written in several places drifts.
-
-    CTYPE3 is checked rather than assumed. The arithmetic below is linear
-    sampling, which is what AWAV declares; on a log-sampled axis it would still
-    return a grid, correct only at the reference channel and wrong everywhere
-    else, and nothing downstream can tell that from a real one.
+    CTYPE3 is checked rather than assumed: the arithmetic below is linear
+    sampling, which is what AWAV declares, and on a log-sampled axis it would
+    still return a grid -- correct only at the reference channel, and nothing
+    downstream could tell that from a real one.
     """
     ctype = header.get("CTYPE3")
     if ctype is not None and str(ctype).strip() != "AWAV":
@@ -117,14 +97,13 @@ AIR_MIN = 2000.0        # air wavelengths are undefined where air stops transmit
 def air_to_vacuum(lam_air):
     """Convert air wavelengths to vacuum (Morton 2000, IAU standard).
 
-    The MUSE cube's CTYPE3 = AWAV (air wavelength), while the templates and
-    eigenspectra are all in vacuum wavelength. Without conversion there is a
-    systematic redshift offset of ~83 km/s.
+    The MUSE cube's CTYPE3 is AWAV (air wavelength) while the templates and
+    eigenspectra are all in vacuum, so without the conversion everything is
+    fitted with a systematic offset of ~83 km/s.
 
-    Valid above about 2000 A only. The two resonance terms have poles at
-    1602.8 A and 876.7 A, so below that the result is neither correct nor
-    monotonic -- which is not a limitation in practice, since air does not
-    transmit there and "air wavelength" has no meaning either.
+    Valid above about 2000 A only: the two resonance terms have poles at
+    1602.8 A and 876.7 A, below which the result is neither correct nor
+    monotonic.
     """
     s2 = (1e4 / lam_air) ** 2
     n = (1.0
@@ -151,7 +130,7 @@ def running_median(spectrum, window=300):
 def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
     m = mean_sky.copy()
     if exclude is not None:
-        m[exclude] = np.nan                        # lines found in previous iteration -> excluded from continuum
+        m[exclude] = np.nan                        # the previous iteration's lines, kept out of the continuum
     continuum = running_median(m, window)
     
     x = np.arange(len(m))
@@ -161,7 +140,7 @@ def detect_lines(mean_sky, exclude=None, thresholds = (1, 2), window=300):
     continuum = spl(x)
 
     abs_diff = np.abs(m - continuum)
-    sigma = running_median(abs_diff, window)       # running median along wavelength
+    sigma = running_median(abs_diff, window)
 
     line_mask = (mean_sky > continuum + thresholds[0] * sigma) | (mean_sky < continuum - thresholds[1] * sigma)
     return continuum, sigma, line_mask
@@ -197,29 +176,18 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5,
 
 
 def load_line_masks(masks, cumulative=True):
-    """The per-iteration sky-line masks step3 produced; returns the cumulative
-    version by default.
+    """The per-iteration sky-line masks step3 produced; cumulative by default.
 
     `masks` is either the stack step3 returns or the path of the
     iter_line_mask.npy it wrote, so a script reading the products applies the
     same rule the pipeline applied.
 
-    The saved file stores the mask each iteration actually used -- inside
-    estimate_continuum's loop, new_mask is recomputed from scratch by
-    detect_lines and wholly replaces the old one, not accumulated
-    (`line_mask = new_mask`). The convergence condition
-    `np.array_equal(new_mask, line_mask)` relies on this: a mask that can
-    only grow monotonically would never equal its predecessor. So the saved
-    file must remain non-cumulative; it is a faithful record of the process.
-
-    When used as a "progressively wider" sequence, however, the non-cumulative
-    version has exceptions -- after the continuum is re-estimated, individual
-    channels can drop back below threshold, so iteration i does not strictly
-    contain iteration i-1. cumulative=True applies a logical_or prefix
-    accumulation to enforce monotonicity.
-
-    Iteration 1 is the same either way, so call sites that read only [0] are
-    unaffected.
+    The saved masks are non-cumulative and must stay that way: estimate_continuum
+    stops when an iteration reproduces the previous mask, which a monotonically
+    growing mask could never do. Read as a "progressively wider" sequence they are
+    then not strictly nested -- a re-estimated continuum can drop a marginal channel
+    back below threshold -- so cumulative=True applies a logical_or prefix
+    accumulation. Iteration 1 is the same either way.
     """
     m = np.load(masks) if isinstance(masks, (str, Path)) else np.asarray(masks)
     return np.logical_or.accumulate(m, axis=0) if cumulative else m
@@ -231,8 +199,8 @@ def load_line_masks(masks, cumulative=True):
 
 
 # The stellar library: where its files are, and the name written into the products.
-# The two are defined together -- kept apart, a product could claim one library while
-# the code read another directory, and that error is invisible in the output.
+# Defined together -- apart, a product could name one library while the code read
+# another directory, and that is invisible in the output.
 DWARF_DIR    = ROOT / "data/stellar_templates"      # two-column ASCII, luminosity
                                                     # class V main-sequence templates
 STAR_LIBRARY = "dwarf"
@@ -247,14 +215,11 @@ def load_ascii_template(path, air=True):
 
     Gaps are filled with 0 in these files, which a fit would read as "the flux
     really is zero there"; they become NaN and are dropped, so the spline's
-    domain is the range that actually carries data, and redshift_to_grid
-    returns NaN outside it.
+    domain is the range that actually carries data.
 
-    air=True converts the wavelength axis to vacuum, because everything
-    downstream is evaluated at vacuum wavelengths; a template left in air is
-    fitted about 83 km/s too blue. The axis is cut at AIR_MIN first: below it
-    an air wavelength has no meaning, and air_to_vacuum is not even monotonic
-    there (see its docstring), which would make the spline unbuildable.
+    air=True converts the axis to vacuum, because everything downstream is
+    evaluated at vacuum wavelengths. The axis is cut at AIR_MIN first: below it
+    air_to_vacuum is not monotonic, which would make the spline unbuildable.
     """
     lam, y = np.loadtxt(path, unpack=True)
     y = y.astype(np.float64)
@@ -267,18 +232,12 @@ def load_ascii_template(path, air=True):
 
 
 def _eigen_spline(lam_rest, F):
-    """Turn (n_comp, n_wave) eigenspectra into a "batch" spline.
+    """Turn (n_comp, n_wave) eigenspectra into one "batch" spline.
 
     The constant padding at both ends is filler, not data -- the file repeats
-    the last real value all the way to the boundary. Including it in the
-    spline would produce an artificial flat line there, which the fit would
-    happily use to absorb residuals. The boundary of the real data is where
-    all components simultaneously stop changing.
-
-    y is passed as (n_wave, n_comp), so a single evaluation returns all
-    components. The cost of a spline is dominated by the binary search for
-    the knot interval, which is independent of the number of components, so
-    evaluating 4 components is as fast as 1 and avoids repeating the search.
+    the last real value all the way to the boundary. In the spline it would be
+    an artificial flat line the fit would use to absorb residuals, so the
+    spline is cut where all components simultaneously stop changing.
 
     Returns
     -------
@@ -294,11 +253,10 @@ def _eigen_spline(lam_rest, F):
 def load_eigen_galaxy(path):
     """Bolton et al. 2012 galaxy eigenspectra (FITS bintable) -> batch spline.
 
-    Real data covers 1183-9840 A (rest), 4 components. The chi2 column
-    contains uninitialised memory (1e-310 to 1e307) -- do not touch. The
-    .spec file in the same directory is a text version of the same data,
-    kept to only 4 decimal places -- higher-order components cross zero,
-    so truncation causes divergent relative error; use the FITS version.
+    Real data covers 1183-9840 A rest, 4 components. The chi2 column holds
+    uninitialised memory -- do not read it. The .spec file beside it is the same
+    data truncated to 4 decimals, which diverges in relative error where the
+    higher-order components cross zero; use the FITS version.
     """
     d = fits.open(path)[1].data
     lam = np.asarray(d["wave"], np.float64)
@@ -310,9 +268,8 @@ def load_eigen_qso(path):
     """QSO eigenspectra (text file: column 1 = wavelength, rest = components)
     -> batch spline.
 
-    Real data covers 605-8356 A (rest), 4 components. The filename says
-    "linear", but the wavelength grid is actually logarithmic like the galaxy
-    file (dlog10 = 1e-4).
+    Real data covers 605-8356 A rest, 4 components. The filename says "linear",
+    but the wavelength grid is logarithmic like the galaxy file (dlog10 = 1e-4).
     """
     q = np.loadtxt(path)
     return _eigen_spline(q[:, 0], q[:, 1:].T)
@@ -328,14 +285,11 @@ def redshift_to_grid(spline, z, lam_muse):
 
 
 def build_templates(best, lam_vac):
-    """Select the sources that receive a model and redshift each source model
-    onto the MUSE wavelength grid.
+    """Select the sources that receive a model and redshift each onto lam_vac.
 
-    The stellar library the classification was fitted with is checked
-    against the one available here rather than assumed: a template name says
-    nothing about which library it came from, so reconstructing a source from
-    the wrong library would be silent. Classifications produced by a library
-    that is no longer shipped are refused instead of reinterpreted.
+    The stellar library the classification was fitted with is checked rather
+    than assumed: a template name says nothing about which library it came from,
+    so rebuilding a source from the wrong one would be silent.
 
     Returns
     -------
@@ -343,11 +297,9 @@ def build_templates(best, lam_vac):
         {segmentation ID: model redshifted to lam_vac, shape (nz, n_comp)}
     """
     eigen = {"galaxy": load_eigen_galaxy(EIGEN_GAL), "qso": load_eigen_qso(EIGEN_QSO)}
-    # A file without this field was written before the field existed, and every one
-    # of those came from the SDSS stellar library. Membership is asked of `best`
-    # itself rather than of .files, so that step6 can hand over the fields step4
-    # returned without writing and reading an npz to get an object with that
-    # attribute; an NpzFile answers `in` the same way a dict does.
+    # A file without this field predates it, and all of those came from the SDSS
+    # library. Membership is asked of `best` itself, not of .files, so step6 can
+    # hand over step4's fields without going through an npz to get that attribute.
     lib   = str(best["star_library"]) if "star_library" in best else "sdss"
     if lib != STAR_LIBRARY:
         raise SystemExit(
@@ -355,13 +307,9 @@ def build_templates(best, lam_vac):
             f"which is no longer available; re-run step4 to refit it with "
             f"{STAR_LIBRARY!r}")
     A = np.asarray(best["A"], float)
-    # Two different things leave a source without a model, and nansum() of a row
-    # returns 0.0 for both: a row that is NaN in every component, which is a source
-    # step4 never solved, and a row that is finite and adds up to zero, which is a
-    # source solved to no amplitude. Neither can be redshifted onto the grid, but
-    # they are not the same event, so they are separated before the sum is taken and
-    # reported apart. np.abs is kept: without it a positive and a negative component
-    # cancelling would read as an amplitude of zero rather than as the model it is.
+    # nansum() of a row is 0.0 both for a source step4 never solved (NaN throughout)
+    # and for one solved to no amplitude, so the two are separated and reported
+    # apart. np.abs matters: without it, components that cancel would read as zero.
     unsolved = np.isnan(A).all(axis=1)
     keep     = ~unsolved & (np.nansum(np.abs(A), axis=1) > 0)
     zero_amp = ~unsolved & ~keep
@@ -384,14 +332,7 @@ def build_templates(best, lam_vac):
 
 N_SRC        = 4
 MIN_COVERAGE = 0.9
-# Spaxels multiplied at a time in the blank solve. A module constant rather than a
-# parameter: it trades the size of one temporary against the number of BLAS calls
-# and cannot change what fit_blank returns, so there is nothing for a caller to
-# decide about it. A power of two, so that it stays a whole number of the column
-# groups BLAS walks in (see fit_blank) whatever width those groups have here --
-# they are powers of two, and a chunk that is not a whole number of them answers
-# in different last bits.
-SPAXEL_CHUNK = 256
+SPAXEL_CHUNK = 256      # must be a power of two -- see fit_blank
 
 
 def as_vector(s_fix, n):
@@ -401,8 +342,8 @@ def as_vector(s_fix, n):
     return np.broadcast_to(np.asarray(s_fix, float), (n,))
 
 
-# Decorated as well as the steps that call it: the limit belongs to the solve, so a
-# diagnostic script that calls this directly gets the numbers the pipeline got.
+# Decorated as well as its callers: the limit belongs to the solve, so a script
+# calling this directly gets the numbers the pipeline got.
 @blas_single_thread
 def fit_blank(D, sky, fit_mask=None, s_fix=None):
     """Coefficients for blank spaxels, with a non-negativity constraint on s.
@@ -429,38 +370,24 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None):
 
     good = np.isfinite(D)
     if C is not None:
-        # The residual being fitted is D - s*C, which is non-finite wherever D
-        # is, plus every channel where C is and every spaxel where s is.
+        # The residual fitted is D - s*C, non-finite wherever D is plus every
+        # channel where C is and every spaxel where s is.
         good &= np.isfinite(C)[:, None]
         good &= np.isfinite(s)
     if fit_mask is not None:
         good &= fit_mask[:, None]
 
-    # An all-true row index is not free -- numpy copies every row of both arrays
-    # to honour it -- and D is C-contiguous already, so with no mask the rows are
-    # taken as they lie.
+    # A slice, not an all-true mask: a boolean index would copy every row.
     rows  = slice(None) if fit_mask is None else fit_mask
     clean = good[rows].all(axis=0)
     P     = np.linalg.pinv(A[:, rows].T)
 
-    # P is float64 and D is float32, and a mixed-dtype multiply widens its float32
-    # side first, so one call covering every clean spaxel builds a double-width copy
-    # of the whole block just to multiply it. Taking the spaxels a chunk at a time
-    # builds one chunk of that copy instead. Output column j is read off input
-    # column j and nothing else, so which columns share a call cannot change the sum
-    # each column gets -- but for the sum to be the same bit for bit it has to be
-    # the same instructions too. BLAS takes the columns in groups of four and
-    # finishes what is left over with a separate kernel, so a chunk that is not a
-    # whole number of groups wide puts its last columns through a kernel the
-    # unchunked multiply never uses and their last bits move. Chunks are therefore
-    # whole groups wide, and a lone final column -- a matrix-vector product, a
-    # different routine again -- is folded into the chunk before it.
-    #
-    # The rows are selected once, above the loop: with a mask that selection copies
-    # the rows it keeps, and per chunk it would copy them again every time; with no
-    # mask it is a view either way. The clean spaxels are carried as positions
-    # rather than as the mask so that a chunk is a run of consecutive output
-    # columns, which is what those widths are counted in.
+    # Chunked so the float32 -> float64 widening covers one chunk, not the block.
+    # Widths must stay whole multiples of four with no lone column left over: BLAS
+    # takes columns in fours, and a remainder answers in different last bits. The
+    # clean spaxels are carried as positions and not as the mask for the same
+    # reason -- a chunk is then a run of consecutive columns, which is what those
+    # widths count.
     Drows = D[rows]
     cols  = np.flatnonzero(clean)
     fit   = np.empty((K, cols.size))
@@ -472,11 +399,9 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None):
         fit[:, a:b] = P @ Drows[:, cols[a:b]]
 
     if C is not None:
-        # Least squares is linear in the data it is given, so
-        #     pinv(A) @ (D - s*C) == pinv(A) @ D - (pinv(A) @ C) * s
-        # is an identity, not an approximation. Taken from right to left it
-        # subtracts s*C from the K coefficients rather than from the (nz, n)
-        # data, and the cube-sized D - s*C is never formed.
+        # Least squares is linear in its data, so subtracting s*C from the K
+        # coefficients gives exactly what subtracting it from the (nz, n) data
+        # would -- and this way the cube-sized D - s*C is never formed.
         fit -= (P @ C[rows])[:, None] * s[clean]
     coef[:, clean] = fit
 
@@ -501,8 +426,8 @@ def fit_blank(D, sky, fit_mask=None, s_fix=None):
     return coef
 
 
-# Decorated as well as the steps that call it: the limit belongs to the solve, so a
-# diagnostic script that calls this directly gets the numbers the pipeline got.
+# Decorated as well as its callers: the limit belongs to the solve, so a script
+# calling this directly gets the numbers the pipeline got.
 @blas_single_thread
 def fit_source(D, sky, T, s_fix=None, progress=False):
     """A batch of source spaxels sharing the same template.
@@ -559,18 +484,15 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
         _unpack(th, j)
 
     if has_bounds:
-        # lb is in the order the design columns were stacked; out is in the fixed
-        # report order. The two are different orders and line up only when n_comp
-        # happens to equal N_SRC, so the bounds are read through this map instead of
-        # against out row by row -- otherwise a bound is compared with someone else's
-        # coefficient and the violation it exists to catch never fires.
+        # lb is in design-column order and out is in the fixed report order; the two
+        # line up only when n_comp happens to equal N_SRC. Read the bounds through
+        # this map, or a bound is compared with someone else's coefficient.
         design_to_out = (list(range(n_comp))
                          + ([N_SRC] if s_fix is None else [])
                          + list(range(N_SRC + 1, N_SRC + K)))
         theta = out[design_to_out]
-        # A column that got neither solve leaves its design rows NaN, and NaN fails
-        # every comparison; that is not a column within its bounds, it is a column
-        # with nothing to re-solve.
+        # A column that got neither solve is NaN, and NaN fails every comparison:
+        # not a column inside its bounds, a column with nothing to re-solve.
         solved = np.isfinite(theta).all(axis=0)
         violators = np.flatnonzero(np.any(theta < lb[:, None], axis=0) & solved)
         for j in violators:
@@ -591,35 +513,22 @@ def fit_source(D, sky, T, s_fix=None, progress=False):
 
 C_KMS = 299792.458
 
-# How close in redshift a member must be to the main source to count as part
-# of the same galaxy. The galaxy has internal rotation and outflows, so the
-# criterion is "within the galaxy's velocity range", not "identical redshift".
-#
-# The threshold must be loose enough not to exclude the galaxy's own bright
-# knots and tight enough to reject background galaxies. The data make this
-# easy: genuine members differ by only tens of km/s, while a superposed
-# background galaxy differs by ~350,000 km/s -- four orders of magnitude
-# apart, so any threshold between ~300 and ~3000 km/s gives the same result
-# (see the scan table in evaluation/main_group_spec.py).
-#
-# 0.005 is chosen because step4's stellar-redshift scan half-width (--star-dz)
-# uses the same value, and reusing the same number is easier to remember.
-# Converted to velocity: c dz / (1+z) = 1469 km/s at z = 0.0205, which falls
-# in the safe interval.
+# How close in redshift a member must be to the main source to count as part of the
+# same galaxy. The galaxy has internal rotation and outflows, so the criterion is
+# "within its velocity range": loose enough to keep its own bright knots, tight
+# enough to reject background galaxies. evaluation/main_group_spec.py scans it.
 DZ_MAX = 0.005
 
 
 def galaxy_redshifts(step04, ids, tag=None):
     """Best galaxy-branch redshift for each seg ID. Returns {id: z}.
 
-    step4 stores the two branches separately; scan2 is the galaxy branch.
-    The z from the classification file is not used -- that is the winning
-    branch's value, and when the source is classified as a star it is a
-    radial velocity, not a redshift.
+    step4 stores the two branches separately; scan2 is the galaxy branch. The z
+    in the classification file is the winning branch's, which for a star is a
+    radial velocity and not a redshift, so it is not used here.
 
-    tag names one step4 run, and is the part of the classification filename
-    after "classification_". Callers that hold a --best file know it and
-    should pass it; without it several matches are an error rather than a
+    tag names one step4 run -- the part of the classification filename after
+    "classification_". Without it, several matches are an error rather than a
     silent pick.
     """
     out = {}
@@ -628,11 +537,9 @@ def galaxy_redshifts(step04, ids, tag=None):
         f = sorted(Path(step04).glob(pat))
         if not f:
             raise SystemExit(f"{pat} not found in {step04}")
-        # Multiple hits mean the directory contains results from several step4
-        # runs (different windows, different mask iterations). Taking [0] picks
-        # one by filename order, and since the redshift determines which members
-        # belong to the main source, picking the wrong one is invisible
-        # downstream. Better to stop and ask.
+        # Several hits mean the directory holds results from several step4 runs.
+        # Taking [0] would pick by filename order, and the wrong redshift changes
+        # which members belong to the main source, invisibly. Stop and ask.
         if len(f) > 1:
             raise SystemExit(
                 f"id{i} has {len(f)} scan2 files in {step04}:\n  "
@@ -649,54 +556,36 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
     brightest pixel, keeping only members with matching redshifts.
     Returns (mask, ID list, peak coordinates).
 
-    Why a single "largest-area" or "brightest" ID does not work: SExtractor's
-    deblender splits the main galaxy. A merging galaxy naturally has several
-    bright knots, and whether they are split and into how many pieces depends
-    on that exposure's seeing and dither -- it varies between exposures. When
-    split, any "pick one ID" rule gets only part of the galaxy, and downstream
-    uses it to decide "which side to mask" and "how many pixels to exclude
-    around it" -- picking the wrong piece misplaces both.
+    A single "largest-area" or "brightest" ID does not work: SExtractor's
+    deblender splits the main galaxy into a number of pieces that varies with the
+    exposure's seeing and dither, so any "pick one ID" rule gets part of it, and
+    downstream uses that piece to decide which side to mask and how far to
+    exclude around it.
 
-    Two criteria:
+    Two criteria. (1) Direct adjacency, no dilation: deblended siblings are
+    carved from one above-threshold region and touch, while a separate object is
+    cut off by below-threshold background, a distinction dilation would blur.
+    (2) Redshift, because an object superposed on the galaxy is deblended from
+    the same parent and touches too: members further than dz_max from the member
+    holding the brightest pixel are dropped.
 
-    (1) **Directly adjacent** (no dilation). Deblended siblings are carved from
-        the same above-threshold connected region, so they touch; a different
-        object is separated by below-threshold background. Dilation would blur
-        this distinction, pulling in unrelated nearby sources.
-    (2) **Redshift match**. Adjacency alone is not enough -- another object
-        superposed on the galaxy is also deblended as a child of the same
-        parent detection and therefore also touches. The galaxy-branch
-        redshift from step4's fit discriminates: members differing from the
-        main source by more than dz_max are not part of this galaxy. The main
-        source's redshift is taken from the member containing the brightest
-        pixel.
+    The redshifts come either as `redshifts`, the {ID: z} mapping step4 returned,
+    which is how the pipeline passes them, or by reading step04's files, with
+    `tag` naming one run when the directory holds several. Give one or the other.
+    With neither, only criterion (1) applies -- the professor's delivered seg has
+    no template fit, so no redshift is available.
 
-    tag is passed through to galaxy_redshifts to name one step4 run when the
-    directory holds several.
-
-    redshifts is the same {ID: z} mapping read straight from step4 instead of
-    from its files, which is how the pipeline passes it; step04 and tag are for
-    a script working from the products afterwards. Give one or the other.
-
-    When neither is given, only criterion (1) is applied. The professor's
-    delivered seg has no corresponding template fit, so no redshift is
-    available; returning the entire adjacent blob is the only honest choice.
-
-    The returned mask is intersected with the connected blob, not
-    `isin(seg, ids)` -- SExtractor's CLEAN merges scattered spurious
-    detections into the bright source's ID, and those pixels carry the main
-    source's number but are not on the main source.
+    The returned mask is intersected with the blob, not `isin(seg, ids)`:
+    SExtractor's CLEAN merges scattered spurious detections into the bright
+    source's ID, and those pixels are not on the main source.
     """
     k = np.unravel_index(np.nanargmax(np.where(np.isfinite(white), white, -np.inf)),
                          white.shape)
     src = seg > 0
     lab, _ = ndimage.label(src)
-    # label() numbers the sources and leaves the background as 0, so if the brightest
-    # pixel sits on no source at all, `lab == lab[k]` selects the background instead
-    # of a blob: `blob & src` is then empty and the caller is handed a mask of
-    # nothing, with the exclusion radius that mask sets applied to nowhere. Either
-    # the segmentation missed a source or this pixel is not source light (a cosmic
-    # ray residual, a hot pixel); which of the two it is cannot be settled here.
+    # label() leaves the background as 0, so a brightest pixel on no source at all
+    # would select the background: `blob & src` comes out empty and the caller is
+    # handed a mask of nothing, with the exclusion radius it sets applied to nowhere.
     if lab[k] == 0:
         raise SystemExit(
             f"★ the brightest pixel of the white light image, y={k[0]} x={k[1]} "
@@ -706,9 +595,9 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
 
     if step04 is not None or redshifts is not None:
         z = redshifts if redshifts is not None else galaxy_redshifts(step04, ids, tag)
-        # galaxy_redshifts stops when a member has no galaxy scan to read; a
-        # mapping handed in has to be held to the same standard, or a member
-        # missing from it would drop out of the group without a word.
+        # galaxy_redshifts stops when a member has no galaxy scan to read; a mapping
+        # handed in is held to the same standard, or a member missing from it would
+        # drop out of the group without a word.
         missing = [i for i in ids if i not in z]
         if missing:
             raise SystemExit(
@@ -716,9 +605,9 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
                 "part of the blob holding the brightest pixel; the main source "
                 "group cannot be filtered by redshift without them")
         z0 = z[int(seg[k])]
-        # Comparing |dz| and |c dz/(1+z0)| is the same criterion -- both sides
-        # are multiplied by the same positive number. Using the redshift
-        # difference directly avoids tying the threshold to a particular z0.
+        # Comparing |dz| and |c dz/(1+z0)| is the same criterion, both sides being
+        # scaled by the same positive number; the redshift difference is used
+        # directly so the threshold is not tied to a particular z0.
         ids = [i for i in ids if abs(z[i] - z0) <= dz_max]
 
     return np.isin(seg, ids) & blob, ids, k
@@ -727,18 +616,15 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
 def main_source_mask(seg, source_id=None, main_blob=True):
     """Mask of the main source. Returns (boolean mask, seg ID used).
 
-    When source_id is omitted, the largest-area source is selected -- do not
-    hard-code seg == 1. SExtractor numbers sources in detection order, so a
-    different pointing may give the main galaxy a different ID, and hard-coding
-    would silently use some small source as the main, excluding dozens of
-    pixels in the wrong place.
+    With source_id omitted the largest-area source is taken -- do not hard-code
+    seg == 1: SExtractor numbers sources in detection order, so the main galaxy's
+    ID differs between pointings, and hard-coding would silently treat some small
+    source as the main one.
 
-    main_blob=True keeps only the largest connected component. A single seg ID
-    can consist of **several disconnected patches** -- that is caused by
-    SExtractor's `CLEAN Y` merging pixels of objects it judges to be spurious
-    into the nearby bright source. Using the entire ID for distance
-    calculations would let those scattered fragments each produce an exclusion
-    ring, inflating the exclusion area far beyond the main source itself.
+    main_blob=True keeps only the largest connected component. One seg ID can be
+    several disconnected patches, because SExtractor's `CLEAN Y` merges pixels of
+    objects it judges spurious into a nearby bright source; used whole for
+    distances, each fragment would produce its own exclusion ring.
     """
     if source_id is None:
         ids, cnt = np.unique(seg[seg > 0], return_counts=True)
@@ -756,40 +642,35 @@ def main_source_mask(seg, source_id=None, main_blob=True):
 # s field -- build a spatial field from the per-spaxel sky-continuum
 # coefficient s
 # ---------------------------------------------------------------------------
-# Why this is needed: if s is solved freely per spaxel, a spaxel adjacent to
-# a source that sees leaked source light can only explain it by raising its
-# own s -- that per-spaxel degree of freedom is the channel through which
-# the sky model absorbs source flux. Replacing it with "build a field from
-# spaxels far from all sources, then extrapolate to the source vicinity"
-# means one spaxel's data cannot budge the field, so source light has nowhere
-# to go inside the sky model and stays in the residual (= is preserved).
+# Solved freely per spaxel, s is the channel through which the sky model absorbs
+# source flux: a spaxel next to a source can explain leaked source light only by
+# raising its own s. Built instead from spaxels far from all sources and
+# extrapolated inward, no one spaxel's data can budge the field, so source light
+# has nowhere to go inside the sky model and stays in the residual.
 #
-# The functional form of the field (see rowcol_field):
+# The form of the field (see rowcol_field) is
 #
 #     s_hat(x, y) = mu + a(y) + b(x)
 #
-# describes axis-aligned striping caused by the instrument (extending along
-# entire rows/columns, neither sky nor source).
+# which describes axis-aligned striping caused by the instrument -- it extends
+# along entire rows and columns, and is neither sky nor source.
 
 
 def scale(a):
     """Robust spread (p84 - p16) / 2.
 
-    rms/std cannot be used: s has a few spaxels with failed fits whose
-    outlier values are extreme, and rms/std would be dominated by those few,
-    no longer measuring the overall spread.
+    Not rms/std: s has a few spaxels with failed fits whose outlier values are
+    extreme enough to dominate either, so neither measures the overall spread.
     """
     a = a[np.isfinite(a)]
     return float((np.percentile(a, 84) - np.percentile(a, 16)) / 2) if a.size else np.nan
 
 
 def nanmed(a, axis):
-    """Median along axis; returns 0 instead of NaN when an entire row/column
-    is all NaN.
+    """Median along axis; 0 instead of NaN when an entire row/column is all NaN.
 
-    All-NaN means that row has no training points, so the offset cannot be
-    estimated. Setting 0 is "apply no correction" -- the only honest choice
-    in that situation, though it is an assumption, not a measurement.
+    All-NaN means that row has no training points, so its offset cannot be
+    estimated. 0 is "apply no correction" -- an assumption, not a measurement.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -805,36 +686,20 @@ def rowcol_field(s, w, n_iter=FIELD_ITER):
 
     Returns (field, a, b).
 
-    Why additive rather than a general 2D function f(x, y): a general f is
-    one number per pixel -- no compression, and therefore no ability to
-    predict where there is no data. The additive form has only 1 + ny + nx
-    parameters, and **a(y) is shared by all spaxels in that row** -- this is
-    exactly why information can flow sideways into large gaps: a(y) for a row
-    in the centre of the gap is determined by the training spaxels in the same
-    row far from the source.
+    Additive rather than a general f(x, y): a general f is one number per pixel,
+    so it cannot predict where there is no data. This form has 1 + ny + nx
+    parameters and a(y) is shared by every spaxel in that row, which is how the
+    field reaches into a large gap -- a(y) in the middle of the gap is set by the
+    training spaxels of the same row, far from the source. It represents stripes
+    and any linear gradient; features confined to one spot rather than a whole
+    row or column stay in the residual.
 
-    Can represent: horizontal stripes, vertical stripes, any linear diagonal
-    gradient (alpha*x + beta*y is separable). Cannot represent: features that
-    appear only at a specific location and do not extend along an entire row
-    or column (statistically: interaction terms). Those stay in the residual.
-
-    Why median rather than mean: (1) robust to bad spaxels; (2) **natural
-    for large gaps** -- even when most of a row is occupied by a source, the
-    median of the remaining spaxels is still a good estimate of that row's
-    offset.
-
-    Why alternate: a and b are coupled. To measure "how much higher is this
-    row", the column offsets must be subtracted first, otherwise the
-    measurement reflects "which columns happen to remain in this row". The
-    alternation reaches a fixed point -- the step shrinks until a and b stop
-    moving at all -- so n_iter only has to be past that point; running further
-    costs a few milliseconds an iteration and changes nothing.
-
-    Note the degeneracy: adding c to every a(y) and subtracting c from every
-    b(x) leaves the field unchanged. So (mu, a, b) are individually
-    non-unique; only their sum is meaningful. The alternating medians
-    naturally keep median(a) and median(b) near 0, with mu absorbing the
-    overall level. This must be kept in mind when interpreting a(y) alone.
+    Medians rather than means are robust to bad spaxels and still estimate a
+    row's offset when most of that row is covered by a source. a and b are
+    coupled -- the column offsets have to be subtracted before a row offset can
+    be measured -- so they are solved by alternation, which reaches a fixed point;
+    n_iter only has to be past it. Adding c to every a(y) and taking it off every
+    b(x) leaves the field unchanged, so only their sum is meaningful.
     """
     S  = np.where(w, s, np.nan)
     with warnings.catch_warnings():
@@ -853,48 +718,35 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
     """Build a spatial field from the per-spaxel s map. Returns (s_hat,
     training mask).
 
-    The field has the form mu + a(y) + b(x) (see rowcol_field). It has only
-    1 + ny + nx parameters, and a(y) is shared across an entire row while
-    b(x) is shared across an entire column -- this is exactly why it can
-    extrapolate into the source region: rows that pass through the source
-    still have training spaxels far away, and the parameters are determined
-    from those, then applied to the centre of the gap.
+    s is the (ny, nx) map of per-spaxel sky-continuum coefficients from the free
+    solve, seg the segmentation (0 = blank, >0 = source) and blank the usable
+    blank spaxels. The field has the form mu + a(y) + b(x) (see rowcol_field),
+    with a(y) shared along a row and b(x) down a column, which is what lets it
+    extrapolate into the source region from training spaxels far outside it.
+
+    The rest decide which spaxels train it.
 
     Parameters
     ----------
-    s : ndarray, shape (ny, nx)
-        Sky-continuum coefficients from the per-spaxel free solve. Values in
-        the source region are not used.
-    seg : ndarray, shape (ny, nx)
-        Segmentation; 0 = blank, >0 = source.
-    blank : ndarray of bool, shape (ny, nx)
-        Usable blank spaxels (inside FoV, not source, spectrally complete,
-        s successfully solved).
     r_far : float
-        Training points must be at least this far (px) from **any** source,
-        to avoid the source PSF wings; otherwise the training points
-        themselves carry source flux. The only cost is fewer samples.
+        Training points must be this far (px) from any source, or they carry
+        source flux from its PSF wings. The only cost is fewer samples.
     r_far_haro : float or None
-        Extra exclusion radius applied only to the main source. The main
-        source's extended halo reaches much farther than the PSF wings of
-        small sources; using the same r_far would leave training points
-        inside the halo, and the model would learn the halo as sky.
-        None = no extra exclusion.
+        Extra exclusion radius for the main source alone: its extended halo
+        reaches far past the PSF wings of small sources, and training points
+        inside it would teach the model the halo as sky. None = no extra.
     clip : float
-        Spaxels with |s - median| > clip x robust spread are excluded
-        (rejects failed-fit solutions).
+        Spaxels with |s - median| > clip x robust spread are excluded, which
+        rejects failed-fit solutions.
     main_id : int or None
-        Segmentation ID of the main source. None = automatically select the
-        largest-area source (see main_source_mask).
+        Segmentation ID of the main source; None takes the largest-area source
+        (see main_source_mask).
     exclude : ndarray of bool or None
-        Additional spaxels to exclude from training (they are still sky-
-        subtracted, just not used for building the field). Purpose: mosaic
-        sub-fields with insufficient exposure depth where noise is far
-        higher than the outer ring -- using them to learn the sky writes
+        Spaxels kept out of training but still sky-subtracted -- mosaic
+        sub-fields whose exposure depth is too shallow to do anything but write
         noise into the field.
     main : ndarray of bool or None
-        Mask of the main source; when given, main_id is not used. Callers
-        typically have already computed this via main_source_group.
+        Mask of the main source; when given, main_id is not used.
     """
     train = blank & (ndimage.distance_transform_edt(seg == 0) > r_far)
     n_far = int(train.sum())
@@ -906,8 +758,7 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
         train &= ndimage.distance_transform_edt(~m) > r_far_haro
     # With no training spaxel the median below is NaN, every later comparison is
     # False, and the field comes out NaN everywhere -- a result that looks like an
-    # answer. The count after each cut is reported because which one emptied the
-    # set is what says which parameter to change.
+    # answer. Which cut emptied the set is what says which parameter to change.
     if not train.any():
         raise SystemExit(
             "★ no spaxel is left to train the s field. Survivors after each cut: "
@@ -930,9 +781,9 @@ def build_s_field(s, seg, blank, r_far, r_far_haro, clip,
 def arcsinh_stretch(img, valid=None, soft=0.02):
     """asinh stretch for display -- returns (stretched image, vmax).
 
-    Maps the dynamic range of a white-light image into a displayable
-    range: linear in the faint parts, logarithmic in the bright parts.
-    vmin is always 0; vmax = arcsinh(1 / soft).
+    Linear in the faint parts and logarithmic in the bright ones, which is what
+    fits a white-light image's dynamic range into a displayable one. vmin is
+    always 0.
     """
     m = np.isfinite(img) & (img != 0)
     v = np.nanpercentile(img[m], 99.5)
@@ -942,32 +793,14 @@ def arcsinh_stretch(img, valid=None, soft=0.02):
 
 def plot_main_group(seg, white, main_mask, main_ids, all_ids, peak,
                     out_path, title=""):
-    """Two-panel figure: before and after redshift filtering of the main
-    source group.
+    """Two-panel figure: the main source group before and after redshift
+    filtering, saved to out_path.
 
-    Left panel: every seg ID inside the adjacent blob, each in its own
-    colour and labelled with the ID number.  Right panel: only the IDs
-    that passed the redshift criterion, with the connected-component
-    boundary drawn as a dashed contour.
-
-    Parameters
-    ----------
-    seg : 2-d int array
-        Segmentation map.
-    white : 2-d float array
-        White-light image (used as background).
-    main_mask : 2-d bool array
-        Footprint of the final main source group (after filtering).
-    main_ids : list of int
-        Seg IDs kept after redshift filtering.
-    all_ids : list of int
-        Seg IDs in the adjacent blob before filtering.
-    peak : tuple (y, x)
-        Coordinates of the brightest pixel.
-    out_path : path-like
-        Where to save the figure.
-    title : str
-        Figure title (typically the pointing name).
+    Left, every seg ID in the adjacent blob (all_ids), each in its own colour and
+    labelled. Right, only the IDs that passed (main_ids), with main_mask filled
+    and the connected-component boundary drawn as a dashed contour. white is the
+    background, peak the brightest pixel as (y, x), and title is usually the
+    pointing name.
     """
     valid = white != 0
     stretched, vmax = arcsinh_stretch(white, valid)
@@ -978,7 +811,7 @@ def plot_main_group(seg, white, main_mask, main_ids, all_ids, peak,
         a.imshow(stretched, origin="lower", cmap="gray", vmin=0, vmax=vmax)
         a.set_xticks([]); a.set_yticks([])
 
-    # left: one colour per seg ID inside the adjacent blob (before filtering)
+    # left: one colour per seg ID, before filtering
     for k, i in enumerate(all_ids):
         m = seg == i
         rgba = np.zeros(m.shape + (4,))

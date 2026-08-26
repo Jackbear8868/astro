@@ -6,9 +6,7 @@ plain nested dict, with the paths resolved to absolute Paths so that callers
 never join paths themselves.
 
 Pixel ranges are written [lo, hi] and read half-open: lo <= i < hi. Either end
-may be null, which means "no bound on that side" -- writing a number there that
-is meant to be "the edge of the field" would have to be right for all 14
-pointings, and a number that is too small silently drops part of the region.
+may be null, which means "no bound on that side".
 """
 from pathlib import Path
 
@@ -19,24 +17,19 @@ ROOT = Path(__file__).resolve().parents[2]
 METHODS  = ("svd", "pca")
 APPLY_TO = ("basis", "sky_amplitude")
 # The channels the blank spaxels are solved on: every channel, or only those left
-# by step3's first sky-line mask. Checked here, because this is where the value
-# steps 5 and 6 are given comes from.
+# by step3's first sky-line mask.
 BLANK_CHANNELS = ("all", "line1")
 SECTIONS = ("input", "sky_region", "sky_line_basis", "source_fit",
             "sky_amplitude", "spaxel_fit")
 
 # How far apart the seg and white-light grids may be before the pointing is
-# refused, in pixels. The 13 pointings that pass sit at 0.000-0.020 px, so this is
-# loose by more than an order of magnitude and still catches a real mismatch.
-# Optional in the file: a pointing writes it only to raise it, and raising it is
-# a decision to run on headers that disagree.
+# refused, in pixels. Optional in the file: a pointing writes it only to raise it,
+# and raising it is a decision to run on headers that disagree.
 MAX_GRID_OFFSET = 0.1
 
 # Whether steps 1-5 leave their products on disk. The steps hand their results to
-# each other in memory, so those products are written for the reader rather than
-# for the pipeline: the evaluation scripts read them, and they are the only record
-# of what the middle of a run looked like. Hence the default. step6's products are
-# the deliverable and are written whatever this says.
+# each other in memory, so those products exist for the evaluation scripts and as the
+# only record of the middle of a run. step6's are written whatever this says.
 KEEP_INTERMEDIATE = True
 
 
@@ -72,8 +65,7 @@ def _number(v, name, ge=None, gt=None, le=None):
     Only bounds that hold whatever the data looks like belong here -- a distance
     cannot be negative, a fraction of the channels cannot exceed 1. How far apart
     two things should be, or how hard to clip, is not a question this file can
-    answer. A missing key arrives as None and fails as "not a number", which is
-    what it is.
+    answer.
     """
     if not isinstance(v, (int, float)):
         _fail(f"{name} must be a number, got {v!r}")
@@ -140,10 +132,9 @@ def load(path):
         _fail(f"source_fit.fit_window must increase, got {s['fit_window']}")
     if not isinstance(s.get("line_mask_iter"), list) or not s["line_mask_iter"]:
         _fail("source_fit.line_mask_iter must be a non-empty list of iteration numbers")
-    # Iterations are numbered from 1, and step4 reads them as line_masks[it - 1]:
-    # 0 or less indexes backwards from the end and quietly fits a different mask.
-    # There is no upper bound here -- how many iterations exist is only known once
-    # step3's masks are on disk, so step4 is where that half of it is checked.
+    # Iterations count from 1: step4 reads line_masks[it - 1], so 0 or less would
+    # index backwards from the end and quietly fit a different mask. The upper bound
+    # is step4's -- how many iterations exist is known only once step3 has run.
     for it in s["line_mask_iter"]:
         if not isinstance(it, int) or it < 1:
             _fail("source_fit.line_mask_iter: iterations are integers counting "
@@ -170,14 +161,14 @@ def load(path):
             "spaxel_fit.min_channel_coverage", ge=0, le=1)
 
     # Optional, so it is filled in here rather than required of all 14 files. It
-    # still lives only in the config: a limit raised on the command line would be
-    # a bypass that leaves no record of which pointing it was applied to.
+    # lives only in the config, so raising it leaves a record of which pointing it
+    # was applied to.
     g = cfg.setdefault("max_grid_offset", MAX_GRID_OFFSET)
     if not isinstance(g, (int, float)) or g <= 0:
         _fail(f"max_grid_offset must be a positive number, got {g!r}")
 
-    # Optional for the same reason: a config writes it only to turn it off, and
-    # turning it off is a decision to keep nothing but step6's cubes.
+    # Optional for the same reason: a config writes it only to turn it off, which
+    # is a decision to keep nothing but step6's cubes.
     k = cfg.setdefault("keep_intermediate", KEEP_INTERMEDIATE)
     if not isinstance(k, bool):
         _fail(f"keep_intermediate must be true or false, got {k!r}")

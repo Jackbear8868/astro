@@ -10,29 +10,24 @@ it, in six steps:
     fit_s_field        force the sky continuum amplitude s onto a spatial field
     subtract_sky       apply the model to every spaxel and write the subtracted cube
 
-`run_pointing` is the way in, and the only one: it is those six in the order they
-happen, driven by one pointing's config file, which is where every value they take
-comes from.
+`run_pointing` is the only way in: those six steps in order, driven by one
+pointing's config file, which is where every value they take comes from.
 
     from skymodel import run_pointing
     run_pointing("configs/p01.yaml")
 
 Each step is handed what the earlier ones returned; only the cube is opened again by
-every step that needs it. The products still go to disk, under {output}/step01 ...
-step06, because they are the interface the evaluation scripts read -- but nothing in
-the pipeline reads them back. A config may set `keep_intermediate: false` to write
-only step06's, which are the deliverable.
+every step that needs it. The products under {output}/step01 ... step06 are written
+for the evaluation scripts, and nothing in the pipeline reads them back;
+`keep_intermediate: false` writes only step06's, which are the deliverable.
 
-The four steps that fit -- sky_basis, classify_sources, fit_s_field, subtract_sky --
-hold BLAS at one thread while they work and lift the limit again when they return.
-That is what makes the products reproducible: a threaded BLAS adds a sum up in as many
-pieces as it has threads, and the last bits of the answer follow the thread count.
-Importing this package changes nothing about the threading of the process that imports
-it.
+The four fitting steps hold BLAS at one thread while they work, which is what makes
+the products reproducible: a threaded BLAS adds a sum up in as many pieces as it has
+threads, and the last bits follow the thread count. Importing this package leaves the
+threading of the importing process alone.
 """
-# The modules address each other by bare name (`from utils import ...`). Putting this
-# directory on the path first is what makes those names resolve when the package is
-# imported.
+# The modules address each other by bare name (`from utils import ...`), which needs
+# this directory on the path.
 import sys as _sys
 from pathlib import Path as _Path
 
