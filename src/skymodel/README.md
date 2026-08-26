@@ -87,7 +87,7 @@ Four of them, plus an `__init__.py` that exports `run_pointing` and `load_config
 
 | file | holds |
 |---|---|
-| `pipeline.py` | `Pipeline`, whose methods are the six steps and the segmentation check between the first two, in that order; the products they hand each other are above the class and each step's helpers below it; `run_pointing` and the command line are at the end |
+| `pipeline.py` | `Pipeline`, whose methods are the six steps and the segmentation check between the first two, in that order; the products they hand each other are above the class and each step's own helpers immediately above that step; `run_pointing` and the command line are at the end |
 | `config.py` | reads and checks a pointing config; every value the pipeline takes comes from there |
 | `utils.py` | everything the six steps share: the wavelength axis and the air-to-vacuum conversion, continuum estimation and line detection, the source templates (eigenspectra and the stellar library, read as splines), the per-spaxel solves steps 5 and 6 share, the main source group, the s-field construction, the figures the pipeline itself produces, and the one-thread BLAS limit the fitting steps run under |
 | `products.py` | reading a finished run back: where its products are, the settings recorded beside them, and the figures `evaluation/` and `experiments/` share. No step imports it |

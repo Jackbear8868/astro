@@ -27,10 +27,10 @@ step's section carrying the helpers and constants that step uses.
 The products under {output}/stepNN are written unless the config turns
 keep_intermediate off; step6's are written either way. They are the only record of
 the middle of a run, but nothing in the pipeline reads them back. Each step's full
-output goes to {output}/stepN.log, headed by the
-call that produced it, and only the lines listed in Pipeline.KEEP reach the terminal. The
-config as it was read is in {output}/config.json, because the file itself can be
-edited afterwards.
+output goes to {output}/stepN.log, headed by the call that produced it, and only
+the lines listed in Pipeline.TERMINAL_LINES reach the terminal. The config as it
+was read is in {output}/config.json, because the file itself can be edited
+afterwards.
 
 The white light is computed from the nosky cube: downstream locates the main source by
 its brightest pixel, and the sky continuum of the wsky cube lifts the whole image,
@@ -388,7 +388,7 @@ class Classification(NamedTuple):
     galaxy_z: dict            # seg ID -> galaxy-branch redshift
 
 
-class SField(NamedTuple):
+class SkyAmplitude(NamedTuple):
     """What step5 hands step6: the field, and where it was written.
 
     data is the float32 the file holds, not the float64 the fit produced: step6
@@ -403,16 +403,16 @@ class SField(NamedTuple):
 # the log a step's output goes to
 # =========================================================================
 
-class _Tee:
+class StepLog:
     """Collect a step's stdout: everything to the log, some of it to the terminal.
 
     Line-buffered because print() writes the text and the newline separately, and a
-    KEEP pattern has to be matched against a whole line. `tail` instead holds back
-    the last few non-matching lines, for a step whose summary is at the end.
+    TERMINAL_LINES pattern has to be matched against a whole line. `tail` instead
+    holds back the last few non-matching lines, for a step whose summary is at the end.
     """
 
-    def __init__(self, log, keep=None, tail=0):
-        self.log, self.keep, self.tail = log, keep, tail
+    def __init__(self, log, echo=None, tail=0):
+        self.log, self.echo, self.tail = log, echo, tail
         self.buf, self.held = "", []
         # The real terminal, captured before redirect_stdout puts this object in its
         # place; calling print() from write() would send the line straight back here.
@@ -427,7 +427,7 @@ class _Tee:
         while "\n" in self.buf:
             line, self.buf = self.buf.split("\n", 1)
             self.log.write(line + "\n")
-            if self.keep and re.search(self.keep, line):
+            if self.echo and re.search(self.echo, line):
                 self._echo(line)
             elif self.tail:
                 self.held.append(line)
@@ -472,7 +472,7 @@ class Pipeline:
     # not inside the methods defined in it.
 
     # Which lines of a step reach the terminal while it runs; the rest is in the log.
-    KEEP = {
+    TERMINAL_LINES = {
         "step3": r"spatial restriction|exclude-box|blank spaxels|svd |pca ",
         # step5's s_hat median is the one number that shows the field was estimated at
         # all; left in the log only, a field of NaN passes the terminal unremarked.
@@ -508,7 +508,7 @@ class Pipeline:
         self.source_fit = self.cfg["source_fit"]
         self.sky_amplitude = self.cfg["sky_amplitude"]
         self.spaxel_fit = self.cfg["spaxel_fit"]
-        # Named in full because run_step's own `keep` is a different thing: which
+        # Named in full because run_step's own `echo` is a different thing: which
         # of a step's output lines reach the terminal.
         self.keep_intermediate = self.cfg["keep_intermediate"]
 
@@ -530,7 +530,7 @@ class Pipeline:
 
         reg = self.cfg["sky_region"]
         print("=" * 70)
-        print(f"  pointing #{self.cfg['pointing']}  ->  {self._rel(self.out)}"
+        print(f"  pointing #{self.cfg['pointing']}  ->  {self._repo_path(self.out)}"
               f"   [{self.cfg_path.name}]")
         print(f"  sky region {reg['x']} x {reg['y']}  "
               f"{'include' if reg['include'] else 'exclude'} -> {reg['apply_to']}")
@@ -550,7 +550,7 @@ class Pipeline:
 
         print("--- [3/6] step3 sky basis")
         sky = self.run_step("step3", self.sky_basis, dict(white=white, seg=seg),
-                            keep=self.KEEP["step3"])
+                            echo=self.TERMINAL_LINES["step3"])
 
         print("--- [4/6] step4 template fitting and classification")
         # step4's result is the last mask iteration asked for: the classification
@@ -564,13 +564,13 @@ class Pipeline:
         s_field = self.run_step("step5", self.fit_s_field,
                                 dict(white=white, seg=seg, sky=sky,
                                      classification=classified),
-                                keep=self.KEEP["step5"])
+                                echo=self.TERMINAL_LINES["step5"])
 
         print("--- [6/6] step6 final sky subtraction")
         self.run_step("step6", self.subtract_sky,
                       dict(white=white, seg=seg, sky=sky,
                            classification=classified, s_field=s_field),
-                      keep=self.KEEP["step6"])
+                      echo=self.TERMINAL_LINES["step6"])
 
         free = shutil.disk_usage(ROOT).free / 1024 ** 3
         print(f"*** pointing #{self.cfg['pointing']} done in {time.time() - t0:.0f} s"
@@ -588,7 +588,7 @@ class Pipeline:
         def plain(v):
             """The config as JSON takes it: paths shortened against the root."""
             if isinstance(v, Path):
-                return str(self._rel(v))
+                return str(self._repo_path(v))
             if isinstance(v, dict):
                 return {k: plain(x) for k, x in v.items()}
             if isinstance(v, list):
@@ -599,7 +599,7 @@ class Pipeline:
             json.dumps(plain(self.cfg), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
 
-    def run_step(self, label, fn, kwargs, keep=None, tail=0):
+    def run_step(self, label, fn, kwargs, echo=None, tail=0):
         """Call one step in this process, sending its output to {output}/{label}.log.
 
         Whatever the step returns is passed back, which is how the pipeline hands
@@ -610,18 +610,19 @@ class Pipeline:
         with log_path.open("w", encoding="utf-8") as log:
             log.write(self.call_repr(fn, kwargs) + "\n\n")
             log.flush()
-            tee = _Tee(log, keep, tail)
+            step_log = StepLog(log, echo, tail)
             try:
-                with contextlib.redirect_stdout(tee):
+                with contextlib.redirect_stdout(step_log):
                     result = fn(**kwargs)
             except BaseException:
-                # The traceback goes to the log too: the terminal only ever saw the
-                # KEEP lines, so the log would otherwise end mid-step with no reason.
-                tee.close()
+                # The traceback goes to the log too: the terminal only ever saw
+                # the TERMINAL_LINES lines, so the log would otherwise end
+                # mid-step with no reason.
+                step_log.close()
                 log.write("\n" + traceback.format_exc())
                 print(f"★ {label} failed; full output in {log_path}", flush=True)
                 raise
-            tee.close()
+            step_log.close()
         return result
 
     # =========================================================================
@@ -656,7 +657,7 @@ class Pipeline:
             lo(x[0]), self.BEYOND_EDGE if x[1] is None else x[1] - 1]}
 
     @staticmethod
-    def _fit(text, value):
+    def _shorten(text, value):
         """text if it is short enough to read on one line, else what the value is."""
         if len(text) <= Pipeline.ARG_WIDTH and "\n" not in text:
             return text
@@ -664,7 +665,7 @@ class Pipeline:
         return f"<{type(value).__name__}{size}>"
 
     @staticmethod
-    def show(v):
+    def _render(v):
         """One argument of a step call, written for the head of its log.
 
         An array is written as its shape and dtype, the values themselves being in the
@@ -680,19 +681,19 @@ class Pipeline:
             except ValueError:
                 return repr(str(v))
         if isinstance(v, tuple) and hasattr(v, "_fields"):          # a step's bundle
-            inner = ", ".join(f"{f}={Pipeline.show(x)}" for f, x in zip(v._fields, v))
+            inner = ", ".join(f"{f}={Pipeline._render(x)}" for f, x in zip(v._fields, v))
             return f"{type(v).__name__}({inner})"
         if isinstance(v, dict):
-            return Pipeline._fit("{" + ", ".join(f"{Pipeline.show(k)}: {Pipeline.show(x)}"
-                                                 for k, x in v.items()) + "}", v)
+            return Pipeline._shorten("{" + ", ".join(f"{Pipeline._render(k)}: {Pipeline._render(x)}"
+                                                     for k, x in v.items()) + "}", v)
         if isinstance(v, (list, tuple)):
-            body = ", ".join(Pipeline.show(x) for x in v)
+            body = ", ".join(Pipeline._render(x) for x in v)
             if isinstance(v, tuple):
                 body = f"({body},)" if len(v) == 1 else f"({body})"
             else:
                 body = f"[{body}]"
-            return Pipeline._fit(body, v)
-        return Pipeline._fit(repr(v), v)
+            return Pipeline._shorten(body, v)
+        return Pipeline._shorten(repr(v), v)
 
     @staticmethod
     def call_repr(fn, kwargs):
@@ -701,8 +702,18 @@ class Pipeline:
         It records which products this step was handed; what the config gave it is in
         the output directory, written by record_config.
         """
-        args = ", ".join(f"{k}={Pipeline.show(v)}" for k, v in kwargs.items())
+        args = ", ".join(f"{k}={Pipeline._render(v)}" for k, v in kwargs.items())
         return f"{fn.__module__}.{fn.__qualname__}({args})"
+
+    # A path written against the repository root, so what is recorded does not
+    # depend on where the run was started from.
+    @staticmethod
+    def _repo_path(p):
+        p = Path(p)
+        try:
+            return p.resolve().relative_to(ROOT)
+        except ValueError:
+            return p
 
     # =========================================================================
     # step 1 -- white light
@@ -833,57 +844,6 @@ class Pipeline:
     # sky-subtracted cube -- classifying a spectrum that still holds the sky gives
     # output that looks entirely normal with every template and redshift wrong.
 
-    def object_spectra(self, white, seg, var_cube=None, top=20):
-        """Sum every source's spectrum over the spaxels its segmentation ID covers.
-
-        white and seg come from step1 and from the segmentation check, in memory.
-        With keep_intermediate the four summed arrays are written into `out` as well.
-
-        top sets how many rows of the SNR table are printed and changes nothing that
-        is saved. The table is there to notice a source far weaker than the rest,
-        which no saved array announces on its own.
-        """
-        cube = self.inp["nosky"]
-        out = self.out / "step02"
-        keep_intermediate = self.keep_intermediate
-
-        out = Path(out)
-        if keep_intermediate:
-            out.mkdir(parents=True, exist_ok=True)
-        print(f"spectra -> {out}   cube {Path(cube).name}")
-
-        white, seg = white.data, seg.data
-
-        valid_mask  = white != 0
-        source_mask = (seg > 0) & valid_mask
-        seg_valid   = np.where(valid_mask, seg, 0)      # outside FoV -> 0, excluded from sum
-
-        ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
-        print(f"{len(ids)} sources, {counts.sum()} source spaxels")
-
-        print(f"DATA <- {Path(cube).name}   STAT <- {Path(var_cube or cube).name}")
-        flux, var, nspax = self.sum_spectra_by_id(cube, seg_valid, ids, var_path=var_cube)
-
-        with np.errstate(invalid="ignore", divide="ignore"):
-            snr = np.nanmedian(flux / np.sqrt(var), axis=1)
-
-        order = np.argsort(snr)[::-1]
-        print(f"{'ID':>5} {'N':>7} {'sqrt(N)':>9} {'median SNR':>12}")
-        for k in order[:top]:
-            print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
-
-        if keep_intermediate:
-            np.save(out / "object_ids.npy",   ids)
-            np.save(out / "object_flux.npy",  flux)
-            np.save(out / "object_var.npy",   var)
-            np.save(out / "object_nspax.npy", nspax)
-            print("saved ->", out)
-        return SourceSpectra(ids, flux, var, nspax, out)
-
-    # =========================================================================
-    # step 2's helper
-    # =========================================================================
-
     @staticmethod
     def sum_spectra_by_id(cube_path, seg, ids, chunk=200, var_path=None):
         """Sum the spectra of all spaxels belonging to the same segmentation ID.
@@ -950,6 +910,53 @@ class Pipeline:
 
         return flux, var, nspax
 
+    def object_spectra(self, white, seg, var_cube=None, top=20):
+        """Sum every source's spectrum over the spaxels its segmentation ID covers.
+
+        white and seg come from step1 and from the segmentation check, in memory.
+        With keep_intermediate the four summed arrays are written into `out` as well.
+
+        top sets how many rows of the SNR table are printed and changes nothing that
+        is saved. The table is there to notice a source far weaker than the rest,
+        which no saved array announces on its own.
+        """
+        cube = self.inp["nosky"]
+        out = self.out / "step02"
+        keep_intermediate = self.keep_intermediate
+
+        out = Path(out)
+        if keep_intermediate:
+            out.mkdir(parents=True, exist_ok=True)
+        print(f"spectra -> {out}   cube {Path(cube).name}")
+
+        white, seg = white.data, seg.data
+
+        valid_mask  = white != 0
+        source_mask = (seg > 0) & valid_mask
+        seg_valid   = np.where(valid_mask, seg, 0)      # outside FoV -> 0, excluded from sum
+
+        ids, counts = np.unique(seg_valid[source_mask], return_counts=True)
+        print(f"{len(ids)} sources, {counts.sum()} source spaxels")
+
+        print(f"DATA <- {Path(cube).name}   STAT <- {Path(var_cube or cube).name}")
+        flux, var, nspax = self.sum_spectra_by_id(cube, seg_valid, ids, var_path=var_cube)
+
+        with np.errstate(invalid="ignore", divide="ignore"):
+            snr = np.nanmedian(flux / np.sqrt(var), axis=1)
+
+        order = np.argsort(snr)[::-1]
+        print(f"{'ID':>5} {'N':>7} {'sqrt(N)':>9} {'median SNR':>12}")
+        for k in order[:top]:
+            print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
+
+        if keep_intermediate:
+            np.save(out / "object_ids.npy",   ids)
+            np.save(out / "object_flux.npy",  flux)
+            np.save(out / "object_var.npy",   var)
+            np.save(out / "object_nspax.npy", nspax)
+            print("saved ->", out)
+        return SourceSpectra(ids, flux, var, nspax, out)
+
     # =========================================================================
     # step 3 -- the sky model
     # =========================================================================
@@ -959,6 +966,46 @@ class Pipeline:
     #
     # Output is consumed by step4's template fitting. The decomposition method for
     # the sky-line basis is interchangeable.
+
+    @staticmethod
+    def learn_sky_basis(residual, K=10, method="pca", seed=SEED, chunk=200):
+        """Learn K sky-line basis vectors from the residuals of blank spaxels.
+
+        Every method returns shape (K, nz), so the design matrix always has exactly K
+        free parameters and chi2 values from different methods are comparable.
+
+        Parameters
+        ----------
+        residual : ndarray, shape (nz, n_blank)
+        K : int
+        method : {"pca", "svd"}
+        seed : int
+            random_state for the decomposition.
+        chunk : int
+            Spaxels converted at a time; memory only.
+
+        Returns
+        -------
+        basis : ndarray, shape (K, nz)
+            K sky-line basis vectors, in the downstream coefficient order.
+        """
+        # (n_blank, nz), a block of spaxels at a time so only a block is ever float64.
+        # nan_to_num must come before the narrowing cast, never after: narrowing first
+        # would turn an infinity into a finite 3.4e38 the decomposition would fit.
+        X = np.empty((residual.shape[1], residual.shape[0]), np.float32)
+        for i in range(0, X.shape[0], chunk):
+            X[i:i+chunk] = np.nan_to_num(residual.T[i:i+chunk])
+
+        # random_state is essential, not a precaution: both TruncatedSVD and PCA default
+        # to randomized SVD, so without a fixed seed the basis changes on every run.
+        if method == "pca":
+            p = PCA(n_components=K - 1, random_state=seed).fit(X)
+            return np.vstack([p.mean_[None, :], p.components_])
+
+        if method == "svd":
+            return TruncatedSVD(n_components=K, random_state=seed).fit(X).components_
+
+        raise ValueError(f"unknown method: {method}")
 
     @blas_single_thread
     def sky_basis(self, white, seg):
@@ -1133,50 +1180,6 @@ class Pipeline:
         return SkyModel(wl, C_sky, bases, iter_line_mask)
 
     # =========================================================================
-    # step 3's helper
-    # =========================================================================
-
-    @staticmethod
-    def learn_sky_basis(residual, K=10, method="pca", seed=SEED, chunk=200):
-        """Learn K sky-line basis vectors from the residuals of blank spaxels.
-
-        Every method returns shape (K, nz), so the design matrix always has exactly K
-        free parameters and chi2 values from different methods are comparable.
-
-        Parameters
-        ----------
-        residual : ndarray, shape (nz, n_blank)
-        K : int
-        method : {"pca", "svd"}
-        seed : int
-            random_state for the decomposition.
-        chunk : int
-            Spaxels converted at a time; memory only.
-
-        Returns
-        -------
-        basis : ndarray, shape (K, nz)
-            K sky-line basis vectors, in the downstream coefficient order.
-        """
-        # (n_blank, nz), a block of spaxels at a time so only a block is ever float64.
-        # nan_to_num must come before the narrowing cast, never after: narrowing first
-        # would turn an infinity into a finite 3.4e38 the decomposition would fit.
-        X = np.empty((residual.shape[1], residual.shape[0]), np.float32)
-        for i in range(0, X.shape[0], chunk):
-            X[i:i+chunk] = np.nan_to_num(residual.T[i:i+chunk])
-
-        # random_state is essential, not a precaution: both TruncatedSVD and PCA default
-        # to randomized SVD, so without a fixed seed the basis changes on every run.
-        if method == "pca":
-            p = PCA(n_components=K - 1, random_state=seed).fit(X)
-            return np.vstack([p.mean_[None, :], p.components_])
-
-        if method == "svd":
-            return TruncatedSVD(n_components=K, random_state=seed).fit(X).components_
-
-        raise ValueError(f"unknown method: {method}")
-
-    # =========================================================================
     # step 4 -- template fitting and classification
     # =========================================================================
     #
@@ -1204,6 +1207,126 @@ class Pipeline:
     # threshold is either too loose or rejects everything. The two branch winners are
     # compared directly instead, and both star_red_chi2 and gal_red_chi2 are written
     # out, because the gap between them is what says whether the answer is firm.
+
+    @staticmethod
+    def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
+                 cumulative=True, suffix=""):
+        """The output filename. Every setting that changes the result is encoded into it,
+        so a re-run cannot quietly overwrite the previous one.
+
+        The windows and the mask iteration are in there because they decide which channels
+        enter chi2, and results from different channel sets are different scientific
+        products that have to coexist. The diagnostic scripts call this same function, so
+        a naming written out twice cannot drift into "reading the wrong file".
+        """
+        base = f"{basis}_K{K}" if sky_basis else "nobasis"
+        return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
+                f"_{star_window[0]:.0f}-{star_window[1]:.0f}"
+                f"_{gal_window[0]:.0f}-{gal_window[1]:.0f}"
+                f"_L{line_iter}{'cum' if cumulative else 'raw'}" + suffix)
+
+    @staticmethod
+    def make_suffix(spec_dir_name):
+        """The tag's suffix: whatever changes the result but is not encoded by make_tag.
+
+        A different spectrum source is a different scientific product, and one workspace
+        can hold several. The default source, step02, gets no suffix -- the suffix marks a
+        departure from the default.
+
+        _{STAR_LIBRARY}star names the stellar library, so that which library produced a
+        product is in the filename rather than only inside the file.
+        """
+        return (("" if spec_dir_name == "step02"
+                 else f"_{spec_dir_name.replace('step02', '')}")
+                + f"_{STAR_LIBRARY}star")
+
+    @staticmethod
+    def write_classification(out_dir, tag, best, ids=None, over=None,
+                             keep_intermediate=True):
+        """Reduce the fit results to the list step6 rebuilds the sources from.
+
+        Returns (path, fields): the path of classification_{tag}.npz, and the fields that
+        went into it. With keep_intermediate the file is written; the fields are returned
+        either way, because that is how step6 receives them.
+
+        The classification was already decided by the scan above and is not recomputed
+        here -- the same decision written in two places drifts apart the moment one is
+        edited, and that error is invisible in the output.
+
+        ids  keep only these seg IDs; None means every ID in the best file. Leaving a
+             source out only means step5 has no template to subtract for it.
+        over {id: z} overrides one source's redshift, for sensitivity tests only. The
+             amplitude is re-solved at that z, the template's shape changing with z.
+
+        The stellar library's name is stored alongside, because a template name alone
+        does not say which library it came from and the wrong one would rebuild the
+        source from the wrong spectrum, silently.
+        """
+        over = over or {}
+        idx  = {int(i): k for k, i in enumerate(best["id"])}
+        ids  = ids if ids else [int(i) for i in best["id"]]
+
+        rows = []
+        print(f"\n{'ID':>4}{'class':>8}{'template':>10}{'z':>10}"
+              f"{'star X2':>10}{'gal X2':>10}{'margin':>9}")
+        print("-" * 61)
+        for t in ids:
+            if t not in idx:
+                print(f"{t:>4}   source not found in best file, skipping")
+                continue
+            k = idx[t]
+            group, tpl = str(best["group"][k]), str(best["template"][k])
+            z, A = float(best["z"][k]), np.asarray(best["A"][k], float)
+            r1, r2 = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
+
+            if t in over:
+                s2 = np.load(out_dir / f"scan2_id{t}_{tag}.npz")
+                j  = int(np.argmin(np.abs(s2["z"] - over[t])))
+                group, tpl = "galaxy", str(s2["template"][j])
+                z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
+
+            a = np.full(N_SRC, np.nan)
+            a[:len(A)] = A
+            rows.append(dict(id=t, group=group, template=tpl, z=z, A=a))
+            mark = "  <- overridden" if t in over else ""
+            print(f"{t:>4}{group:>8}{tpl:>10}{z:>10.4f}{r1:>10.2f}{r2:>10.2f}"
+                  f"{max(r1, r2) / min(r1, r2):>8.2f}x{mark}")
+
+        if not rows:
+            raise SystemExit("no sources found; classification file not written")
+
+        out = out_dir / f"classification_{tag}.npz"
+        fields = dict(
+            id=np.array([r["id"] for r in rows]),
+            group=np.array([r["group"] for r in rows]),
+            template=np.array([r["template"] for r in rows]),
+            z=np.array([r["z"] for r in rows]),
+            A=np.vstack([r["A"] for r in rows]),
+            star_library=np.array(STAR_LIBRARY))
+        if keep_intermediate:
+            np.savez(out, **fields)
+        ns = sum(1 for r in rows if r["group"] == "star")
+        print(f"\n{len(rows)} sources: {ns} stars / {len(rows) - ns} galaxies")
+        print("margin = ratio of the two models' reduced chi2; closer to 1 means less classification confidence")
+        if keep_intermediate:
+            print(f"saved -> {out}")
+        return out, fields
+
+    @staticmethod
+    def _visible_cpus():
+        """How many CPUs this process is allowed to run on.
+
+        cpu_count() answers for the machine, which is the wrong number under an affinity
+        mask or inside a cpuset, and sched_getaffinity is right but Linux-only.
+        process_cpu_count() is both; the fallbacks are for interpreters predating it.
+        """
+        if hasattr(os, "process_cpu_count"):            # 3.13+
+            n = os.process_cpu_count()
+        elif hasattr(os, "sched_getaffinity"):          # Linux
+            n = len(os.sched_getaffinity(0))
+        else:
+            n = os.cpu_count()
+        return n or 1
 
     @blas_single_thread
     def classify_sources(self, sky, spectra, id="all", full_range=False,
@@ -1430,130 +1553,6 @@ class Pipeline:
         return classified
 
     # =========================================================================
-    # step 4's helpers
-    # =========================================================================
-
-    @staticmethod
-    def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
-                 cumulative=True, suffix=""):
-        """The output filename. Every setting that changes the result is encoded into it,
-        so a re-run cannot quietly overwrite the previous one.
-
-        The windows and the mask iteration are in there because they decide which channels
-        enter chi2, and results from different channel sets are different scientific
-        products that have to coexist. The diagnostic scripts call this same function, so
-        a naming written out twice cannot drift into "reading the wrong file".
-        """
-        base = f"{basis}_K{K}" if sky_basis else "nobasis"
-        return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
-                f"_{star_window[0]:.0f}-{star_window[1]:.0f}"
-                f"_{gal_window[0]:.0f}-{gal_window[1]:.0f}"
-                f"_L{line_iter}{'cum' if cumulative else 'raw'}" + suffix)
-
-    @staticmethod
-    def make_suffix(spec_dir_name):
-        """The tag's suffix: whatever changes the result but is not encoded by make_tag.
-
-        A different spectrum source is a different scientific product, and one workspace
-        can hold several. The default source, step02, gets no suffix -- the suffix marks a
-        departure from the default.
-
-        _{STAR_LIBRARY}star names the stellar library, so that which library produced a
-        product is in the filename rather than only inside the file.
-        """
-        return (("" if spec_dir_name == "step02"
-                 else f"_{spec_dir_name.replace('step02', '')}")
-                + f"_{STAR_LIBRARY}star")
-
-    @staticmethod
-    def write_classification(out_dir, tag, best, ids=None, over=None,
-                             keep_intermediate=True):
-        """Reduce the fit results to the list step6 rebuilds the sources from.
-
-        Returns (path, fields): the path of classification_{tag}.npz, and the fields that
-        went into it. With keep_intermediate the file is written; the fields are returned
-        either way, because that is how step6 receives them.
-
-        The classification was already decided by the scan above and is not recomputed
-        here -- the same decision written in two places drifts apart the moment one is
-        edited, and that error is invisible in the output.
-
-        ids  keep only these seg IDs; None means every ID in the best file. Leaving a
-             source out only means step5 has no template to subtract for it.
-        over {id: z} overrides one source's redshift, for sensitivity tests only. The
-             amplitude is re-solved at that z, the template's shape changing with z.
-
-        The stellar library's name is stored alongside, because a template name alone
-        does not say which library it came from and the wrong one would rebuild the
-        source from the wrong spectrum, silently.
-        """
-        over = over or {}
-        idx  = {int(i): k for k, i in enumerate(best["id"])}
-        ids  = ids if ids else [int(i) for i in best["id"]]
-
-        rows = []
-        print(f"\n{'ID':>4}{'class':>8}{'template':>10}{'z':>10}"
-              f"{'star X2':>10}{'gal X2':>10}{'margin':>9}")
-        print("-" * 61)
-        for t in ids:
-            if t not in idx:
-                print(f"{t:>4}   source not found in best file, skipping")
-                continue
-            k = idx[t]
-            group, tpl = str(best["group"][k]), str(best["template"][k])
-            z, A = float(best["z"][k]), np.asarray(best["A"][k], float)
-            r1, r2 = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
-
-            if t in over:
-                s2 = np.load(out_dir / f"scan2_id{t}_{tag}.npz")
-                j  = int(np.argmin(np.abs(s2["z"] - over[t])))
-                group, tpl = "galaxy", str(s2["template"][j])
-                z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
-
-            a = np.full(N_SRC, np.nan)
-            a[:len(A)] = A
-            rows.append(dict(id=t, group=group, template=tpl, z=z, A=a))
-            mark = "  <- overridden" if t in over else ""
-            print(f"{t:>4}{group:>8}{tpl:>10}{z:>10.4f}{r1:>10.2f}{r2:>10.2f}"
-                  f"{max(r1, r2) / min(r1, r2):>8.2f}x{mark}")
-
-        if not rows:
-            raise SystemExit("no sources found; classification file not written")
-
-        out = out_dir / f"classification_{tag}.npz"
-        fields = dict(
-            id=np.array([r["id"] for r in rows]),
-            group=np.array([r["group"] for r in rows]),
-            template=np.array([r["template"] for r in rows]),
-            z=np.array([r["z"] for r in rows]),
-            A=np.vstack([r["A"] for r in rows]),
-            star_library=np.array(STAR_LIBRARY))
-        if keep_intermediate:
-            np.savez(out, **fields)
-        ns = sum(1 for r in rows if r["group"] == "star")
-        print(f"\n{len(rows)} sources: {ns} stars / {len(rows) - ns} galaxies")
-        print("margin = ratio of the two models' reduced chi2; closer to 1 means less classification confidence")
-        if keep_intermediate:
-            print(f"saved -> {out}")
-        return out, fields
-
-    @staticmethod
-    def _visible_cpus():
-        """How many CPUs this process is allowed to run on.
-
-        cpu_count() answers for the machine, which is the wrong number under an affinity
-        mask or inside a cpuset, and sched_getaffinity is right but Linux-only.
-        process_cpu_count() is both; the fallbacks are for interpreters predating it.
-        """
-        if hasattr(os, "process_cpu_count"):            # 3.13+
-            n = os.process_cpu_count()
-        elif hasattr(os, "sched_getaffinity"):          # Linux
-            n = len(os.sched_getaffinity(0))
-        else:
-            n = os.cpu_count()
-        return n or 1
-
-    # =========================================================================
     # step 5 -- the sky continuum's spatial field
     # =========================================================================
     #
@@ -1709,9 +1708,9 @@ class Pipeline:
 
         meta = dict(
             step="s_field",
-            cube=str(self._rel(CUBE)), seg=str(self._rel(seg_path)),
-            sky_dir=str(self._rel(work / "step03")),
-            classification=str(self._rel(classification.path)), basis=basis, K=K,
+            cube=str(self._repo_path(CUBE)), seg=str(self._repo_path(seg_path)),
+            sky_dir=str(self._repo_path(work / "step03")),
+            classification=str(self._repo_path(classification.path)), basis=basis, K=K,
             blank_channels=blank_channels, fix_blank_s_at=fix_blank_s_at,
             min_channel_coverage=min_channel_coverage,
             sky_amplitude_params=dict(
@@ -1731,7 +1730,7 @@ class Pipeline:
             (out / "meta.json").write_text(
                 json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"saved -> {out}")
-        return SField(s_hat32, s_hat_path)
+        return SkyAmplitude(s_hat32, s_hat_path)
 
     # =========================================================================
     # step 6 -- the sky subtraction
@@ -1748,6 +1747,18 @@ class Pipeline:
     # The output is two cubes: sky_subtracted (= data - sky_model) and sky_model
     # itself. The source template term is NOT part of sky_model -- only sky is
     # subtracted; the source is preserved.
+
+    @staticmethod
+    def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
+        """Write in MUSE structure: data-less primary + DATA [+ STAT]."""
+        h = hdr_data.copy()
+        if stat is None:
+            h.pop("ERRDATA", None)
+        hdus = [fits.PrimaryHDU(header=hdr_pri),
+                fits.ImageHDU(data, h, name="DATA")]
+        if stat is not None:
+            hdus.append(fits.ImageHDU(stat, hdr_stat, name="STAT"))
+        fits.HDUList(hdus).writeto(path, overwrite=True)
 
     @blas_single_thread
     def subtract_sky(self, white, seg, sky, classification, s_field):
@@ -1875,10 +1886,10 @@ class Pipeline:
 
         meta = dict(
             step="fit_sky",
-            cube=str(self._rel(CUBE)), seg=str(self._rel(seg_path)),
-            sky_dir=str(self._rel(work / "step03")),
-            classification=str(self._rel(classification.path)), basis=basis, K=K,
-            s_field=str(self._rel(s_field.path)),
+            cube=str(self._repo_path(CUBE)), seg=str(self._repo_path(seg_path)),
+            sky_dir=str(self._repo_path(work / "step03")),
+            classification=str(self._repo_path(classification.path)), basis=basis, K=K,
+            s_field=str(self._repo_path(s_field.path)),
             blank_channels=blank_channels, min_channel_coverage=min_channel_coverage,
             n_blank=int(blank.sum()), n_source=n_src_tot,
             n_source_regions=len(rids), n_template_regions=len(templates),
@@ -1896,31 +1907,6 @@ class Pipeline:
               f"  source regions {len(rids)} ({len(rids) - n_notpl} with template)")
         print(f"saved -> {out}")
         return out
-
-    # =========================================================================
-    # steps 5 and 6's helpers
-    # =========================================================================
-
-    # Shortens a path against the repository root, for the meta.json steps 5 and 6 write.
-    @staticmethod
-    def _rel(p):
-        p = Path(p)
-        try:
-            return p.resolve().relative_to(ROOT)
-        except ValueError:
-            return p
-
-    @staticmethod
-    def write_cube(path, data, hdr_pri, hdr_data, stat=None, hdr_stat=None):
-        """Write in MUSE structure: data-less primary + DATA [+ STAT]."""
-        h = hdr_data.copy()
-        if stat is None:
-            h.pop("ERRDATA", None)
-        hdus = [fits.PrimaryHDU(header=hdr_pri),
-                fits.ImageHDU(data, h, name="DATA")]
-        if stat is not None:
-            hdus.append(fits.ImageHDU(stat, hdr_stat, name="STAT"))
-        fits.HDUList(hdus).writeto(path, overwrite=True)
 
 
 # =========================================================================

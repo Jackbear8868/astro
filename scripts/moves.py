@@ -59,7 +59,7 @@ def collect(rev=None):
     else:
         names = sorted(str(p.relative_to(ROOT)) for p in (ROOT / PKG).glob("*.py"))
 
-    # A name can be defined in more than one file -- main, _rel, ROOT were all
+    # A name can be defined in more than one file -- main and ROOT both were
     # duplicated -- and collapsing those onto one key would hide exactly the case
     # a merge is most likely to get wrong, so every definition is kept.
     found = {}
