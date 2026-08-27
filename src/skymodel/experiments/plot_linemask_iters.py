@@ -5,7 +5,7 @@
   - 遮罩是逐輪累加的嗎?(不是 —— 每輪都用原始 mean_sky 重新判定)
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
-需要 step3 存下的 sky_*_per_iteration.npy。若還沒有,重跑一次該顆的 pipeline 即可:
+需要 step3 存下的 continuum_iterations.npz。若還沒有,重跑一次該顆的 pipeline 即可:
     conda run -n astro python src/skymodel/pipeline.py configs/pNN.yaml
 
 輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
@@ -13,7 +13,7 @@
     iter{N}_unmasked.png  沒被遮掉的通道 —— 連續譜就是在這些通道上擬的
 
 --with-rejected 會多畫一輪。estimate_continuum 是先判斷停止條件才存檔,所以
-觸發停止的那一輪不在 sky_*_per_iteration.npy 裡,沒有它就看不到迭代是停在什麼
+觸發停止的那一輪不在 continuum_iterations.npz 裡,沒有它就看不到迭代是停在什麼
 狀態上。這個
 旗標從最後一輪的遮罩把它重算出來,存成 iter{N+1}_*_rejected.png,檔名和採用的
 那幾輪分開,不會蓋掉任何東西。
@@ -91,9 +91,7 @@ def main():
     W = ROOT / args.work
     STEP03 = W / "step03"
 
-    need = ["sky_continuum_per_iteration.npy",
-            "sky_line_threshold_per_iteration.npy",
-            "sky_line_mask_per_iteration.npy"]
+    need = ["continuum_iterations.npz"]
     missing = [f for f in need if not (STEP03 / f).exists()]
     if missing:
         raise SystemExit(
@@ -103,9 +101,8 @@ def main():
 
     wl = np.load(STEP03 / "wavelength.npy")
     ms = np.load(STEP03 / "blank_mean_spectrum.npy")
-    C  = np.load(STEP03 / "sky_continuum_per_iteration.npy")     # (n_iter, nz)
-    S  = np.load(STEP03 / "sky_line_threshold_per_iteration.npy")
-    M  = np.load(STEP03 / "sky_line_mask_per_iteration.npy")
+    it = np.load(STEP03 / "continuum_iterations.npz")
+    C, S, M = it["continuum"], it["threshold"], it["line_mask"]   # 各 (n_iter, nz)
     n_saved = M.shape[0]
     n_iter  = n_saved
 

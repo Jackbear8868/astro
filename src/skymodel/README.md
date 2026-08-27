@@ -21,14 +21,14 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 | 1 | `whitelight` | the ESO nosky cube | `step01/whitelight_nosky.fits` + preview |
 | — | `place_segmentation` | the segmentation it is given | `step01/segmentation_input.fits`, after checking the two share a pixel grid |
 | 2 | `source_spectra` | nosky cube, seg | `step02/source_spectra.npz` |
-| 3 | `sky_basis` | wsky cube, seg | `step03/sky_continuum.npy`, three `*_per_iteration.npy` stacks, `sky_line_basis_{method}_K{K}.npy` |
-| 4 | `classify_sources` | `step02/`, `step03/` | `step04/scan_{star,galaxy}_id*.npz`, `source_fits_*.npz`, `classification_*.npz` |
+| 3 | `sky_basis` | wsky cube, seg | `step03/sky_continuum.npy`, `continuum_iterations.npz`, `sky_line_basis_{method}_K{K}.npy` |
+| 4 | `classify_sources` | `step02/`, `step03/` | `step04/source_fits.npz`, `classification.npz`, `meta.json`, and `scans/{star,galaxy}_id*.npz` with `source_fit.keep_scans` |
 | 5 | `fit_sky_amplitude` | wsky cube, `step03/`, `step04/` | `step05/sky_continuum_amplitude_per_spaxel.npy`, `sky_continuum_amplitude_field.npy`, `main_source_group.png` |
 | 6 | `subtract_sky` | wsky cube, `step03/`–`step05/` | `step06/sky_subtracted.fits`, `sky_model.fits`, `source_template_amplitude_map.npy` |
 
 Step 3 writes no single sky-line mask: the three stacks hold the continuum, the detection
 threshold and the mask of every iteration, one row each, and steps 4 to 6 use the row
-`source_fit.line_mask_iter` names. The two scans step 4 writes per source are
+`source_fit.line_mask_iter` names. The two scans step 4 can write per source are
 its two branches, the stellar library and the galaxy eigenspectra, not two passes over
 one of them. Step 6 does not write the s it applied: wherever that has a value it is
 step 5's field to the bit, and which spaxels step 6 solved is `np.isfinite` of any
@@ -40,6 +40,28 @@ the wsky cube lifts the whole image, which makes the brightest pixel unreliable.
 
 Step 2 also runs on the nosky cube. Classifying a spectrum that still holds the sky
 produces output that looks entirely normal, with every template and redshift wrong.
+
+## What step04 holds
+
+One run, in files whose names say what they are rather than how they were fitted:
+
+    step04/
+      source_fits.npz      one row per source: class, redshift, template amplitudes,
+                           and the galaxy branch's own best redshift beside the winner's
+      classification.npz   what steps 5 and 6 read back
+      meta.json            every setting the run was made with, machine-readable
+      scans/               star_id{N}.npz and galaxy_id{N}.npz, only with keep_scans
+
+Every setting that decides a number in there -- the fit window, the redshift grid, the
+stellar library, which sky-line mask iteration was excluded -- is a key of `meta.json`,
+so a directory is read by opening one JSON file and not by parsing a file name. The
+price is that the settings no longer separate two runs written to the same place: a
+second run overwrites the first, and `output` in the config is what keeps them apart.
+
+`source_fit.line_mask_iter` is the one thing that can put several fits in one step04.
+It is a list, and with more than one entry each iteration gets `step04/mask_iter{N}/`
+holding the same files one level down, the way step5 keeps an alternative run beside
+its own. All 14 configs name a single iteration, so their step04 is flat.
 
 ## Why the products still go to disk
 
@@ -55,6 +77,11 @@ well. The writing is not how the steps communicate; it is there because:
 `keep_intermediate: false` in a config turns off everything except step 6, which
 always writes. It changes what is left on disk and nothing else; a run with it off
 produces the same step 6 as a run with it on.
+
+`source_fit.keep_scans` is the same kind of switch one level down: it decides whether
+step 4 writes each source's redshift scan as well as the row it picked out of it.
+Those scans are nearly all of what step04 weighs, and `configs/README.md` says what is
+in one and what still reads it.
 
 Peak memory is the cost of the largest single step (about 6 GB, step 6), not the sum
 of all six: what passes between steps is under 9 MB, and the cube each step opens is

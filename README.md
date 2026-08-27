@@ -113,8 +113,10 @@ results/skymodel/p01/
   step02/  source_spectra.npz: every source's summed spectrum, variance, spaxel count
   step03/  the sky continuum, the sky-line mask of every continuum iteration,
            the K basis vectors
-  step04/  the template fit: each source's class, redshift and amplitudes,
-           scanned once against the stellar library and once against the galaxies
+  step04/  source_fits.npz and classification.npz: each source's class, redshift
+           and amplitudes, scanned once against the stellar library and once
+           against the galaxies, with meta.json saying how they were fitted; the
+           scans themselves go to scans/ and only with source_fit.keep_scans
   step05/  s solved per blank spaxel, and the smooth field it is forced onto
   step06/  sky_subtracted.fits, sky_model.fits, and the per-spaxel coefficients
   stepN.log  each step's full output, headed by the call that produced it

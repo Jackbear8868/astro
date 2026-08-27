@@ -85,7 +85,7 @@ def main():
 
     seg   = fits.getdata(STEP01 / "segmentation_input.fits")
     white = fits.getdata(STEP01 / "whitelight_nosky.fits")
-    lm    = np.load(STEP03 / "sky_line_mask_per_iteration.npy")[0]
+    lm    = np.load(STEP03 / "continuum_iterations.npz")["line_mask"][0]
     C_sky = np.load(STEP03 / "sky_continuum.npy")
 
     with fits.open(WSKY, memmap=True) as h:

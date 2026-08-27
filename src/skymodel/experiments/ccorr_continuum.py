@@ -84,7 +84,7 @@ def main():
     wl    = np.load(sky_dir / "wavelength.npy")
     C_sky = np.load(sky_dir / "sky_continuum.npy")
     basis = np.load(sky_dir / f"sky_line_basis_{meta['basis']}_K{meta['K']}.npy")
-    lmask = np.load(sky_dir / "sky_line_mask_per_iteration.npy")[-1]
+    lmask = np.load(sky_dir / "continuum_iterations.npz")["line_mask"][-1]
     sky   = np.vstack([C_sky, basis])
     s_free = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     valid = white != 0

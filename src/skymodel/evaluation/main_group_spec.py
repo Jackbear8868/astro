@@ -37,7 +37,7 @@ from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, load_field  # noqa: E402
-from utils import DZ_MAX  # noqa: E402
+from utils import DZ_MAX, load_scan  # noqa: E402
 
 C_KMS = 299792.458
 
@@ -64,17 +64,18 @@ def area_keep(seg, ids, min_frac):
 def branch_best(work, sid):
     """The best solution of each of the two branches of one seg ID.
 
-    step4b stores the two branches separately: scan_star is the star (z is the radial
-    velocity), scan_galaxy is the galaxy.
+    step4 stores the two branches separately, as step04/scans_star.npz and
+    scans_galaxy.npz; on the star side z is a radial velocity.
     Returns (best star rchi2, best galaxy rchi2, best galaxy z, the galaxy's z and
     rchi2 arrays).
     """
-    f_star = sorted((work/"step04").glob(f"scan_star_id{sid}_*.npz"))
-    f_gal  = sorted((work/"step04").glob(f"scan_galaxy_id{sid}_*.npz"))
-    if not f_star or not f_gal:
+    step04 = work / "step04"
+    try:
+        d_star = load_scan(step04, "star", sid)
+        d_gal  = load_scan(step04, "galaxy", sid)
+    except SystemExit:
         return None
-    r_star = float(np.load(f_star[0], allow_pickle=True)["red_chi2"].min())
-    d_gal = np.load(f_gal[0], allow_pickle=True)
+    r_star = float(d_star["red_chi2"].min())
     z, r = d_gal["z"], d_gal["red_chi2"]
     j = int(np.argmin(r))
     return r_star, float(r[j]), float(z[j]), z, r
@@ -102,6 +103,16 @@ def main():
         # the redshift of the main source group is taken from "the member containing
         # the brightest pixel" -- the largest in area is not necessarily the core
         peak_id = int(seg[k])
+        # This table is built from the whole chi2 surface of both branches, which step4
+        # keeps only when source_fit.keep_scans is on. Without the scans every column
+        # below is empty, and an empty table is worse than none: the summary at the end
+        # still prints, as nan.
+        if not (W / "step04/scans_galaxy.npz").exists():
+            raise SystemExit(
+                f"★ {W / 'step04/scans_galaxy.npz'} does not exist. This table needs the whole "
+                "chi2 scan of each source, which step4 writes only when "
+                "source_fit.keep_scans is true in the config. Set it and re-run step4 "
+                "for this pointing.")
         b = branch_best(W, peak_id)
         if b is None:
             print(f"p{n:02d}: step04 has no scan file for id{peak_id}, skipping")

@@ -47,6 +47,7 @@ source_fit:
   num_workers: 0                        # 0 = one third of the visible CPUs, a conservative
                                         # default for a machine shared with other people;
                                         # on a machine of your own, raise it
+  keep_scans: true                      # keep every source's whole redshift scan (step04/scans_*.npz)
 
 # The spatial field the sky continuum amplitude s is forced onto, fitted to the
 # freely solved blank spaxels.

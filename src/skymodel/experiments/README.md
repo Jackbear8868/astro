@@ -19,7 +19,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 `data/wsky/DATACUBE_FINAL_N.fits`。
 
 輸出一律寫到 `results/skymodel/evaluation/` 底下,**檔名或目錄名帶 `pNN`**。
-14 顆的 step4 tag 與 step5 run 名字完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉
+14 顆用的是同一組設定,產物名字彼此完全相同,不帶 `pNN` 的話後跑的那顆會無聲蓋掉
 前一顆。唯一的例外是 `step2b_aperture.py`:它產的是**源光譜**而不是圖,寫在工作區的
 `{work}/step02b/`。目前 pipeline 沒有任何一步會去讀那個目錄 —— `run_pointing` 把
 `classify_sources` 的 `spec_dir` 一律指到 `{work}/step02`。

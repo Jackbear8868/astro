@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, pointing_dir  # noqa: E402
+from utils import load_scan  # noqa: E402
 # Imported rather than repeated: the stellar library is drawn in two places and the
 # order and colours have to agree between them, or the same template is a different
 # colour on two figures of the same talk.
@@ -37,16 +38,17 @@ C_MIN = "0.35"
 LOG_RATIO = 20.0        # span above which the shared y axis switches to log
 
 
-def scan_files(step04, sid, tag):
-    """(stars, galaxy) scan arrays for one source, either possibly None."""
+def scan_files(step04, sid):
+    """(stars, galaxy) scan arrays for one source, either possibly None.
+
+    The two branches are one file each, named after the branch: a scan is one branch,
+    and z means a radial velocity on the star side and a redshift on the galaxy side.
+    """
     def one(branch):
-        hits = sorted(step04.glob(f"scan_{branch}_id{sid}_{tag}.npz"))
-        if not hits:
+        try:
+            return load_scan(step04, branch, sid)
+        except SystemExit:
             return None
-        if len(hits) > 1:
-            raise SystemExit(f"{len(hits)} files match scan_{branch}_id{sid}_{tag}.npz; "
-                             "narrow it with --tag")
-        return np.load(hits[0])
     return one("star"), one("galaxy")
 
 
@@ -106,9 +108,10 @@ def main():
     ap = argparse.ArgumentParser(description="step4's reduced chi2 against redshift")
     ap.add_argument("--work", required=True)
     ap.add_argument("--id", default="all", help="source id, or all")
-    ap.add_argument("--tag", default="*",
-                    help="glob for the run tag in the scan filenames; with several "
-                         "runs in one step04 this picks between them")
+    ap.add_argument("--step04", default=None,
+                    help="the step4 directory to draw, e.g. "
+                         "results/skymodel/p01/step04/mask_iter2; default is the "
+                         "work directory's own step04")
     ap.add_argument("--logy", choices=["auto", "on", "off"], default="auto",
                     help="auto uses log whenever the values span more than 20x")
     ap.add_argument("--figsize", type=float, nargs=2, metavar=("W", "H"), default=(16, 6))
@@ -118,16 +121,19 @@ def main():
 
     W = ROOT / args.work
     name = Path(args.work).name
-    step04 = W / "step04"
-    fit_hits = sorted(step04.glob(f"source_fits_{args.tag}.npz"))
-    if not fit_hits:
-        raise SystemExit(f"no source_fits_{args.tag}.npz under {step04}")
-    if len(fit_hits) > 1:
-        raise SystemExit(f"{len(fit_hits)} files match source_fits_{args.tag}.npz; "
-                         "narrow it with --tag")
-    source_fits = np.load(fit_hits[0])
-    run = fit_hits[0].stem[len("source_fits_"):]
-    print(f"{name}: {fit_hits[0].name}")
+    step04 = Path(args.step04) if args.step04 else W / "step04"
+    fit_file = step04 / "source_fits.npz"
+    if not fit_file.exists():
+        raise SystemExit(f"no source_fits.npz under {step04}")
+    source_fits = np.load(fit_file)
+    # The whole chi2 curve exists only on disk, and step4 does not write it unless it
+    # is asked to, so its absence is a configuration to change and not a missing file.
+    if not (step04 / "scans_galaxy.npz").exists():
+        raise SystemExit(
+            f"no scans_*.npz under {step04} -- this figure is the redshift scans "
+            "themselves, and step4 keeps them only when source_fit.keep_scans is "
+            "true in the config; set it and rerun step4")
+    print(f"{name}: {fit_file}")
 
     ids = source_fits["id"].tolist() if args.id == "all" else [int(args.id)]
     out_dir = Path(args.out_dir) if args.out_dir else pointing_dir(name, "template_fit")
@@ -135,7 +141,7 @@ def main():
     tab10 = plt.get_cmap("tab10").colors
 
     for sid in ids:
-        d1, d2 = scan_files(step04, sid, run)
+        d1, d2 = scan_files(step04, sid)
         if d1 is None and d2 is None:
             print(f"  id {sid}: no scan files")
             continue
@@ -172,7 +178,7 @@ def main():
             pad = 0.06 * (hi - lo)
             axs.set_ylim(lo - pad, hi + pad)
 
-        out = out_dir / f"chi2_scan_id{sid}_{run}.png"
+        out = out_dir / f"chi2_scan_id{sid}.png"
         fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
         plt.close(fig)
         print(f"  id {sid:>3}  {won:<7} {tpl:<7} z={z_best:>7.4f}  "

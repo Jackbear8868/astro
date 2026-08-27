@@ -120,7 +120,7 @@ def box_mean(hdu, y0, y1, x0, x1):
         return np.nanmean(sub.reshape(sub.shape[0], -1), axis=1)
 
 
-def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None):
+def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
     """Pick the boxes by content.
 
     Returns ({name: (y0, y1, x0, x1)}, {name: note}) with the box endpoints included.
@@ -131,7 +131,7 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None
     different filename in each. The number is stable -- #1 is always the nearest -- and
     the distance survives in the note, which the figure prints.
     """
-    main, ids, peak = main_source_group(seg, white, step04, tag=tag)
+    main, ids, peak = main_source_group(seg, white, step04)
     valid = white != 0
     size  = 2 * half + 1
 
@@ -395,9 +395,10 @@ def main():
     meta = json.loads((run / "meta.json").read_text())
     # "classification" is the key; "best" is what step5 wrote before the parameter
     # was renamed, and products made then are still on disk.
-    tag  = Path(meta.get("classification") or meta["best"]).stem.removeprefix("classification_")
+    # 記的是分類檔相對倉庫根目錄的路徑,它所在的目錄就是那一次 step4。
+    step04 = ROOT / Path(meta.get("classification") or meta["best"]).parent
     boxes, notes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
-                                          args.edge, args.margin, W / "step04", tag)
+                                          args.edge, args.margin, step04)
     print(f"main source {int(main.sum()):,} px, brightest pixel (y, x) = {peak}")
     for nm, (y0, y1, x0, x1) in boxes.items():
         print(f"  {nm:<18} y {y0}-{y1}  x {x0}-{x1}   {notes.get(nm, '')}")

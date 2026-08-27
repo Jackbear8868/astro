@@ -83,7 +83,7 @@ def main():
     wl = np.load(STEP03 / "wavelength.npy")
     B  = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
     # The mask is stored per iteration; the last row is the one step3 finished with.
-    lm = np.load(STEP03 / "sky_line_mask_per_iteration.npy")[-1]
+    lm = np.load(STEP03 / "continuum_iterations.npz")["line_mask"][-1]
     K  = B.shape[0]          # not hard-coded to 10 -- step3's -K can change the count
 
     # --- diagnostic: the energy concentration exposes basis vectors wasted on bad

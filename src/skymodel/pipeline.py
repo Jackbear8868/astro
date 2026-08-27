@@ -39,6 +39,7 @@ import contextlib
 import datetime
 import hashlib
 import inspect
+import io
 import json
 import os
 import re
@@ -47,6 +48,7 @@ import subprocess
 import sys
 import time
 import traceback
+import zipfile
 from multiprocessing import Pool
 from pathlib import Path
 from typing import NamedTuple
@@ -79,16 +81,13 @@ from utils import (C_KMS, DWARF_DIR, EIGEN_GAL, STAR_LIBRARY,
 # =========================================================================
 #
 # classify_sources runs Pool(n_workers, initializer=_init_worker,
-# initargs=(_SHARED, STEP04)) and maps _scan_one over the sources, so all seven
+# initargs=(_SHARED,)) and maps _scan_one over the sources, so all six
 # names have to be reachable from a worker process. None of them can be a method: a
 # bound method is pickled together with the object it is bound to, so every worker
 # would be sent the whole Pipeline, its config and its paths with it. Under the spawn
 # start method -- the default on macOS and Windows -- a worker is a fresh interpreter
 # that holds nothing but what it was sent, which is why what crosses into one is kept
-# to these seven.
-
-# Where the scans are written; _init_worker fills it and _SHARED in inside a worker.
-STEP04 = None
+# to these six.
 
 
 # Step 6 reads this width too, for the A_map it writes.
@@ -212,24 +211,35 @@ def scan_object(flux, var, sky, jobs, lam_muse, fit, fix_s_at=None,
     return sorted(results, key=lambda r: r["chi2"])
 
 
-def _save_scan(path, results):
-    """Write a whole scan to an npz the diagnostic scripts can read directly."""
-    A = np.full((len(results), N_COMPONENTS), np.nan)
+def _pack_scan(results):
+    """One source's whole scan as a structured array, one row per candidate fit.
+
+    Structured rather than a column per key so a whole scan is one array, which is
+    what lets a worker hand it back and the parent write every source into one file.
+    The template name becomes an index into `templates`, returned alongside: a branch
+    scans a handful of templates over thousands of redshifts, so the name repeated
+    once per row is a third of what the scan would otherwise weigh.
+
+    Returns (rows, templates). `group` is not a column: a scan is one branch, so it
+    is one value for the whole file and the writer keeps it there.
+    """
+    templates = sorted({x["template"] for x in results})
+    code = {t: i for i, t in enumerate(templates)}
+    rows = np.zeros(len(results), dtype=[
+        ("z", "f8"), ("s", "f8"), ("chi2", "f8"), ("red_chi2", "f8"),
+        ("n_good", "i8"), ("src_min", "f8"),
+        ("A", "f8", N_COMPONENTS), ("template", "i1")])
     for i, x in enumerate(results):
-        A[i, :len(x["A"])] = x["A"]
-    np.savez(path, A=A,
-             group=np.array([x["group"] for x in results]),
-             template=np.array([x["template"] for x in results]),
-             z=np.array([x["z"] for x in results]),
-             s=np.array([x["s"] for x in results]),
-             chi2=np.array([x["chi2"] for x in results]),
-             red_chi2=np.array([x["red_chi2"] for x in results]),
-             n_good=np.array([x["n_good"] for x in results]),
-             src_min=np.array([x["src_min"] for x in results]))
+        rows[i]["A"] = np.nan
+        rows[i]["A"][:len(x["A"])] = x["A"]
+        for k in ("z", "s", "chi2", "red_chi2", "n_good", "src_min"):
+            rows[i][k] = x[k]
+        rows[i]["template"] = code[x["template"]]
+    return rows, templates
 
 
-def _init_worker(shared, step04):
-    """Give a worker process the two names _scan_one reads.
+def _init_worker(shared):
+    """Give a worker process the one name _scan_one reads.
 
     Only a forked worker inherits the parent's memory; passed through the initializer
     the two names arrive whichever way the worker was started.
@@ -239,8 +249,8 @@ def _init_worker(shared, step04):
     parent and return different last bits, and a worker per core would oversubscribe
     the machine.
     """
-    global _SHARED, STEP04
-    _SHARED, STEP04 = shared, step04
+    global _SHARED
+    _SHARED = shared
     threadpool_limits(limits=1)
 
 
@@ -269,17 +279,15 @@ def _scan_one(t):
                      S["fit_gal"], fix_s_at=S["fix_s_at"],
                      allow_partial=S["allow_partial"])
     if not r1 and not r2:
-        return t, None
+        return t, None, None
     # The whole scan of each branch is a product, not how the result travels: the row
     # below comes back through the Pool either way.
-    if S["keep_intermediate"]:
-        # The branch is named, not numbered: the two files carry identical keys and
-        # differ only in row count, so the name is all that tells them apart, and
-        # galaxy_redshifts reads one of them by name.
-        if r1:
-            _save_scan(STEP04 / f"scan_star_id{t}_{S['tag']}.npz", r1)
-        if r2:
-            _save_scan(STEP04 / f"scan_galaxy_id{t}_{S['tag']}.npz", r2)
+    # The scans go back to the parent rather than to disk from here: one file per
+    # branch is one writer, and a worker cannot be that. Packed first, so what crosses
+    # between processes is an array and not a list of thousands of dicts.
+    scans = None
+    if S["keep_scans"]:
+        scans = (_pack_scan(r1) if r1 else None, _pack_scan(r2) if r2 else None)
 
     # The two branch winners face each other. The scans come back sorted by chi2, so
     # [0] is each branch's best.
@@ -293,7 +301,7 @@ def _scan_one(t):
     # gal_z is the galaxy branch's own redshift, the lowest reduced chi2 over that
     # branch's whole scan, and not "z" above, which belongs to whichever branch won.
     # step5 needs the galaxy value even for a source classified as a star.
-    return t, dict(id=t, nspax=int(np.median(S["nspax"][k])),
+    return t, scans, dict(id=t, nspax=int(np.median(S["nspax"][k])),
                    star_red_chi2=r1[0]["red_chi2"] if r1 else np.nan,
                    star_tpl=r1[0]["template"] if r1 else "",
                    gal_red_chi2=r2[0]["red_chi2"] if r2 else np.nan,
@@ -333,9 +341,8 @@ class Seg(NamedTuple):
 class SourceSpectra(NamedTuple):
     """What step2 hands step4: one summed spectrum per source.
 
-    `path` is the directory the four arrays were written to. It is carried because
-    step4 encodes that directory's name into its output tag (see make_suffix), not
-    because anything reads the files back.
+    `path` is the directory the arrays were written to. It is carried so step4 can
+    record which spectra it classified, not because anything reads the file back.
     """
     ids: np.ndarray           # (n_ids,)   segmentation IDs, ascending
     flux: np.ndarray          # (n_ids, nz)
@@ -361,16 +368,15 @@ class SkyModel(NamedTuple):
 class Classification(NamedTuple):
     """What step4 hands steps 5 and 6.
 
-    data holds the fields of classification_{tag}.npz -- step6 rebuilds each source's
-    model from them. galaxy_z is the galaxy branch's best redshift for every source it
-    could fit, which step5 groups the main source by; it is not data["z"], the winning
+    data holds the fields of classification.npz -- step6 rebuilds each source's model
+    from them. galaxy_z is the galaxy branch's best redshift for every source it could
+    fit, which step5 groups the main source by; it is not data["z"], the winning
     branch's (see _scan_one).
 
-    path and tag name the product these came from: steps 5 and 6 record the path in
-    their meta.json, and step5 reads the tag to name the step4 run.
+    path names the product these came from: steps 5 and 6 record it in their meta.json,
+    which is how a script reading the products finds the step4 run they used.
     """
     path: Path
-    tag: str
     data: dict                # field name -> array, as written to the npz
     galaxy_z: dict            # seg ID -> galaxy-branch redshift
 
@@ -695,6 +701,18 @@ class Pipeline:
         """
         args = ", ".join(f"{k}={Pipeline._render(v)}" for k, v in kwargs.items())
         return f"{fn.__module__}.{fn.__qualname__}({args})"
+
+    @staticmethod
+    def _npy_bytes(a):
+        """One array as the bytes of a .npy file.
+
+        np.savez builds a zip of .npy members; writing the members one at a time is
+        the same file, arrived at without holding every array at once, which is what
+        lets a scan join the file as its worker finishes.
+        """
+        buf = io.BytesIO()
+        np.save(buf, a, allow_pickle=False)
+        return buf.getvalue()
 
     @staticmethod
     def write_meta(out, **fields):
@@ -1150,14 +1168,18 @@ class Pipeline:
             np.save(out_dir / "blank_mean_spectrum.npy", mean_sky)
             np.save(out_dir / "sky_continuum.npy",      C_sky)
             # The final continuum is kept under its own name because it is C_sky, the
-            # scientific product; the final sigma and mask are not, being the last row
-            # of the stacks below and nothing more. A second name for the same bytes is
-            # what makes "which one is authoritative" a question at all.
-            np.save(out_dir / "sky_continuum_per_iteration.npy",
-                    np.array([h[0] for h in history]))
-            np.save(out_dir / "sky_line_threshold_per_iteration.npy",
-                    np.array([h[1] for h in history]))
-            np.save(out_dir / "sky_line_mask_per_iteration.npy", iter_line_mask)
+            # scientific product; the final threshold and mask are not, being the last
+            # row of the bundle below and nothing more. A second name for the same bytes
+            # is what makes "which one is authoritative" a question at all.
+            #
+            # One bundle rather than three arrays: the three are one loop's record, they
+            # share their first axis, and separate files leave that a naming convention
+            # instead of a fact. npz reads a key at a time, so a script wanting only the
+            # mask still does not pay for the other two.
+            np.savez(out_dir / "continuum_iterations.npz",
+                     continuum=np.array([h[0] for h in history]),
+                     threshold=np.array([h[1] for h in history]),
+                     line_mask=iter_line_mask)
 
         # The same keep mask applies: blank - C_sky differs by a per-channel constant
         # only, which shifts x and its median alike, so |x - med| / sg is unchanged.
@@ -1236,44 +1258,11 @@ class Pipeline:
     # out, because the gap between them is what says whether the answer is firm.
 
     @staticmethod
-    def make_tag(basis, K, fix_s_at, window, sky_basis, line_iter,
-                 cumulative=True, suffix=""):
-        """The output filename. Every setting that changes the result is encoded into
-        it, so a re-run cannot quietly overwrite the previous one.
-
-        The window and the mask iteration are in there because they decide which
-        channels enter chi2, and different channel sets are different scientific
-        products that have to coexist. One window, not two: both branches are given the
-        same one, so a second copy could never differ from the first and would only
-        suggest that the branches were fitted on different channels.
-
-        fix_s_at goes through :g rather than str, or 0 and 0.0 -- the same run -- would
-        write two different filenames.
-        """
-        base = f"{basis}_K{K}" if sky_basis else "nobasis"
-        s = "free" if fix_s_at is None else f"{fix_s_at:g}"
-        return (f"{base}_s{s}_{window[0]:.0f}-{window[1]:.0f}"
-                f"_L{line_iter}{'cum' if cumulative else 'raw'}" + suffix)
-
-    @staticmethod
-    def make_suffix(spec_dir_name):
-        """The tag's suffix: whatever changes the result but is not encoded by make_tag.
-
-        A different spectrum source is a different scientific product, and one workspace
-        can hold several; the default source, step02, gets no suffix, so a suffix marks
-        a departure from it. _{STAR_LIBRARY}star names the stellar library, so which
-        library produced a product is in the filename and not only inside the file.
-        """
-        return (("" if spec_dir_name == "step02"
-                 else f"_{spec_dir_name.replace('step02', '')}")
-                + f"_{STAR_LIBRARY}star")
-
-    @staticmethod
-    def write_classification(out_dir, tag, best, ids=None, over=None,
+    def write_classification(out_dir, best, ids=None, over=None,
                              keep_intermediate=True):
         """Reduce the fit results to the list step6 rebuilds the sources from.
 
-        Returns (path, fields): the path of classification_{tag}.npz, and the fields
+        Returns (path, fields): the path of classification.npz, and the fields
         that went into it. With keep_intermediate the file is written; the fields are
         returned either way, because that is how step6 receives them.
 
@@ -1306,7 +1295,9 @@ class Pipeline:
             r1, r2 = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
 
             if t in over:
-                s2 = np.load(out_dir / f"scan_galaxy_id{t}_{tag}.npz")
+                # The override re-solves from the galaxy scan, so it needs one --
+                # source_fit.keep_scans has to have been on for the run being overridden.
+                s2 = np.load(out_dir / "scans" / f"galaxy_id{t}.npz")
                 j  = int(np.argmin(np.abs(s2["z"] - over[t])))
                 group, tpl = "galaxy", str(s2["template"][j])
                 z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
@@ -1321,7 +1312,7 @@ class Pipeline:
         if not rows:
             raise SystemExit("no sources found; classification file not written")
 
-        out = out_dir / f"classification_{tag}.npz"
+        out = out_dir / "classification.npz"
         fields = dict(
             id=np.array([r["id"] for r in rows]),
             group=np.array([r["group"] for r in rows]),
@@ -1361,8 +1352,10 @@ class Pipeline:
         """Fit every source of `spectra`; return the last mask iteration's classification.
 
         sky is step3's model and spectra is step2's, both in memory. With
-        keep_intermediate one source_fits_*.npz and one classification_*.npz per mask
-        iteration are written into step04, alongside each source's full scan.
+        keep_intermediate a source_fits.npz, a classification.npz and a meta.json go
+        into step04 -- into step04/mask_iter{N} when several mask iterations are asked
+        for, since each is a separate run. Every source's whole scan goes to
+        step04/scans as well, but only with source_fit.keep_scans.
         """
         s = self.source_fit
         work = self.out
@@ -1376,13 +1369,11 @@ class Pipeline:
         zmin, zmax, zstep = s["z_min"], s["z_max"], s["z_step"]
         star_dz = s["star_dz"]
         num_workers = s["num_workers"]
+        keep_scans = s["keep_scans"]
         keep_intermediate = self.keep_intermediate
 
         over = {int(k): float(v) for k, v in (x.split("=") for x in z_override)}
         work    = Path(work)
-        # A module global because that is where _scan_one reads it from inside a
-        # worker process.
-        global STEP04
         STEP04 = work / "step04"
         print(f"workspace {work}")
         if full_range:
@@ -1391,15 +1382,15 @@ class Pipeline:
         # z_override re-solves one source at a redshift taken from its galaxy scan, and
         # that scan is on disk or nowhere -- only its winning row comes back from a
         # worker.
-        if over and not keep_intermediate:
-            raise SystemExit("★ z_override reads the scan files, which "
-                             "keep_intermediate false does not write")
+        if over and not (keep_intermediate and keep_scans):
+            raise SystemExit("★ z_override re-solves from the galaxy scans, which are "
+                             "written only with keep_intermediate and "
+                             "source_fit.keep_scans both on")
         if keep_intermediate:
             STEP04.mkdir(parents=True, exist_ok=True)
 
         # Where the source spectra came from; it has to be a sky-subtracted set (see the
         # step 2 section).
-        suffix = self.make_suffix(spectra.path.name)
 
         # Row i of iter_line_mask is step3's iteration i+1, so the number of rows is the
         # number of iterations there are to ask for -- a count known only here, a config
@@ -1483,9 +1474,14 @@ class Pipeline:
         print(f"{len(targets)} object(s)   {n_workers} workers   "
               f"mask iterations {line_mask_iter}")
 
+        # gal_z is the galaxy branch's own best redshift, which is not `z` -- that
+        # belongs to whichever branch won. It is what decides which seg IDs join the
+        # main source group, and it has to be a column here: recovering it from the
+        # galaxy scan means opening a 15001-row file for one number, and the scans are
+        # not written by default.
         KEYS = ("id", "nspax", "group", "template", "z", "A", "s", "chi2",
                 "red_chi2", "n_good", "src_min", "star_red_chi2", "star_tpl",
-                "gal_red_chi2", "gal_tpl")
+                "gal_red_chi2", "gal_tpl", "gal_z")
         outs = []
         classified = None
 
@@ -1495,8 +1491,13 @@ class Pipeline:
         for it in line_mask_iter:
             line = line_masks[it - 1]
             fit_star, fit_gal = win_star & ~line, win_gal & ~line
-            tag = self.make_tag(basis, K, fix_s_at, star_window,
-                                sky_basis, it, not raw_mask, suffix)
+            # A step04 directory holds one run, and its settings are in the meta.json
+            # beside the products rather than encoded in their names. Several mask
+            # iterations are several runs, so they get a directory each; the single
+            # iteration every config asks for stays flat.
+            run_dir = STEP04 if len(line_mask_iter) == 1 else STEP04 / f"mask_iter{it}"
+            if keep_intermediate:
+                run_dir.mkdir(parents=True, exist_ok=True)
 
             print(f"\n{'=' * 112}")
             print(f"mask iter{it}{'(cumulative)' if not raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"
@@ -1512,14 +1513,35 @@ class Pipeline:
             _SHARED.update(seg_ids=seg_ids, flux=flux, var=var, nspax=nspax, sky=sky,
                            star_jobs=star_jobs, gal_jobs=gal_jobs, wl_vac=wl_vac,
                            fit_star=fit_star, fit_gal=fit_gal,
-                           tag=tag, fix_s_at=fix_s_at,
+                           fix_s_at=fix_s_at,
                            allow_partial=allow_partial,
-                           keep_intermediate=keep_intermediate)
+                           keep_scans=keep_intermediate and keep_scans)
 
             summary = []
-            with Pool(n_workers, initializer=_init_worker,
-                      initargs=(_SHARED, STEP04)) as pool:
-                for t, row in pool.imap(_scan_one, targets):
+            # One file per branch, written as the results arrive rather than collected
+            # first: a whole pointing's galaxy scans do not have to be in memory at
+            # once, and a source becomes a member of the file the moment it is done.
+            with contextlib.ExitStack() as stack:
+                scan_out = {}
+                if keep_intermediate and keep_scans:
+                    for branch in ("star", "galaxy"):
+                        f = run_dir / f"scans_{branch}.npz"
+                        scan_out[branch] = stack.enter_context(
+                            zipfile.ZipFile(f, "w", zipfile.ZIP_STORED))
+                        scan_out[branch].writestr(
+                            "group.npy", self._npy_bytes(np.array(branch)))
+                pool = stack.enter_context(Pool(n_workers, initializer=_init_worker,
+                                                initargs=(_SHARED,)))
+                for t, scans, row in pool.imap(_scan_one, targets):
+                    if scans and scan_out:
+                        for branch, packed in zip(("star", "galaxy"), scans):
+                            if packed is None:
+                                continue
+                            rows, templates = packed
+                            zf = scan_out[branch]
+                            zf.writestr(f"id{t}.npy", self._npy_bytes(rows))
+                            zf.writestr(f"id{t}_templates.npy",
+                                        self._npy_bytes(np.array(templates)))
                     if row is None:
                         print(f"{t:>5}   (all fits failed, skipping)")
                         continue
@@ -1531,9 +1553,14 @@ class Pipeline:
                           f"{row['src_min']:>10.2f}",
                           flush=True)
 
-            new = {k: np.array([x[k] for x in summary]) for k in KEYS}
+            # gal_z is None for a source the galaxy branch could not fit at all; as a
+            # column that has to be NaN, or numpy stores the whole thing as objects.
+            new = {k: np.array([np.nan if x[k] is None else x[k] for x in summary],
+                               dtype=float) if k == "gal_z"
+                      else np.array([x[k] for x in summary])
+                   for k in KEYS}
 
-            out = STEP04 / f"source_fits_{tag}.npz"
+            out = run_dir / "source_fits.npz"
             # Merge rather than overwrite: re-running a single ID should update that
             # row and nothing else.
             if keep_intermediate and out.exists():
@@ -1554,13 +1581,13 @@ class Pipeline:
             best = {k: v[o] for k, v in new.items()}
             if keep_intermediate:
                 np.savez(out, **best)
-            cls_path, fields = self.write_classification(STEP04, tag, best, ids, over,
+            cls_path, fields = self.write_classification(run_dir, best, ids, over,
                                                          keep_intermediate)
             # The galaxy branch's redshift for every source it could fit, rebuilt each
             # iteration, so what is returned belongs to the same one as cls_path.
             galaxy_z = {int(x["id"]): x["gal_z"] for x in summary
                         if x["gal_z"] is not None}
-            classified = Classification(cls_path, tag, fields, galaxy_z)
+            classified = Classification(cls_path, fields, galaxy_z)
             outs.append((it, out, summary))
 
         print(f"\n{'=' * 60}\ncross-iteration comparison")
@@ -1575,20 +1602,21 @@ class Pipeline:
                   f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
         if keep_intermediate:
             print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
-            # The tag encodes what one filename can hold; the z grid and the library
-            # decide every number in the scans and fit in neither. Without this the
-            # directory's only record of how it was fitted is 40 characters of filename.
-            self.write_meta(
-                STEP04,
-                cube=str(self._repo_path(self.inp["nosky"])),
-                seg=str(self._repo_path(self.out / "step01/segmentation_input.fits")),
-                source_fits=[o.name for _, o, _ in outs],
-                basis=basis, K=K, sky_basis=sky_basis,
-                fix_s_at=fix_s_at, fit_window=list(star_window),
-                line_mask_iter=list(line_mask_iter), cumulative=not raw_mask,
-                z_min=zmin, z_max=zmax, z_step=zstep, star_dz=star_dz,
-                star_library=STAR_LIBRARY,
-                n_sources=len(summary))
+            # Every setting the products were made with, in one machine-readable place.
+            # The filenames carry none of it -- a directory holds one run, and this is
+            # what says which run that is.
+            for it, o, summary in outs:
+                self.write_meta(
+                    o.parent,
+                    cube=str(self._repo_path(self.inp["nosky"])),
+                    seg=str(self._repo_path(self.out / "step01/segmentation_input.fits")),
+                    spectra=str(self._repo_path(spectra.path)),
+                    basis=basis, K=K, sky_basis=sky_basis,
+                    fix_s_at=fix_s_at, fit_window=list(star_window),
+                    line_mask_iter=it, cumulative=not raw_mask,
+                    z_min=zmin, z_max=zmax, z_step=zstep, star_dz=star_dz,
+                    star_library=STAR_LIBRARY, keep_scans=keep_scans,
+                    n_sources=len(summary))
         return classified
 
     # =========================================================================

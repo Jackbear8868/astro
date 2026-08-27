@@ -26,7 +26,7 @@ that one cannot do: several pointings in one command, and the numbers underneath
 which IDs were rejected, and how much of the field's flux the group holds.
 
     conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 12 5 1
-    conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 1 --tag ...
+    conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 1 --step04 ...
 """
 import argparse
 import sys
@@ -38,7 +38,7 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, pointing_dir, step04_tag  # noqa: E402
+from common import ROOT, load_field, pointing_dir, step04_dir  # noqa: E402
 from utils import DZ_MAX, main_source_group, plot_main_group  # noqa: E402
 
 
@@ -47,10 +47,10 @@ def main():
     ap.add_argument("-n", type=int, nargs="+", default=[12, 5, 1])
     ap.add_argument("--dz-max", type=float, default=DZ_MAX,
                     help="maximum redshift difference from the main source to accept a member")
-    ap.add_argument("--tag", default=None,
-                    help="name one step4 run, the part of the classification filename "
-                         "after 'classification_'; by default it is read from step5's "
-                         "meta.json, which records the run step5 itself used")
+    ap.add_argument("--step04", default=None,
+                    help="the step4 directory to take the redshifts from, e.g. "
+                         "results/skymodel/p01/step04; by default it is read from "
+                         "step5's meta.json, which records the run step5 itself used")
     ap.add_argument("--run", default=None,
                     help="a run directory under step05 to read that meta.json from")
     ap.add_argument("--out-suffix", default="",
@@ -62,8 +62,9 @@ def main():
         W = ROOT / "results/skymodel" / name
         seg, white, valid = load_field(W)
         wn = np.where(valid, white, np.nan)
-        tag = args.tag or step04_tag(W, args.run)
-        mg, ids, pk = main_source_group(seg, wn, W / "step04", args.dz_max, tag=tag)
+        step04 = (Path(args.step04) if args.step04
+                  else step04_dir(W, args.run) or W / "step04")
+        mg, ids, pk = main_source_group(seg, wn, step04, args.dz_max)
         # without a redshift only the adjacency criterion is applied -- and the blob
         # "before filtering" is exactly what the left panel is meant to show
         all_ids = main_source_group(seg, wn)[1]
@@ -78,7 +79,7 @@ def main():
         print(f"{name}: adjacent {len(all_ids)} sources -> redshift keeps "
               f"{len(ids)} {ids} -> {int(mg.sum()):,} px   source flux fraction "
               f"{100 * mf / tot:.1f}%   rejected {sorted(set(all_ids) - set(ids))}"
-              f"   tag {tag}   saved -> {out}")
+              f"   step04 {step04}   saved -> {out}")
 
 
 if __name__ == "__main__":

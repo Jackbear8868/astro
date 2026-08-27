@@ -144,14 +144,14 @@ from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
 from products import fit_dirs  # noqa: E402
 
 
-def step04_tag(W, run=None):
-    """Which step4 run this pointing's redshifts come from, or None.
+def step04_dir(W, run=None):
+    """Which step4 directory this pointing's redshifts come from, or None.
 
     A work directory can hold several step4 runs -- different windows, different
-    mask iterations -- and the redshift decides which members belong to the main
-    source, so picking one by filename order would be an invisible error.
-    utils.galaxy_redshifts refuses to guess; the answer is recorded in the step5
-    meta.json, as the name of the classification file that run was given.
+    mask iterations, one directory each -- and the redshift decides which members
+    belong to the main source, so picking one by directory order would be an
+    invisible error. The answer is recorded in the step5 meta.json, as the path of
+    the classification file that run was given.
     """
     meta = fit_dirs(W, run)[0] / "meta.json"
     if not meta.exists():
@@ -160,7 +160,9 @@ def step04_tag(W, run=None):
     # "classification" is the key; "best" is what step5 wrote before the parameter
     # was renamed, and products made then are still on disk.
     c = m.get("classification") or m.get("best")
-    return Path(c).stem.removeprefix("classification_") if c else None
+    # The path is recorded against the repository root, and a step4 directory holds
+    # one run, so the directory the classification file sits in is that run.
+    return ROOT / Path(c).parent if c else None
 
 
 def collapse(path, band, wl, seg):

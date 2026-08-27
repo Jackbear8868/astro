@@ -102,6 +102,11 @@ results/skymodel/evaluation/
 spline 自己的定義域 —— 所以畫出來的就是擬合看得到的，兩端補的常數與檔案裡填零的空
 隙都不會出現在圖上。
 
+`chi2_scan.py` 是唯一需要完整掃描曲線的一支，它讀 `pNN/step04/scans/`。那個目錄只有
+在 `configs/pNN.yaml` 的 `source_fit.keep_scans` 打開時才會寫出來，預設是 `false`；
+要畫這張圖，就把那顆的 `keep_scans` 改成 `true` 再跑一次。其餘的程式都只讀
+`step04/source_fits.npz` 與 `classification.npz`，掃描檔在不在都一樣。
+
 ## 其他
 
 `common.py` 放共用的東西：`ROOT`、`EVAL`、`pointing_dir()`、`load_field()`、`slug()`、

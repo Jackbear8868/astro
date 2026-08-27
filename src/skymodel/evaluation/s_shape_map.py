@@ -43,7 +43,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import (ROOT, S_CMAP, diverging_range, load_field,  # noqa: E402
-                    pointing_dir, step04_tag)
+                    pointing_dir, step04_dir)
 from products import fit_dirs  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
@@ -53,10 +53,10 @@ def main():
     ap.add_argument("--work", required=True, help="pointing work directory, e.g. results/skymodel/p01")
     ap.add_argument("--run", default=None,
                     help="alternative run directory under step05; default is the pipeline's own step05/step06")
-    ap.add_argument("--tag", default=None,
-                    help="name one step4 run, the part of the classification filename "
-                         "after 'classification_'; by default it is read from step5's "
-                         "meta.json, which records the run step5 itself used")
+    ap.add_argument("--step04", default=None,
+                    help="the step4 directory to take the redshifts from, e.g. "
+                         "results/skymodel/p01/step04; by default it is read from "
+                         "step5's meta.json, which records the run step5 itself used")
     ap.add_argument("--half-width", type=float, default=None,
                     help="half width of the colour scale, shared across pointings. "
                          "Each map stays centred on its own median -- the pointings sit "
@@ -71,8 +71,9 @@ def main():
     run, _ = fit_dirs(W, args.run)
 
     seg, white, valid = load_field(W)
-    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04",
-                                     tag=args.tag or step04_tag(W, args.run))
+    step04 = (Path(args.step04) if args.step04
+              else step04_dir(W, args.run) or W / "step04")
+    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), step04)
 
     per_spaxel = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     field      = np.load(run / "sky_continuum_amplitude_field.npy").astype(float)

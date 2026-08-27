@@ -200,9 +200,9 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5,
 def load_line_masks(masks, cumulative=True):
     """The per-iteration sky-line masks step3 produced; cumulative by default.
 
-    `masks` is either the stack step3 returns or the path of the per-iteration file
-    it wrote, so a script reading the products applies the same rule the pipeline
-    applied.
+    `masks` is either the stack step3 returns or the path of the
+    continuum_iterations.npz it wrote, so a script reading the products applies the
+    same rule the pipeline applied.
 
     The saved masks are non-cumulative and must stay that way: estimate_continuum
     stops when an iteration reproduces the previous mask, which a monotonically
@@ -211,7 +211,11 @@ def load_line_masks(masks, cumulative=True):
     back below threshold -- so cumulative=True applies a logical_or prefix
     accumulation. Iteration 1 is the same either way.
     """
-    m = np.load(masks) if isinstance(masks, (str, Path)) else np.asarray(masks)
+    if isinstance(masks, (str, Path)):
+        with np.load(masks) as z:
+            m = z["line_mask"]
+    else:
+        m = np.asarray(masks)
     return np.logical_or.accumulate(m, axis=0) if cumulative else m
 
 
@@ -544,38 +548,79 @@ C_KMS = 299792.458
 DZ_MAX = 0.005
 
 
-def galaxy_redshifts(step04, ids, tag=None):
+def galaxy_redshifts(step04, ids):
     """Best galaxy-branch redshift for each seg ID. Returns {id: z}.
 
-    step4 stores the two branches separately; scan2 is the galaxy branch, and the
-    classification file's z is the winning branch's -- a radial velocity for a star
-    -- so it is not used here.
+    It is the galaxy branch's own answer, not the classification file's z -- that
+    belongs to whichever branch won, and for a star it is a radial velocity.
 
-    tag names one step4 run -- the part of the classification filename after
-    "classification_". Without it, several matches are an error rather than a silent
-    pick.
+    step4 writes it as the gal_z column of source_fits.npz, so this is a column read
+    and not a scan: recovering it from the galaxy scan of each source meant opening a
+    file of many thousands of rows for one number, and those scans are not written by
+    default.
     """
+    f = Path(step04) / "source_fits.npz"
+    if not f.exists():
+        raise SystemExit(f"★ {f} not found -- step4 has not run for this pointing")
+    d = np.load(f, allow_pickle=False)
+    if "gal_z" not in d.files:
+        raise SystemExit(
+            f"★ {f} has no gal_z column, so it was written before step4 recorded the "
+            "galaxy branch's redshift. Re-run step4 for this pointing.")
+    by_id = {int(i): float(z) for i, z in zip(d["id"], d["gal_z"])}
     out = {}
     for i in ids:
-        pat = (f"scan_galaxy_id{i}_*.npz" if tag is None
-               else f"scan_galaxy_id{i}_{tag}.npz")
-        f = sorted(Path(step04).glob(pat))
-        if not f:
-            raise SystemExit(f"{pat} not found in {step04}")
-        # Several hits mean the directory holds several step4 runs, and picking by
-        # filename order would change which members belong to the main source.
-        if len(f) > 1:
-            raise SystemExit(
-                f"id{i} has {len(f)} scan2 files in {step04}:\n  "
-                + "\n  ".join(x.name for x in f)
-                + "\n  redshift must come from the same fit as --best; pass tag= to pick one.")
-        d = np.load(f[0], allow_pickle=True)
-        out[int(i)] = float(d["z"][np.argmin(d["red_chi2"])])
+        z = by_id.get(int(i))
+        if z is None:
+            raise SystemExit(f"★ seg ID {i} is not in {f}")
+        # NaN is "the galaxy branch could not fit this source at all", which is not a
+        # redshift; leaving it out is what main_source_group's criterion (2) expects.
+        if np.isfinite(z):
+            out[int(i)] = z
     return out
 
 
-def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
-                      redshifts=None):
+def load_scan(step04, branch, sid):
+    """One source's whole scan of one branch, as step4 packed it.
+
+    Returns a structured array of one row per candidate fit, with `template` given
+    back as the name rather than the index the file stores. Raises with what to turn
+    on when the file is not there, since step4 writes it only on request.
+
+    branch is "star" or "galaxy". They are separate files: a scan is one branch, and
+    the two have different row counts and different meanings for `z` -- a radial
+    velocity on the star side, a redshift on the galaxy side.
+    """
+    f = Path(step04) / f"scans_{branch}.npz"
+    if not f.exists():
+        raise SystemExit(
+            f"★ {f} not found. The scans are the whole chi2 surface of every source, "
+            "and step4 writes them only when source_fit.keep_scans is true in the "
+            "config. Set it and re-run step4 for this pointing.")
+    with np.load(f, allow_pickle=False) as z:
+        if f"id{sid}" not in z.files:
+            raise SystemExit(f"★ {f} holds no scan for seg ID {sid}")
+        rows, names = z[f"id{sid}"], z[f"id{sid}_templates"]
+    out = np.zeros(rows.shape, dtype=[(n, rows.dtype[n].str if n != "template"
+                                       else names.dtype.str,
+                                       rows.dtype[n].shape)
+                                      for n in rows.dtype.names])
+    for n in rows.dtype.names:
+        out[n] = names[rows["template"]] if n == "template" else rows[n]
+    return out
+
+
+def scan_ids(step04, branch):
+    """The seg IDs one branch's scan file holds, ascending."""
+    f = Path(step04) / f"scans_{branch}.npz"
+    if not f.exists():
+        return []
+    with np.load(f, allow_pickle=False) as z:
+        return sorted(int(k[2:]) for k in z.files
+                      if k.startswith("id") and not k.endswith("_templates"))
+
+
+def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, redshifts=None):
     """Full footprint of the main galaxy -- the connected blob containing the
     brightest pixel, keeping only members with matching redshifts.
     Returns (mask, ID list, peak coordinates).
@@ -590,9 +635,9 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
     pixel are dropped.
 
     The redshifts come either as `redshifts`, the {ID: z} mapping step4 returned, or
-    by reading step04's files, with `tag` naming one run when the directory holds
-    several. Give one or the other; with neither -- a segmentation that has not been
-    through step4 -- there are no redshifts and only criterion (1) applies.
+    by reading step04's source_fits.npz. Give one or the other; with neither -- a
+    segmentation that has not been through step4 -- there are no redshifts and only
+    criterion (1) applies.
 
     The returned mask is intersected with the blob, not `isin(seg, ids)`:
     SExtractor's CLEAN merges scattered spurious detections into the bright source's
@@ -613,10 +658,10 @@ def main_source_group(seg, white, step04=None, dz_max=DZ_MAX, tag=None,
     ids = [int(i) for i in np.unique(seg[blob & src]) if i > 0]
 
     if step04 is not None or redshifts is not None:
-        z = redshifts if redshifts is not None else galaxy_redshifts(step04, ids, tag)
-        # galaxy_redshifts stops when a member has no galaxy scan to read; a mapping
-        # handed in is held to the same standard, or a member missing from it drops
-        # out of the group without a word.
+        z = redshifts if redshifts is not None else galaxy_redshifts(step04, ids)
+        # galaxy_redshifts leaves out a member the galaxy branch could not fit; a
+        # mapping handed in is held to the same standard, or a member missing from it
+        # drops out of the group without a word.
         missing = [i for i in ids if i not in z]
         if missing:
             raise SystemExit(

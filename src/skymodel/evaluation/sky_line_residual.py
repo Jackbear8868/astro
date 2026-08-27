@@ -54,7 +54,7 @@ def main():
     C  = np.load(d / "sky_continuum.npy")
     # The threshold is stored per iteration; the last row is the one step3 finished
     # with.
-    sg = np.load(d / "sky_line_threshold_per_iteration.npy")[-1]
+    sg = np.load(d / "continuum_iterations.npz")["threshold"][-1]
     res = ms - C
 
     print(f"{args.work}: {wl.size} channels {wl.min():.1f}-{wl.max():.1f} A")

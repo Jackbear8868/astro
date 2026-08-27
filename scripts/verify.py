@@ -12,6 +12,11 @@ meta.json carries three things that follow the run rather than the result --
 `created`, `git_commit`, and paths that contain the output directory name -- so
 those are normalised before comparing. Everything else, including every array
 and every FITS plane, has to match value for value, with NaNs in the same places.
+
+Products are paired by name, so this says nothing useful across a change to what
+the products are called or where they sit: every stored name is then reported as
+missing and every new one as unexpected, whatever the values are. Such a change
+is checked by making the stored run again, not here.
 """
 import json
 import re
@@ -33,6 +38,12 @@ def same_values(a, b):
     a, b = np.asarray(a), np.asarray(b)
     if a.shape != b.shape or a.dtype.kind != b.dtype.kind:
         return False
+    if a.dtype.names:
+        # A structured array's kind is "V", so the float branch below never sees its
+        # float fields and one NaN anywhere would fail the whole array. Compared field
+        # by field each one reaches the branch that knows about NaN.
+        return (a.dtype.names == b.dtype.names
+                and all(same_values(a[n], b[n]) for n in a.dtype.names))
     if a.dtype.kind in "fc":
         na, nb = np.isnan(a), np.isnan(b)
         return np.array_equal(na, nb) and np.array_equal(a[~na], b[~nb])
@@ -42,9 +53,8 @@ def same_values(a, b):
 def normalise(obj, out_name):
     """Drop the keys that record the run, and the output path it ran into.
 
-    A recorded path names a product, so its last segment goes through the rename
-    as well; without that, every meta.json pointing at the segmentation, the
-    classification or the s field differs on the name alone.
+    A recorded path holds the output directory's name, so two runs of the same
+    pointing into different directories would differ on that alone.
     """
     if isinstance(obj, dict):
         return {k: normalise(v, out_name) for k, v in obj.items() if k not in VOLATILE}
@@ -55,9 +65,13 @@ def normalise(obj, out_name):
     return obj
 
 
-def compare_file(ref, new, out_name, fails):
-    """Append one message per difference found in this pair of files."""
-    rel = new.name                           # the name it goes by now
+def compare_file(ref, new, out_name, fails, rel):
+    """Append one message per difference found in this pair of files.
+
+    `rel` is the path the messages name the pair by, relative to the output
+    directory: a bare file name no longer identifies one product now that the
+    same name occurs in a step directory and in a subdirectory of it.
+    """
     if ref.suffix == ".npy":
         if not same_values(np.load(ref), np.load(new)):
             fails.append(f"{rel}: values differ")
@@ -93,19 +107,29 @@ def compare_file(ref, new, out_name, fails):
             fails.append(f"{rel}: bytes differ")
 
 
-def compare_dir(ref_dir, new_dir, out_name, fails):
-    """Compare one directory of the stored run against the new one, file by file."""
-    new_files = {p.name for p in new_dir.iterdir() if p.is_file()}
-    seen, n = set(), 0
-    for ref in sorted(p for p in ref_dir.iterdir() if p.is_file()):
-        seen.add(ref.name)
-        if ref.name not in new_files:
-            fails.append(f"{ref_dir.name}/{ref.name}: missing from the new run")
+def compare_dir(ref_dir, new_dir, out_name, fails, rel=""):
+    """Compare one directory of the stored run against the new one, entry by entry.
+
+    Subdirectories are walked as well. A step puts products in one when it has
+    several kinds to keep apart -- step04 its per-source scans, step05 the runs
+    kept beside the pipeline's own -- and a directory the walk stops at is a
+    directory whose contents are never compared and never reported either.
+    """
+    ref_entries = {p.name: p for p in ref_dir.iterdir()}
+    new_names = {p.name for p in new_dir.iterdir()}
+    n = 0
+    for name in sorted(ref_entries):
+        ref, r = ref_entries[name], rel + name
+        if name not in new_names:
+            fails.append(f"{r}: missing from the new run")
             continue
-        compare_file(ref, new_dir / ref.name, out_name, fails)
-        n += 1
-    for name in sorted(new_files - seen):
-        fails.append(f"{ref_dir.name}/{name}: new run wrote a file the reference has not")
+        if ref.is_dir():
+            n += compare_dir(ref, new_dir / name, out_name, fails, r + "/")
+        else:
+            compare_file(ref, new_dir / name, out_name, fails, r)
+            n += 1
+    for name in sorted(new_names - set(ref_entries)):
+        fails.append(f"{rel}{name}: the new run has it, the reference has not")
     return n
 
 
@@ -147,16 +171,12 @@ def main(argv):
     for p in pointings:
         new_dir = ROOT / "results/_verify" / p if compare_only else run(p)
         ref_root = reference(p)
-        fails, n = [], 0
-        for d in sorted(x.name for x in ref_root.iterdir() if x.is_dir()):
-            if not (new_dir / d).is_dir():
-                fails.append(f"{d}/: the new run did not create it")
-                continue
-            n += compare_dir(ref_root / d, new_dir / d, p, fails)
-        # The top of the output directory too, or a file appearing there -- a run
-        # record, a summary -- would never be compared. Logs are excluded: they
-        # carry the time and the path the run used.
-        n += compare_dir(ref_root, new_dir, p, fails)
+        fails = []
+        # From the top of the output directory, not from each step directory in
+        # turn: a file appearing there -- a run record, a summary -- would
+        # otherwise never be compared. Logs are excluded: they carry the time and
+        # the path the run used.
+        n = compare_dir(ref_root, new_dir, p, fails)
         print(f"  {p}: {n} files compared -> "
               + ("all identical" if not fails else f"{len(fails)} DIFFERENCES"))
         for f in fails[:40]:

@@ -31,6 +31,12 @@ MAX_GRID_OFFSET = 0.1
 # says. Optional in the file: a config writes it only to turn it off.
 KEEP_INTERMEDIATE = True
 
+# Whether step4 keeps the whole chi2 surface it scanned, one file per branch holding
+# every source. Optional in the file: a config writes it only to turn the scans off,
+# which is a decision to keep no record of what was searched -- what step5 and step6
+# need is in source_fits.npz either way.
+KEEP_SCANS = True
+
 
 def _fail(msg):
     raise SystemExit(f"★ config: {msg}")
@@ -137,6 +143,10 @@ def load(path):
         if not isinstance(it, int) or it < 1:
             _fail("source_fit.line_mask_iter: iterations are integers counting "
                   f"from 1, got {it!r}")
+    # Optional: a config writes it only to turn the scans off.
+    s.setdefault("keep_scans", KEEP_SCANS)
+    if not isinstance(s["keep_scans"], bool):
+        _fail(f"source_fit.keep_scans must be true or false, got {s['keep_scans']!r}")
 
     a = cfg["sky_amplitude"]
     _number(a.get("min_source_distance"),

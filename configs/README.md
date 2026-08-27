@@ -60,3 +60,25 @@ These boxes are read off the pseudo-r isophotes of each pointing by eye, not
 derived from a rule, so they are not something to recompute.
 `src/skymodel/experiments/sky_region_visual.py` redraws the figures they are
 read from.
+
+## source_fit.keep_scans
+
+Step 4 scans a redshift grid for every source twice, once against the stellar
+library and once against the galaxy eigenspectra, and writes the winning row of
+each scan into `step04/source_fits.npz`. `keep_scans` decides whether the scans
+themselves are written too, one file per source and branch:
+
+    step04/scans/star_id7.npz
+    step04/scans/galaxy_id7.npz
+
+A scan is the surface the winner was picked out of -- the reduced chi2 of that
+branch at every redshift of the grid, so it is as long as the grid is. Steps 5
+and 6 take what they need from the columns of `source_fits.npz`, the galaxy
+branch's redshift included, and the one program left that opens a scan is
+`src/skymodel/evaluation/chi2_scan.py`, which draws the curve for a single
+source.
+
+Hence the default of false. The galaxy branch's scans alone are about 96% of the
+bytes step4 writes, and they are kept for a diagnostic figure that is drawn for
+one source at a time. Turn them on for the pointing whose scan you want to look
+at, and the rest of the run is unchanged.
