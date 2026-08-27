@@ -1,117 +1,151 @@
-# SExtractor 偵測參數參考(本專案遮罩流程)
+# SExtractor detection parameters (this project's masking workflow)
 
-> 本專案的源偵測/遮罩流程:**SExtractor 對白光影像偵測**(教授工作流)。
-> 工作夾:`src/skymodel/SExtractor/`(用法見其 README);下游:`src/skymodel/pipeline.py` —— step3 用它界定 blank,step5 與 step6 用它界定源區。
+> How this project detects sources and builds its mask: **SExtractor run on the white light
+> image**, which is the workflow the project was handed rather than one worked out here.
+> Working directory: `src/skymodel/SExtractor/` (its README covers running it); downstream:
+> `src/skymodel/pipeline.py` — step3 uses the result to decide what counts as blank, and
+> step5 and step6 use it to decide what counts as source.
 >
-> **分工**:
-> - 這份文件 = 各偵測參數的**通用物理意義**與「如何從任一 cube 的資料/header 推出參考值」。
-> - Haro11 這批資料「為什麼這樣設」的物理推理,見
->   [`docs/segmentation-parameters-explained.md`](./segmentation-parameters-explained.md)。
-> - 核心原則見 [`CLAUDE.md`](../CLAUDE.md) Principle 2 與「Operational Checklist」表。
+> **Division of labour**:
+> - This document = the **general physical meaning** of each detection parameter, and how to
+>   derive a reference value for it from any cube's data or header.
+> - The physical reasoning behind "why the Haro11 data is set up this way" is in
+>   [`docs/archive/segmentation-parameters-explained.md`](./archive/segmentation-parameters-explained.md).
+> - The core principles are [`CLAUDE.md`](../CLAUDE.md) Principle 2 and its "Operational
+>   Checklist" table.
 >
-> **基線與參考值的位階(Principle 2)**:`default.sex` 是**教授提供的權威基線,原封使用**;
-> 任何參數想試不同值,用命令列覆寫(例:`-DETECT_THRESH 2.0`),覆寫屬於實驗。
-> 本文的「自推參考值」欄**僅供理解物理意義與討論之用,不是對基線的糾正**。
+> **How the baseline and the reference values rank (Principle 2)**: `default.sex` is
+> **the authoritative baseline the project was given, and it is used exactly as it came**;
+> trying a different value for any parameter means overriding it on the command line
+> (for example `-DETECT_THRESH 2.0`), and an override of that kind is an experiment.
+> The "self-derived reference" column below is **there to explain the physics and to give a
+> discussion something to stand on, not to correct the baseline**.
 
 ---
 
-## 1. 偵測參數與物理意義
+## 1. The detection parameters and what they mean physically
 
-背景估計原理(SExtractor `BACK_*` 家族):把影像切成 `BACK_SIZE` 的方格,每格 sigma-clip
-排掉源後估當地背景與 RMS,再以 `BACK_FILTERSIZE` 格的中值濾波平滑格點、內插回每像素。
-**它會自動排源估雜訊**,所以估出的 RMS 是「乾淨天空」的 σ——這正是偵測門檻該用的 σ
-(若不排源、直接對整張含源影像估 σ,σ 會被源拉高、門檻跟著失真)。
+How the background is estimated (SExtractor's `BACK_*` family): the image is cut into square
+cells of side `BACK_SIZE`; inside each cell the sources are sigma-clipped away and the local
+background and RMS are estimated from what remains; the grid of cell values is then smoothed
+with a median filter `BACK_FILTERSIZE` cells wide and interpolated back onto every pixel.
+**The sources are rejected automatically before the noise is measured**, so the RMS that comes
+out is the σ of clean sky — which is exactly the σ a detection threshold should be measured
+against. (Estimate σ over the whole image with the sources still in it and the sources pull σ
+up, which distorts the threshold along with it.)
 
-| 關鍵字 | 物理意義 | 基線(`default.sex`) | 調大 / 調小的效果 | 自推參考值(討論用) |
+| keyword | physical meaning | baseline (`default.sex`) | effect of raising / lowering it | self-derived reference (for discussion) |
 |---|---|---|---|---|
-| `DETECT_THRESH` | 偵測門檻,單位 = 背景 RMS 的倍數(σ);像素要超過 `thresh × σ` 才參與偵測 | **1.0** | 高→只抓亮源、漏暗源;低→抓到更暗但假陽性增(見 §3) | 2σ(假陽性 2.3%) |
-| `DETECT_MINAREA` | 一個偵測至少要有幾個相連超門檻像素才算源 | **10** | 高→濾掉小雜點但可能漏小源;低→撿到雜訊碎點 | ≈1 個 PSF 面積 = π(FWHM/2)² ≈ 13 px |
-| `FILTER` / `FILTER_NAME` | 偵測前的平滑核(matched filter,見 §2);`default.conv` = 高斯 FWHM≈2 px | **Y / default.conv** | 核寬大→壓雜訊、利暗延展源,但糊小結構;核寬小→保細節但壓噪不足 | 高斯 FWHM ≈ seeing ≈ 4 px |
-| `BACK_SIZE` | 背景方格邊長(px) | **64** | 大→背景平滑、不吃延展源,對背景梯度反應鈍;**小→把大於格子的延展源當背景減掉**(見 §4) | > 最大要保留的物件(暈 Ø≈226 → ≥256 或全域) |
-| `BACK_FILTERSIZE` | 背景格點中值濾波視窗(格) | **3** | 大→壓掉被亮源污染的格點,背景更糊 | 3(標準) |
-| `DEBLEND_NTHRESH` | deblend 在 [門檻,峰值] 間切幾層找子峰 | **32** | 多→更能分開靠近的源 | 32(標準) |
-| `DEBLEND_MINCONT` | 子峰占母源通量的最小比例才算獨立源;1.0 = 關閉 deblend | **0.005** | 高→傾向不拆;低→積極拆 | 0.005(標準) |
-| `CLEAN` / `CLEAN_PARAM` | 清除亮源翼/雜訊造成的假偵測 | **Y / 1.0** | 大→清得更兇 | 預設 |
+| `DETECT_THRESH` | detection threshold, in units of the background RMS (σ); a pixel takes part in a detection only if it exceeds `thresh × σ` | **1.5** | high → only bright sources, faint ones missed; low → reaches fainter, but false positives rise (see §3) | 2σ (2.3% false positives) |
+| `DETECT_MINAREA` | how many connected above-threshold pixels a detection needs before it counts as a source | **10** | high → filters out small noise specks but can miss small sources; low → picks up noise fragments | ≈1 PSF area = π(FWHM/2)² ≈ 13 px |
+| `FILTER` / `FILTER_NAME` | the smoothing kernel applied before detection (matched filter, see §2); `default.conv` = Gaussian with FWHM≈2 px | **Y / default.conv** | wide kernel → suppresses noise and favours faint extended sources, but blurs small structure; narrow kernel → keeps detail but does not suppress enough noise | Gaussian FWHM ≈ seeing ≈ 4 px |
+| `BACK_SIZE` | side length of a background cell (px) | **64** | large → smooth background that does not eat extended sources, but responds sluggishly to background gradients; **small → an extended source larger than the cell is estimated as background and subtracted away** (see §4) | > the largest object to be kept (halo Ø≈226 → ≥256, or global) |
+| `BACK_FILTERSIZE` | width of the median filter over the background cells (in cells) | **3** | large → suppresses cells contaminated by a bright source, at the cost of a blurrier background | 3 (standard) |
+| `DEBLEND_NTHRESH` | how many levels deblending cuts between [threshold, peak] while looking for sub-peaks | **64** | more → better at separating sources that lie close together | 32 (standard) |
+| `DEBLEND_MINCONT` | the smallest fraction of the parent source's flux a sub-peak must hold to count as an independent source; 1.0 = deblending off | **0.0005** | high → inclined not to split; low → splits aggressively | 0.005 (standard) |
+| `CLEAN` / `CLEAN_PARAM` | removes spurious detections caused by the wings of bright sources and by noise | **Y / 1.0** | large → cleans more aggressively | the default |
 
-事後膨脹(遮罩安全邊界)不屬 SExtractor 本體,由下游以 `scipy.ndimage.binary_dilation` 做;
-參考尺度 ≈ 1×seeing(≈4 px)。
-
----
-
-## 2. matched filter:為何核 FWHM ≈ seeing(與對延展暈的限制)
-
-- **原理**:偵測「已知形狀的訊號 + 白雜訊」時,S/N 最大化的濾波器就是**與訊號同形狀的核**
-  (matched filter 定理)。天文點源被大氣糊成 PSF,故點源偵測的最佳核 ≈ **PSF(高斯,FWHM = seeing)**。
-- **為何是 seeing 這個尺度**:seeing FWHM 是影像裡「真實結構的最小尺度」——比它更細的變化不可能是
-  真天體。在這個尺度平滑,最大程度壓雜訊、又不糊掉任何真結構。核太小壓噪不足;核太大糊掉位置與形狀。
-- **對延展暈的限制**:matched filter 對**點源**最佳;Haro11 的 Hα 暈是延展、低表面亮度結構,尺度遠大於
-  seeing。核 = seeing 能把暈的每像素 S/N 抬高,但**不是大尺度結構的嚴格最佳核**。抓暗暈的正解是
-  「matched filter 抬 S/N + 夠大的背景框(§4)」,而不是把門檻壓到雜訊以下(§3)。
+Dilating the mask afterwards, as a safety margin, is not part of SExtractor itself: downstream
+code does it with `scipy.ndimage.binary_dilation`, at a reference scale of ≈ 1×seeing (≈4 px).
 
 ---
 
-## 3. 門檻的統計意義
+## 2. The matched filter: why the kernel FWHM ≈ seeing, and its limit on the extended halo
 
-門檻對應「純雜訊像素被誤判成源」的假陽性率(高斯單尾):
+- **The principle**: when what is being detected is a signal of known shape sitting in white
+  noise, the filter that maximises S/N is **a kernel of the same shape as the signal**
+  (the matched-filter theorem). An astronomical point source is smeared by the atmosphere into
+  the PSF, so the best kernel for point-source detection is ≈ the **PSF (a Gaussian with
+  FWHM = seeing)**.
+- **Why that particular scale**: the seeing FWHM is the smallest scale at which real structure
+  can exist in the image — variation finer than that cannot be a real object. Smoothing at that
+  scale suppresses as much noise as possible while blurring away no real structure. Too small a
+  kernel does not suppress enough noise; too large a kernel blurs position and shape.
+- **The limit on the extended halo**: a matched filter is optimal for **point sources**;
+  Haro11's Hα halo is extended, low surface brightness structure on a scale far larger than the
+  seeing. A kernel of one seeing does raise the halo's per-pixel S/N, but it is **not the
+  strictly optimal kernel for large-scale structure**. The right way to catch a faint halo is
+  "raise S/N with the matched filter, plus a large enough background box (§4)", not to push the
+  threshold down below the noise (§3).
 
-| 門檻 | 純雜訊超過的機率 |
+---
+
+## 3. What a threshold means statistically
+
+A threshold corresponds to a false positive rate — the chance a pure-noise pixel is mistaken
+for a source (Gaussian, one-tailed):
+
+| threshold | chance pure noise exceeds it |
 |---|---|
 | 0.75σ | ≈ 23% |
 | 1σ | ≈ 16% |
 | 1.5σ | ≈ 6.7% |
-| 2σ | ≈ 2.3%(天文常用 2–5σ) |
+| 2σ | ≈ 2.3% (2–5σ is the usual astronomical range) |
 
-低門檻換到更暗的偵測極限,代價是假陽性;對「抓暗延展暈」而言,降門檻不是首選槓桿——
-先用 matched filter 抬 S/N、配足夠大的背景框,才是既定做法(§2、§4)。
-現行基線 1.0σ 與雙向門檻實驗(1σ/2σ)是**教授指定、探索中的工作值**;本表僅提供統計背景,
-不構成對工作值的評判。
-
----
-
-## 4. `BACK_SIZE` 的失敗模式:背景框必須大於要保留的物件
-
-- **失敗模式**:`BACK_SIZE` 若**小於**延展物件,背景方格整個泡在物件裡,會把**物件本身當成背景**
-  估出來並減掉 → 物件消失、**無論門檻多低都偵測不到**。
-- **規則**:`BACK_SIZE` 要大於你想保留的最大天體直徑;巨大延展暈就用全域背景或 `≥ 物件直徑`。
-  Haro11 暈 Ø≈226 px → 參考值 256(此點與 CLAUDE.md 檢查表一致,基線 64 與參考值的差異
-  屬檢查表既載的「與教授討論」事項)。
+A low threshold buys a fainter detection limit and pays for it in false positives. For catching
+a faint extended halo, lowering the threshold is not the first lever to reach for — raising S/N
+with the matched filter and pairing it with a large enough background box is the established
+approach (§2, §4). The current 1.5σ baseline and the two-threshold experiment (1σ/2σ) are
+**working values the project was given and is still exploring**; this table only supplies the
+statistical background, and passes no judgement on those working values.
 
 ---
 
-## 5. 逐檔推導配方(任一新 cube 如何從 header/資料推出參考值)
+## 4. How `BACK_SIZE` fails: the background box must be larger than the object being kept
 
-| 參數 | 由什麼推 | 公式 | Haro11 值 |
+- **The failure mode**: if `BACK_SIZE` is **smaller** than an extended object, the background
+  cells sit entirely inside the object, so the **object itself is estimated as background** and
+  subtracted → the object disappears, and **no threshold, however low, will detect it**.
+- **The rule**: `BACK_SIZE` must be larger than the diameter of the largest object you want to
+  keep; for a huge extended halo, use a global background or `≥ the object diameter`.
+  Haro11's halo is Ø≈226 px → reference value 256. (This agrees with the CLAUDE.md checklist,
+  and the difference between the baseline 64 and the reference value is one of the items that
+  checklist already files as a question for discussion.)
+
+---
+
+## 5. Deriving values file by file (how to get reference values for any new cube from its header and data)
+
+| parameter | derived from | formula | value for Haro11 |
 |---|---|---|---|
-| pixel scale | header `CD1_1` | `√(CD1_1²+CD2_1²)×3600`(deg→arcsec) | 0.20″/px |
-| seeing FWHM(px) | **實測 cube 內星點 PSF**(見下) | `median(2.3548·√(a·b))` over 星點 | **≈4.06 px ≈ 0.81″** |
-| 平滑核 FWHM | = seeing FWHM | — | ≈4 px |
-| 偵測門檻 | 統計標準(§3) | — | 2σ(參考) |
-| MINAREA | 1 個 PSF 面積 | `π(FWHM/2)²` | ≈13 px |
-| 膨脹(下游) | 1×seeing | `round(FWHM)` | ≈4 px |
-| BACK_SIZE | > 最大物件(§4) | 取 ≥ 物件直徑的 2 的次方 | 256(或全域) |
+| pixel scale | header `CD1_1` | `√(CD1_1²+CD2_1²)×3600` (deg→arcsec) | 0.20″/px |
+| seeing FWHM (px) | **the PSF of stars measured in the cube itself** (see below) | `median(2.3548·√(a·b))` over the stars | **≈4.06 px ≈ 0.81″** |
+| smoothing kernel FWHM | = seeing FWHM | — | ≈4 px |
+| detection threshold | the statistical standard (§3) | — | 2σ (reference) |
+| MINAREA | the area of 1 PSF | `π(FWHM/2)²` | ≈13 px |
+| dilation (downstream) | 1×seeing | `round(FWHM)` | ≈4 px |
+| BACK_SIZE | > the largest object (§4) | take the power of 2 that is ≥ the object diameter | 256 (or global) |
 
-**seeing 怎麼來(優先序)**:
+**Where the seeing comes from, in order of preference**:
 
-1. **首選——直接從 cube 內的星點量 PSF FWHM**:做去發射線的連續譜白光影像,抽源後對每源以
-   二階矩算 `FWHM = 2.3548·√(a·b)`,只留緊緻(FWHM<8 px)、圓(b/a>0.6)、夠亮的星,取中位數。
-   本批 Haro11 實測 **≈4.06 px = 0.81″**(10 顆星,16–84% 範圍 3.58–4.77 px)。
-2. **無星可用時的退路——header 代理**:`ESO OCS SGS AG FWHMX/Y MED`(自動導星)≈0.89″≈4.4 px、
-   `ESO TEL AMBI FWHM`(DIMM)≈0.94–0.96″≈4.7 px;與實測一致指向 ≈4 px。
-3. ⚠️ **不可盲用**:`ESO QC EXPCOMB FWHM MEDIAN` 在本批資料(`Haro11_nosky.fits`、
-   `Haro11_NEpointing_esonosky.fits`)**= 0.0(未填)**,直接讀會得到 0-px 核;
-   `ESO OCS SGS FWHM *` 同樣為 0.0。任何自動讀取都要加 `fwhm > 0` 的防呆。
+1. **First choice — measure the PSF FWHM directly from stars in the cube**: build a continuum
+   white light image with the emission lines removed, extract the sources, and for each one
+   compute `FWHM = 2.3548·√(a·b)` from its second moments; keep only stars that are compact
+   (FWHM < 8 px), round (b/a > 0.6) and bright enough, and take the median. Measured on this
+   Haro11 data: **≈4.06 px = 0.81″** (10 stars, 16–84% range 3.58–4.77 px).
+2. **Fallback when no star is usable — header proxies**: `ESO OCS SGS AG FWHMX/Y MED`
+   (autoguider) ≈0.89″≈4.4 px, and `ESO TEL AMBI FWHM` (DIMM) ≈0.94–0.96″≈4.7 px; both agree
+   with the measurement in pointing to ≈4 px.
+3. ⚠️ **Not to be used blindly**: `ESO QC EXPCOMB FWHM MEDIAN` is **0.0 (unpopulated)** in this
+   data (`Haro11_nosky.fits`, `Haro11_NEpointing_esonosky.fits`), so reading it straight gives a
+   0-px kernel; `ESO OCS SGS FWHM *` is likewise 0.0. Any automatic read needs a `fwhm > 0`
+   guard.
 
 ---
 
-## 6. 交叉引用與參考文獻
+## 6. Cross-references and bibliography
 
-- [`docs/segmentation-parameters-explained.md`](./segmentation-parameters-explained.md) — Haro11 這批資料的參數物理推理。
-- [`CLAUDE.md`](../CLAUDE.md) — Principle 2 與 Operational Checklist(參數位階:教授基線 > 自推參考)。
-- `src/skymodel/SExtractor/` — 現行工作夾(`default.sex` 基線、det 影像重壓公式、批次腳本)。
+- [`docs/archive/segmentation-parameters-explained.md`](./archive/segmentation-parameters-explained.md) — the
+  physical reasoning behind the parameters for this Haro11 data.
+- [`CLAUDE.md`](../CLAUDE.md) — Principle 2 and the Operational Checklist (how parameters rank:
+  the baseline the project was given outranks a self-derived reference).
+- `src/skymodel/SExtractor/` — the current working directory (`default.sex` baseline, the det
+  image rescaling formula, the batch script).
 
-**權威來源**:
+**Authoritative sources**:
 
 - Bertin, E. & Arnouts, S. (1996). *SExtractor: Software for source extraction.* A&AS, 117, 393–404.
-  doi:10.1051/aas:1996164 —— 原始演算法(背景、分割、deblend、CLEAN)。
-- SExtractor 參數手冊:https://sextractor.readthedocs.io/ 。
-- 舊版文件(sep 完整 API 對照,sep 流程已不用)存於 git 歷史(`docs/sep-sextractor-parameters.md`)。
+  doi:10.1051/aas:1996164 — the original algorithm (background, segmentation, deblending, CLEAN).
+- The SExtractor parameter manual: https://sextractor.readthedocs.io/ .
+- The older document (the full sep API comparison; the sep workflow is no longer used) is kept
+  in git history (`docs/sep-sextractor-parameters.md`).

@@ -1,44 +1,54 @@
-# 已經測過並否決的做法
+# Approaches that were tested and rejected
 
-這一節記的是**試過、量過、決定不做**的事。留在這裡是為了不要再被重新提出來一次。
+What is recorded here is what was **tried, measured, and decided against**. It is kept so that
+none of it gets proposed a second time.
 
 ---
 
-## 排除靠近小源的 blank 格（原 `step3 --r-far-src`）
+## Excluding blank spaxels close to a small source (formerly `step3 --r-far-src`)
 
-**做過什麼**：學天空的 blank 樣本，排除離「主源以外的源」15 px 以內的格。
-在 p01、p04、p08 上端到端跑完（step3 + step5），兩面都量。
+**What was done**: in the blank sample the sky is learned from, exclude every spaxel within
+15 px of a source other than the main one. It was run end to end on p01, p04 and p08
+(step3 + step5), with both sides measured.
 
-**量到什麼**：
+**What came out**:
 
-| | 遠場散布 | 遠場零點 | 源保留（`main 3-10`） |
+| | far-field scatter | far-field zero point | source preservation (`main 3-10`) |
 |---|---|---|---|
 | p01 | −5~7% | −0.033 → −0.057 | 0.761 → 0.765 |
 | p04 | +6~20% | +0.022 → +0.018 | 0.622 → 0.628 |
 | p08 | −8~9% | +0.027 → +0.028 | 0.645 → 0.689 |
 
-它砍掉學天空範圍的 30–48%，換到的差異卻全部在小數點第三位。逐環的平均光譜上，
-開與不開兩條線在整個 4600–9350 Å 幾乎完全重疊（當時用 `evaluation/zone_spectra.py`
-量的，那支腳本與整套環判準已於 2026-08-18 刪除），
-而同一張圖上 ESO 與我們的差距是 10 倍以上。
+It cuts 30–48% out of the region the sky is learned from, and every difference it buys sits in
+the third decimal place. In the mean spectrum of each ring, the two curves — with the option on
+and with it off — overlap almost exactly across the whole of 4600–9350 Å (measured at the time
+with `evaluation/zone_spectra.py`; that script and the whole ring criterion were deleted on
+2026-08-18), while on the same figure the gap between ESO's result and ours is more than a
+factor of 10.
 
-**為什麼否決**：效果小於量測精度，三顆的方向又不一致，無法判斷是機制還是雜訊。
-p04 的遠場只有 1,204 格（另兩顆的 1/5），它的散布估計本身就不可靠。
+**Why it was rejected**: the effect is smaller than the measurement precision, and the three
+pointings do not even agree on its direction, so there is no way to tell a real mechanism from
+noise. p04's far field holds only 1,204 spaxels — 1/5 of what the other two have — which makes
+its scatter estimate unreliable in the first place.
 
-**留下的不對稱**：`step5 --sf-r-far 15` 仍然開著 —— s 空間場只用離源 15 px 以外的
-格訓練，天空 basis 沒有這個保護。兩者針對同一個顧慮，現在只做了一半。要重開這個
-題目的話，該問的是這個不對稱該不該存在，不是這個旗標該不該回來。
+**The asymmetry it leaves behind**: `step5 --sf-r-far 15` is still switched on — the spatial s
+field trains only on spaxels more than 15 px away from a source, while the sky basis has no
+such protection. The two address the same worry, and only half of it is now done. Reopening
+this subject means asking whether that asymmetry ought to exist, not whether this flag ought to
+come back.
 
 ---
 
-## 三個長期追蹤的問題（2026-08-18 結案）
+## Three long-running questions (closed 2026-08-18)
 
-這三題原本記在這個檔案裡當作開放問題，使用者已經決定不再追。留下標題與結論，
-是為了說明「它們為什麼不在待辦清單上」，不是要重開。
+These three used to sit in this file as open questions, and the decision has been taken not to
+pursue them any further. The headings and the conclusions stay to explain why they are not on
+the to-do list, not to reopen them.
 
-**SExtractor 的 DETECT_THRESH 該用多少** —— 不再自己跑門檻實驗，實際流程改用教授
-交付的 segmentation。
+**What DETECT_THRESH should be for SExtractor** — no more running our own threshold
+experiments; the working pipeline uses the segmentation the project was given instead.
 
-**遠場殘差是光子雜訊的 1.7–2.2 倍** —— 判定為非問題。
+**The far-field residual is 1.7–2.2× the photon noise** — judged not to be a problem.
 
-**源模板振幅的加法偏差（約 −0.044）** —— 現行做法已足夠，不再追機制。
+**The additive bias in the source template amplitude (about −0.044)** — the current approach is
+good enough, and the mechanism is not being chased any further.

@@ -1,36 +1,56 @@
-> **封存中,不是現行的規格。**
-> 這份文件定義的是評估 ZAP 扣天空的五個指標。M1 做完了,M2/M3/M5 只有規格沒有實作,
-> M4 當初就標著暫緩。目前專案的主線是 sky reconstruction(`src/skymodel/`),不是 ZAP
-> 對照;要恢復比較時再回來看這份。
+> **Archived. This is not the current specification.**
+> What this document defines is the five metrics for evaluating ZAP's sky subtraction.
+> M1 was built; M2, M3 and M5 have a specification and no implementation; M4 was marked
+> deferred from the start. The project's main line is sky reconstruction
+> (`src/skymodel/`), not a comparison against ZAP -- come back to this document if that
+> comparison is ever resumed.
 >
-> **恢復前必須知道:它依據的 ZAP 產物已經不在磁碟上了。**
-> 第 3 節指名的 `results/zap/cubes/{target}_maskfrom-{masksrc}/{zap,sky,var}.fits`
-> 四個全視場 run 已刪除。遮罩(`results/zap/masks/`)與輸入 cube 都還在,所以可以用
-> `src/zap/zap.py` 重跑,一個 run 約 65 分鐘、記憶體峰值 43.7 GB。
+> **Before resuming it, you have to know that the ZAP products it rests on are no longer
+> on disk.** The four full-field runs named in section 3,
+> `results/zap/cubes/{target}_maskfrom-{masksrc}/{zap,sky,var}.fits`, have been deleted.
+> The masks (`results/zap/masks/`) and the input cubes are both still there, so a run can
+> be redone with `src/zap/zap.py`: about 65 minutes and a peak of 43.7 GB per run. ZAP
+> cubes for the NE pointing are a separate matter and are still on disk.
+>
+> **Three more things would have to be settled before any of this could be run again.**
+> Section 3 multiplies the STAT noise floor by 1.5, and M2's pass line is built on that
+> factor; the project now takes STAT at face value, with an ideal chi of 1, and treats
+> any such correction as an open question rather than a settled one -- so that pass line
+> would have to be decided before it means anything. M4 states in bold that it does not
+> use STAT at all, for the same reason M2 scales it, and the document never reconciles
+> the two. And the code it names has moved on: `eval_common.py` no longer exists (the
+> nearest surviving code is `src/zap/eval_spectrum.py`), and none of
+> `HALPHA_LINE_WINDOW`, `HALPHA_FLUX_CONTINUUM` or `halpha_narrowband_image` -- which
+> M3's equivalent width and M5's narrow-band image both depend on -- exists in the tree.
 
-# Metric Spec — ZAP 扣天空評估指標（Haro11 / MUSE）
+# Metric Spec — evaluation metrics for ZAP sky subtraction (Haro11 / MUSE)
 
-本檔是評估指標的**規格**。每個指標一經定案即以最終形式寫入；本檔不保留草稿、前後比較或待選項。
+This file is the **specification** of the evaluation metrics. Each metric is written down
+in its final form as soon as it is settled; the file keeps no drafts, no before-and-after
+comparisons and no shortlists of options.
 
 ---
 
-## 1. 評估原則
+## 1. Evaluation principle
 
-扣天空的評估必須同時證明兩件事，缺一不可：
+Evaluating a sky subtraction has to prove two things at once, and neither one on its own
+will do:
 
-- **Removal**：天空被乾淨扣除。
-- **Preservation**：源沒有被過度扣除吃掉。
+- **Removal**: the sky has been cleanly subtracted.
+- **Preservation**: the source has not been eaten away by over-subtraction.
 
-只看殘餘不足以判斷：過度扣除會**同時**壓平殘餘與削掉源訊號，因此每一個 removal 指標都必須有對應的 preservation 指標並列。
+Looking at the residual alone is not enough to decide: over-subtraction flattens the
+residual **and** cuts into the source signal at the same time, so every removal metric
+has to be shown beside the preservation metric that corresponds to it.
 
 ---
 
-## 2. 參考文獻
+## 2. References
 
-| 代號 | 文獻 | arXiv |
+| Key | Reference | arXiv |
 |---|---|---|
 | ZAP | Soto et al. 2016, MNRAS 458, 3210 | 1602.08037 |
-| W20 | Weilbacher et al. 2020, A&A 641, A28（MUSE pipeline） | 2006.08638 |
+| W20 | Weilbacher et al. 2020, A&A 641, A28 (MUSE pipeline) | 2006.08638 |
 | Wis16 | Wisotzki et al. 2016, A&A 587, A98 | 1509.05143 |
 | Lec17 | Leclercq et al. 2017, A&A 608, A8 | 1710.10271 |
 | WH05 | Wild & Hewett 2005, MNRAS | astro-ph/0501460 |
@@ -38,205 +58,341 @@
 
 ---
 
-## 3. 資料與對照基準
+## 3. Data and the baseline to compare against
 
-- **原始 cube**（唯讀）：`data/Haro11_{nosky,wsky}.fits`，含 `DATA` + `STAT`（STAT = 逐 voxel 變異，MUSE pipeline 傳播的）。
-- **ZAP 產物**：`results/zap/cubes/{target}_maskfrom-{masksrc}/{zap,sky,var}.fits`（`zap` 的 STAT 為原始照抄，未重算）。
-- **對照基準（真值）**：`nosky` raw = MUSE 官方扣天空的結果。
-- **天空線**（removal 用，與源無關）：[OI] 5577.339 Å、[OI] 6300.304 Å、OH 帶（W20 zoom 在 OH 7-3 帶 ~8760 Å）。
-- **源線**（preservation 用，Haro11 觀測系 z=0.0206）：Hα 6698 Å、[NII] 6683 / 6719 Å。
-- **STAT 校正因子**：MUSE 的 STAT 低估孔徑量的真實雜訊，measured/expected ≈ **1.5**（範圍 1.2–2.5），因 cube 重取樣造成鄰近像素相關性（Wis16 §3.2.5）。凡以 √STAT 當雜訊底，均乘 1.5。
+- **Raw cubes** (read-only): `data/Haro11_{nosky,wsky}.fits`, holding `DATA` + `STAT`
+  (STAT = the per-voxel variance, as propagated by the MUSE pipeline).
+- **ZAP products**: `results/zap/cubes/{target}_maskfrom-{masksrc}/{zap,sky,var}.fits`
+  (the STAT of `zap` is copied over from the raw cube unchanged, not recomputed).
+- **The baseline to compare against (the truth)**: `nosky` raw, which is the result of
+  the official MUSE sky subtraction.
+- **Sky lines** (used for removal; they have nothing to do with the source):
+  [OI] 5577.339 Å, [OI] 6300.304 Å, and the OH bands (the W20 zoom is on the OH 7-3 band
+  at ~8760 Å).
+- **Source lines** (used for preservation; observed frame, with Haro11 at z=0.0206):
+  Hα 6698 Å, [NII] 6683 / 6719 Å.
+- **STAT correction factor**: the MUSE STAT underestimates the true noise of an aperture
+  measurement, measured/expected ≈ **1.5** (the range is 1.2–2.5), because resampling the
+  cube correlates neighbouring pixels (Wis16 §3.2.5). Wherever √STAT is used as the noise
+  floor, it is multiplied by 1.5.
 
 ---
 
-## 4. 指標
+## 4. Metrics
 
-### M1 — Sky-subtraction residuals（殘餘天空譜）
+### M1 — Sky-subtraction residuals (the residual sky spectrum)
 
-**量**：空白（無源）spaxel 扣天空後的殘餘 flux，逐波長，對波長。
+**Quantity**: the residual flux left in blank (source-free) spaxels after sky
+subtraction, wavelength by wavelength, plotted against wavelength.
 
-**物理意義**：空白區扣天空後應只剩雜訊、逼近 0。殘餘偏離 0 表示天空未扣淨；殘餘轉**負**表示過度扣除。
+**Physical meaning**: once the sky is subtracted, a blank region should hold nothing but
+noise and should approach 0. A residual that departs from 0 says the sky was not fully
+removed; a residual that turns **negative** says it was over-subtracted.
 
-**blank 的定義 = valid & ~source**：只取遮罩外（非源）**且**在視場（FoV）內的 spaxel。FoV 外的 spaxel 在 raw cube 是 NaN、但 ZAP 會填成有限值（≈0），必須以 valid（raw 全波長 nansum≠0）排除，否則約 2.8 萬個邊緣 spaxel 會把統計往 0 拉偏。**用全部 valid blank（不取樣）**，逐波長對 spaxel 收斂成一個值 → 一條殘餘光譜（比取樣更精準、可重現）。
+**The definition of blank is valid & ~source**: take only the spaxels that are outside
+the mask (that is, not a source) **and** inside the field of view (FoV). Outside the FoV
+a spaxel is NaN in the raw cube, but ZAP fills it with a finite value (≈0), so it has to
+be excluded by a validity test (nansum over all wavelengths of the raw cube ≠ 0);
+otherwise about 28,000 edge spaxels pull the statistics towards 0. **Use every valid
+blank spaxel, without sampling**, and collapse over the spaxels at each wavelength into a
+single value → one residual spectrum, which is both more precise than sampling and
+reproducible.
 
-**統計量**：MUSE 慣例用 **median**（W20，對離群穩健）；ZAP 慣例 **mean 與 median 各畫一張**（mean 是 Soto 原文統計量，但在大遮罩上被離群 spaxel 主導、天空線處尖刺；median 乾淨）。
+**Statistic**: the MUSE convention is the **median** (W20; robust against outliers). The
+ZAP convention is **one figure each for the mean and the median** (the mean is the
+statistic of Soto's paper, but over a large mask it is dominated by outlying spaxels and
+spikes at the sky lines, while the median stays clean).
 
-**輸出兩種慣例的圖**，畫同一個量，各只疊該慣例的判準（不交叉）：
+**Produce a figure in each of the two conventions**, both drawing the same quantity, each
+overlaid only with the criteria of its own convention and not the other's:
 
-#### 圖 A — MUSE 慣例（依 W20 Fig 15）
-- x 軸：波長 [Å]；另附 5577 與 OH 帶（~8760 Å）的 zoom 子圖。
-- y 軸：殘餘 flux [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹]，**linear、以 0 為中心、共用 ±5 尺度**。
-- 曲線：`{target}+ZAP`（median）、`nosky` raw（MUSE 標準，對照）。
-- 判準帶：原始天空（`wsky` raw 的 mean）的 **±1%（黑）/ ±5% / ±10%** 包絡。
-- 及格：連續譜殘餘落在 **±1%** 內、強天空線以外落在 **±5%** 內（目標 2%）。
+#### Figure A — the MUSE convention (after W20 Fig 15)
+- x axis: wavelength [Å], with zoom insets on 5577 and on the OH band (~8760 Å).
+- y axis: residual flux [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹], **linear, centred on 0, on a shared ±5
+  scale**.
+- Curves: `{target}+ZAP` (median) and `nosky` raw (the MUSE standard, for comparison).
+- Criterion bands: envelopes at **±1% (black) / ±5% / ±10%** of the original sky (the
+  mean of `wsky` raw).
+- Pass: the continuum residual falls inside **±1%**, and away from the strong sky lines
+  the residual falls inside **±5%** (the target is 2%).
 
-#### 圖 B — ZAP 慣例（依 ZAP Fig 1）
-- 版面：**兩 panel** —— 左 `Standard processing (MUSE pipeline) = nosky raw`、右 `ZAP = {target}+ZAP`（＝ Soto Fig 1「標準 vs ZAP」對照）。
-- x 軸：波長 [Å]。
-- y 軸：**雙軸** —— 左軸殘餘 flux、右軸原始天空 flux（灰線，`wsky` raw）。
-- **無誤差帶**：ZAP Fig 1 與 W20 Fig 15 皆未畫任何雜訊/Poisson 帶；圖上的灰線是**原始天空譜本身**，非誤差包絡。
-- 及格：殘餘遠小於右軸天空、且不轉負（不過扣）。
+#### Figure B — the ZAP convention (after ZAP Fig 1)
+- Layout: **two panels** -- on the left `Standard processing (MUSE pipeline) = nosky raw`,
+  on the right `ZAP = {target}+ZAP`. This is the "standard vs ZAP" comparison of Soto
+  Fig 1.
+- x axis: wavelength [Å].
+- y axis: **twin axes** -- residual flux on the left axis, the original sky flux on the
+  right (a grey line, `wsky` raw).
+- **No error band**: neither ZAP Fig 1 nor W20 Fig 15 draws any noise or Poisson band;
+  the grey line on the figure is **the original sky spectrum itself**, not an error
+  envelope.
+- Pass: the residual is far below the sky on the right axis, and it does not turn
+  negative (no over-subtraction).
 
-**尺度規定**：殘餘一律 **linear**（殘餘有正負號，log/symlog 無法顯示負值，會遮蔽過度扣除）；y 軸**固定範圍**（不自動縮放，四個 run 可直接互比）：MUSE 圖 ±5、ZAP-mean 圖 ±40、ZAP-median 圖 ±8、右軸天空 0–1500。log 僅用於畫**原始天空譜本身**（恆正、跨數量級）。
+**Scale rules**: residuals are always **linear**, because a residual is signed and log or
+symlog cannot show a negative value, which would hide over-subtraction. The y axis has a
+**fixed range**, never autoscaled, so that the four runs can be compared against each
+other directly: ±5 on the MUSE figure, ±40 on the ZAP-mean figure, ±8 on the ZAP-median
+figure, and 0–1500 on the right-hand sky axis. Log is used only for drawing **the
+original sky spectrum itself**, which is always positive and spans orders of magnitude.
 
-**計算**（`eval_common.py`，結果快取 `results/zap/blankstats/`）：對所有 valid blank，逐波長取 mean 與 median。
-- 殘餘譜 = `zap` cube；標準/真值譜 = `nosky` raw；原始天空譜 = `wsky` raw（＝該視場的天空，% 包絡基準對所有 run 一致，不因 target 退化）。
-- valid 由 raw(mask 來源 cube) 全波長 nansum≠0 決定。
-- （不再用 `blanks.npz` 的 `(by,bx)` 取樣；`blanks.npz` 只保留亮源座標 `(sy,sx)` 供 M3。）
+**Computation** (`eval_common.py`, with the results cached in `results/zap/blankstats/`):
+take the mean and the median over all valid blank spaxels, wavelength by wavelength.
+- The residual spectrum is the `zap` cube; the standard, or truth, spectrum is `nosky`
+  raw; the original sky spectrum is `wsky` raw -- that is, the sky of this field, which
+  keeps the baseline of the % envelopes the same for every run rather than letting it
+  degrade with the target.
+- Validity is decided by nansum ≠ 0 over all wavelengths of the raw cube the mask came
+  from.
+- (The `(by,bx)` sample in `blanks.npz` is no longer used; `blanks.npz` now keeps only the
+  bright-source coordinates `(sy,sx)`, for M3.)
 
-**命名**（run 由資料夾承擔，檔名帶指標+慣例）：
+**Naming** (the folder carries the run, the file name carries the metric and the
+convention):
 - `results/zap/cubes/{target}_maskfrom-{masksrc}/fig_M1_muse.png`
-- `.../fig_M1_zap_mean.png`、`.../fig_M1_zap_median.png`
+- `.../fig_M1_zap_mean.png` and `.../fig_M1_zap_median.png`
 
-**範圍**：每個 run 各自出圖（四個 run 皆可）。
+**Scope**: a figure of its own for each run; all four runs can be drawn.
 
 ---
 
-### M2 — Noise spectrum（雜訊譜）
+### M2 — Noise spectrum
 
-**量**：空白 spaxel 殘餘的**散布（robust rms）**，逐波長，對波長。抓 M1（中位/偏移）看不到的失敗：ZAP 灌入或吸走雜訊。
+**Quantity**: the **scatter (robust rms)** of the residual in the blank spaxels,
+wavelength by wavelength, against wavelength. It catches the failure that M1, being a
+median and so an offset, cannot see: ZAP pouring noise in or drawing it out.
 
-**物理意義**：扣天空不應改變雜訊；殘餘散布應落在統計雜訊底。
-- rms ≈ 底 → 理想（只剩統計雜訊）。
-- rms > 底 → 欠扣（殘留天空結構）。
-- rms < 底（尤其強天空線波長）→ 過度扣除 / 去噪，源訊號被吸走（ZAP §5）。這是 preservation 警訊，只有看散布才抓得到。
+**Physical meaning**: subtracting the sky should not change the noise; the scatter of the
+residual should sit at the statistical noise floor.
+- rms ≈ floor → ideal, nothing but statistical noise is left.
+- rms > floor → under-subtraction, with sky structure left behind.
+- rms < floor, and especially so at the wavelengths of the strong sky lines →
+  over-subtraction or denoising, with source signal drawn out (ZAP §5). This is a
+  preservation warning, and only looking at the scatter catches it.
 
-**對照對象**：`{target}` raw（扣前） vs `{target}+ZAP`（扣後）。
+**Compared against**: `{target}` raw (before subtraction) vs `{target}+ZAP` (after).
 
-**依 WH05 Fig 4** 複製（唯一畫 rms-vs-波長且扣前/後對照的圖；SDSS 光纖，概念移到 MUSE 空白 spaxel。ZAP 與 W20 皆無此圖）。**兩個堆疊 panel**：
+Reproduces **WH05 Fig 4** (the only figure that plots rms against wavelength with a
+before/after comparison; it is SDSS fibres, and the idea is carried over to MUSE blank
+spaxels. Neither ZAP nor W20 has such a figure). **Two stacked panels**:
 
-#### 上 panel
-- x 軸：波長 [Å]（MUSE 全段 4750–9350），linear。
-- y 軸：robust rms [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹]，linear。
-- 曲線：`{target}` raw、`{target}+ZAP`。
+#### Upper panel
+- x axis: wavelength [Å], the full MUSE range 4750–9350, linear.
+- y axis: robust rms [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹], linear.
+- Curves: `{target}` raw and `{target}+ZAP`.
 
-#### 下 panel
-- x 軸：同上。
-- y 軸：rms ÷ (√STAT × 1.5)，無因次，linear。
-- 及格：**≈ 1 且平坦**。> 1 = 欠扣（殘留 OH 凸起）；< 1 = 過扣（凹陷、去噪）。
+#### Lower panel
+- x axis: as above.
+- y axis: rms ÷ (√STAT × 1.5), dimensionless, linear.
+- Pass: **≈ 1 and flat**. Above 1 is under-subtraction, with OH bumps left behind; below 1
+  is over-subtraction, showing as troughs, or denoising.
 
-**rms 定義**（WH05 §2.2.1 robust）：每波長取空白 spaxel 的 `|flux − median|` 的 **67 百分位**（≈ 1σ，對離群穩健）。
+**The definition of rms** (the robust one of WH05 §2.2.1): at each wavelength take the
+**67th percentile** of `|flux − median|` over the blank spaxels (≈ 1σ, and robust against
+outliers).
 
-**尺度規定**：rms 恆正，y 用 **linear**（照 WH05）。
+**Scale rules**: rms is always positive, so y is **linear**, following WH05.
 
-**計算**：對所有 valid blank（＝ valid & ~source，同 M1，用 `eval_common`）。
-- rms_raw(λ) = 67pct( |`{target}` raw − median| ) across blanks。
-- rms_zap(λ) = 67pct( |`{target}+ZAP` − median| ) across blanks。
-- 雜訊底(λ) = √( `{target}` STAT 在 blanks 的逐波長 median ) × 1.5。
-- 下 panel = rms_raw / 底、rms_zap / 底。
+**Computation**: over all valid blank spaxels (= valid & ~source, as in M1, using
+`eval_common`).
+- rms_raw(λ) = 67pct( |`{target}` raw − median| ) across blanks.
+- rms_zap(λ) = 67pct( |`{target}+ZAP` − median| ) across blanks.
+- noise floor(λ) = √( the per-wavelength median of the `{target}` STAT over the blanks )
+  × 1.5.
+- Lower panel = rms_raw / floor and rms_zap / floor.
 
-**命名**（照 M1）：
-- 檔案：`results/zap/cubes/{target}_maskfrom-{masksrc}/fig_noise-spectrum.png`。
-- 標題（兩行）：主 `Noise spectrum`；副（小字）`target = {target} · mask from {masksrc}`。
+**Naming** (as for M1):
+- File: `results/zap/cubes/{target}_maskfrom-{masksrc}/fig_noise-spectrum.png`.
+- Title, in two lines: `Noise spectrum` as the main line, and
+  `target = {target} · mask from {masksrc}` as the subtitle, in small type.
 
-**範圍**：先做單一 run。
+**Scope**: a single run to begin with.
 
-**依據**：WH05 Fig 4（astro-ph/0501460）；雜訊底概念 ZAP Fig 1、SP10；STAT×1.5 見 §3。
+**Basis**: WH05 Fig 4 (astro-ph/0501460); the idea of a noise floor comes from ZAP Fig 1
+and SP10; the STAT×1.5 factor is in §3.
 
-### M3 — Source Hα fidelity（源亮核保真）
+### M3 — Source Hα fidelity (fidelity of the source's bright core)
 
-**量**：源亮核的 **1″ 孔徑積分光譜**，扣天空前後疊放；並量 Hα 線強度（EW）是否保留。測**亮核**（延展/faint 由 M4 負責）。
+**Quantity**: the **spectrum integrated over a 1″ aperture** on the source's bright core,
+drawn before and after sky subtraction on the same axes, together with a measurement of
+whether the strength of the Hα line (its EW) is preserved. This measures the **bright
+core**; the extended, faint emission is M4's business.
 
-**物理意義**：扣天空不應吃掉源的發射線。`{target}+ZAP` 的光譜應貼合真值；Hα EW 應 ≈ 真值。EW 明顯 < 真值 = 源被過度扣除。
+**Physical meaning**: subtracting the sky should not eat the source's emission lines. The
+spectrum of `{target}+ZAP` should lie on top of the truth, and the Hα EW should be ≈ the
+truth. An EW clearly below the truth means the source has been over-subtracted.
 
-**對照對象**：`nosky` raw（MUSE 真值） vs `{target}+ZAP` vs 原始天空（僅 `wsky` 有）。
+**Compared against**: `nosky` raw (the MUSE truth) vs `{target}+ZAP` vs the original sky
+(which only `wsky` has).
 
-**依 ZAP Fig 6 複製**（源保真的公認圖；原圖是 5 源 gallery，我們只有一個星系 → 一個孔徑）：
-- 版面：單一光譜 panel。
-- x 軸：波長 [Å]，**全段 4750–9350，無 zoom**，linear。
-- y 軸：flux [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹]，linear。
-- 孔徑：**1″ 直徑圓**（半徑 2.5 px），置於最亮點 (237, 315) = Haro11 亮核。
-- 曲線：`nosky` raw、`{target}+ZAP`、原始天空（僅 `wsky`）。
+**Reproduces ZAP Fig 6** (the accepted figure for source fidelity; the original is a
+gallery of 5 sources, and we have a single galaxy → a single aperture):
+- Layout: one spectrum panel.
+- x axis: wavelength [Å], **the full 4750–9350 range with no zoom**, linear.
+- y axis: flux [10⁻²⁰ erg s⁻¹ cm⁻² Å⁻¹], linear.
+- Aperture: a **circle 1″ in diameter** (radius 2.5 px), placed on the brightest pixel,
+  (237, 315), which is Haro11's bright core.
+- Curves: `nosky` raw, `{target}+ZAP`, and the original sky (`wsky` only).
 
-**定量（依 WH05 Fig 12 + Table 1 的 EW 不變性）**：量 Hα 的 equivalent width，比 `{target}+ZAP` 對真值。
-- EW(Hα) = Σ_line ( F − F_cont ) / F_cont · Δλ，line window = 6692–6708 Å（`HALPHA_LINE_WINDOW`，僅 Hα，避開 [NII]）。
-- 連續譜 F_cont：兩側各一窗，**皆避開 [NII]6548=6682.9 與 [NII]6583=6719.1**：左 **6655–6678**、右 **6730–6758**。
-  （＝修正舊 `HALPHA_FLUX_CONTINUUM` 左窗 6660–6688 切到 [NII]6548 的問題。）
-- 報告 **EW_zap / EW_truth**（≈ 1 = 保住）：標在圖上一角，並進純量摘要表。
+**The quantitative part, following the EW invariance of WH05 Fig 12 + Table 1**: measure
+the equivalent width of Hα and compare `{target}+ZAP` against the truth.
+- EW(Hα) = Σ_line ( F − F_cont ) / F_cont · Δλ, with the line window 6692–6708 Å
+  (`HALPHA_LINE_WINDOW`, Hα only, keeping clear of [NII]).
+- The continuum F_cont: one window on each side, **both keeping clear of [NII]6548=6682.9
+  and [NII]6583=6719.1**: **6655–6678** on the left, **6730–6758** on the right.
+  (This corrects the old `HALPHA_FLUX_CONTINUUM`, whose left window 6660–6688 cut into
+  [NII]6548.)
+- Report **EW_zap / EW_truth** (≈ 1 means it was kept): annotated in a corner of the
+  figure, and entered into the scalar summary table.
 
-**計算**：對 `zap` 與各 raw cube，取以 (237,315) 為圓心、半徑 2.5 px 內 spaxel 的 flux 加總 → 孔徑光譜；各自量 EW(Hα)。
+**Computation**: for the `zap` cube and for each raw cube, sum the flux of the spaxels
+lying within 2.5 px of (237,315) → the aperture spectrum; measure EW(Hα) on each of them.
 
-**命名**（照 M1/M2）：
-- 檔案：`results/zap/cubes/{target}_maskfrom-{masksrc}/fig_source-halpha.png`。
-- 標題（兩行）：主 `Source Hα fidelity`；副（小字）`target = {target} · mask from {masksrc}`。
+**Naming** (as for M1 and M2):
+- File: `results/zap/cubes/{target}_maskfrom-{masksrc}/fig_source-halpha.png`.
+- Title, in two lines: `Source Hα fidelity` as the main line, and
+  `target = {target} · mask from {masksrc}` as the subtitle, in small type.
 
-**範圍**：先做單一 run。
+**Scope**: a single run to begin with.
 
-**依據**：ZAP Fig 6（arXiv:1602.08037，1″ 孔徑、full range、linear、pipeline/ZAP/sky 三曲線）；定量 WH05 Fig 12 + Table 1（EW 不變性）。
+**Basis**: ZAP Fig 6 (arXiv:1602.08037: a 1″ aperture, the full range, linear, with three
+curves for pipeline, ZAP and sky); the quantitative part is WH05 Fig 12 + Table 1 (EW
+invariance).
 
-### M4 — Extended Hα surface-brightness profile（延展暈徑向剖面）〔⏸ 暫緩 · 之後討論〕
+### M4 — Extended Hα surface-brightness profile (radial profile of the extended halo) [⏸ deferred · to be discussed later]
 
-> **狀態：暫緩，尚未定案。** 以下為已查證的調查紀錄（Wisotzki Fig 4 圖法 + PSF 參數文獻），恢復討論時直接沿用；PSF 取法（擬合前景星 vs 固定 β=2.8）與是否納入 M4 待定。
+> **Status: deferred, not yet settled.** What follows is the record of an investigation
+> that has been checked out (how Wisotzki Fig 4 is drawn, plus the literature on PSF
+> parameters), to be used as it stands when the discussion resumes. How the PSF is to be
+> obtained -- fitting a foreground star versus fixing β=2.8 -- and whether M4 is included
+> at all are still undecided.
 
-**量**：以源為心的**方位平均 Hα 表面亮度**，對半徑。測**延展暈（faint）**是否被 ZAP 保住 —— PCA 扣天空最容易過扣延展 faint 訊號之處（M3 管亮核，M4 管延展）。
+**Quantity**: the **azimuthally averaged Hα surface brightness** about the source,
+against radius. It measures whether ZAP keeps the **faint extended halo** -- the place
+where PCA sky subtraction is most prone to over-subtracting faint extended signal (M3
+covers the bright core, M4 the extended emission).
 
-**物理意義**：`{target}+ZAP` 的 SB(r) 應貼合 `nosky` 真值；在大半徑仍高於 PSF（= 真延展、非點源翼）與 1σ 極限（= 真偵測）。ZAP 的 SB(r) 掉到真值以下 = 延展暈被過扣。
+**Physical meaning**: the SB(r) of `{target}+ZAP` should lie on the `nosky` truth, and at
+large radius should still be above the PSF (so the emission is genuinely extended and not
+the wings of a point source) and above the 1σ limit (so it is a genuine detection). A ZAP
+SB(r) that drops below the truth means the extended halo has been over-subtracted.
 
-**對照對象**：`nosky` raw（真值）、`{target}+ZAP`、PSF 剖面、1σ 偵測極限。
+**Compared against**: `nosky` raw (the truth), `{target}+ZAP`, the PSF profile, and the 1σ
+detection limit.
 
-**依 Wisotzki 2016 Fig 4 複製**（方位平均徑向 SB 剖面；方法與譜線無關，低紅移 Hα CGM 有先例 Dutta 2024、Chung/Dey 2019）：
-- x 軸：半徑 [arcsec]，linear。
-- y 軸：Hα 表面亮度 [erg s⁻¹ cm⁻² arcsec⁻²]，**log**（負值標三角形）。
-- 環：同心圓、**0.2″ = 1 spaxel 寬**、方位平均（排除遮罩/壞點）、以 Haro11 核 (237,315) 為心。
-- 曲線：`nosky` raw、`{target}+ZAP`、PSF 剖面、1σ 極限。
+**Reproduces Wisotzki 2016 Fig 4** (the azimuthally averaged radial SB profile; the
+method does not depend on which line is used, and there is precedent for low-redshift Hα
+CGM work in Dutta 2024 and Chung/Dey 2019):
+- x axis: radius [arcsec], linear.
+- y axis: Hα surface brightness [erg s⁻¹ cm⁻² arcsec⁻²], **log**, with negative values
+  marked as triangles.
+- Annuli: concentric, **0.2″ = 1 spaxel wide**, averaged azimuthally with masked and bad
+  pixels excluded, centred on Haro11's core at (237,315).
+- Curves: `nosky` raw, `{target}+ZAP`, the PSF profile, and the 1σ limit.
 
-**1σ 偵測極限**（Wisotzki 經驗法）：在 ~100 個空白位置跑同樣的環抽取，每半徑 bin 取 (Q3−Q1)/1.35 = σ_eff。**不用 STAT cube**（MUSE STAT 低估相關性雜訊）。
+**The 1σ detection limit** (Wisotzki's empirical method): run the same annular extraction
+at ~100 blank positions and take (Q3−Q1)/1.35 = σ_eff in each radius bin. **The STAT cube
+is not used**, because the MUSE STAT underestimates correlated noise.
 
-**PSF**（circular Moffat）：
-- **β**：視場有孤立未飽和前景星 → 擬合（β 自由）；否則**固定 β=2.8**（WFM-NOAO 標準，B17/Leclercq）。
-- **FWHM(λ) = a + b·λ**（線性、往紅端變小）：有星則擬合；否則以 header QC seeing 錨定（`wsky` 的 `EXPCOMB FWHM MEDIAN`=1.24″；⚠️ `nosky` 該值未填 =0，且 wsky 值跨曝光 0.70–1.92″，故僅當錨點、不整段套單值）。
-- **敏感度**：延展暈 vs PSF 的結論須跑 **β ∈ [2.5, 3.0]** 敏感度並回報（β 控制 PSF 翼，直接影響「延展 vs 點源翼」判定）。
+**PSF** (a circular Moffat):
+- **β**: the field holds an isolated, unsaturated foreground star → fit it, with β free;
+  otherwise **fix β=2.8**, the WFM-NOAO standard (B17/Leclercq).
+- **FWHM(λ) = a + b·λ**, linear, and shrinking towards the red: fit it if there is a star,
+  otherwise anchor it on the header QC seeing (`EXPCOMB FWHM MEDIAN`=1.24″ in `wsky`;
+  ⚠️ in `nosky` that value is unpopulated, =0, and the wsky value ranges over 0.70–1.92″
+  across exposures, so it serves only as an anchor and a single value is not applied
+  across the whole range).
+- **Sensitivity**: any conclusion about the extended halo versus the PSF has to be run as
+  a sensitivity test over **β ∈ [2.5, 3.0]** and reported, because β controls the wings of
+  the PSF and so bears directly on the "extended emission versus the wings of a point
+  source" verdict.
 
-> **PSF 參數（文獻紀錄，供參）**：seeing-limited MUSE WFM 的 Moffat β 群集 **2.5–2.8**（B17=2.8 固定、HDFS Bacon+2015=2.6 擬合、一般 seeing-limited ~2.5；AO 的 Fusco+2020 擬合 2.3–2.7）。β 隨波長視為固定；FWHM 隨波長線性下降（UDF 0.71″→0.57″）。B17 的 2.8 本身即來自 **seeing-limited WFM-NOAO**（MUSE UDF 2014–2016，AO 未上線），與 Haro11 同 regime，故可用。取 PSF 的標準做法：有星就擬合 Moffat（PampelMuse/mpdaf），無星則固定 β=2.8 只擬合 FWHM(λ)（B17）。
+> **PSF parameters (a record of the literature, for reference)**: for seeing-limited MUSE
+> WFM the Moffat β clusters at **2.5–2.8** (B17 fixes it at 2.8, HDFS Bacon+2015 fits 2.6,
+> seeing-limited work generally sits near 2.5; the AO case, Fusco+2020, fits 2.3–2.7). β
+> is treated as constant with wavelength, while FWHM falls linearly with it (0.71″→0.57″
+> in the UDF). B17's 2.8 itself comes from **seeing-limited WFM-NOAO** (the MUSE UDF,
+> 2014–2016, before AO came online), which is the same regime as Haro11, so it can be used
+> here. The standard way of getting the PSF: fit a Moffat if there is a star
+> (PampelMuse/mpdaf), and if there is not, fix β=2.8 and fit only FWHM(λ) (B17).
 
-**計算**：對 `zap` / `nosky raw` cube 做連續譜扣除的 Hα 窄帶影像 → 以核為心方位平均 → SB(r)；1σ 用空白區同法估；PSF 用 header/擬合建 Moffat 剖面。
+**Computation**: build a continuum-subtracted Hα narrow-band image from the `zap` and
+`nosky raw` cubes → average azimuthally about the core → SB(r); estimate 1σ the same way
+over blank regions; build the Moffat profile for the PSF from the header or from a fit.
 
-**命名**（照 M1–M3）：
-- 檔案：`results/zap/cubes/{target}_maskfrom-{masksrc}/fig_radial-halpha.png`。
-- 標題（兩行）：主 `Extended Hα surface-brightness profile`；副（小字）`target = {target} · mask from {masksrc}`。
+**Naming** (as for M1–M3):
+- File: `results/zap/cubes/{target}_maskfrom-{masksrc}/fig_radial-halpha.png`.
+- Title, in two lines: `Extended Hα surface-brightness profile` as the main line, and
+  `target = {target} · mask from {masksrc}` as the subtitle, in small type.
 
-**範圍**：先做單一 run。對到既有 CGM Hα 分析的 fig7（此為其正式規格版）。
+**Scope**: a single run to begin with. It corresponds to fig7 of the existing CGM Hα
+analysis, of which this is the formal specification.
 
-**依據**：Wisotzki 2016 Fig 4（arXiv:1509.05143）、Leclercq 2017（1710.10271）；PSF：Bacon+2017（1710.03002, β=2.8）、Bacon+2015（1411.7667, β=2.6）；Hα CGM 先例 Dutta 2024（2410.05392）、Chung/Dey 2019（1904.07874）。
+**Basis**: Wisotzki 2016 Fig 4 (arXiv:1509.05143), Leclercq 2017 (1710.10271); for the
+PSF, Bacon+2017 (1710.03002, β=2.8) and Bacon+2015 (1411.7667, β=2.6); for precedent on
+Hα CGM, Dutta 2024 (2410.05392) and Chung/Dey 2019 (1904.07874).
 
-### M5 — Source mask diagnostic（源遮罩診斷）
+### M5 — Source mask diagnostic
 
-**角色**：**診斷 / 文件**，非驗證 metric，**無及格線**。交代「哪些 spaxel 被遮、以及用不同 cube 建差多少」。
+**Role**: this is a **diagnostic, and documentation** -- not a validation metric, and it
+has **no pass line**. It sets out which spaxels are masked, and how much difference
+building the mask from a different cube makes.
 
-**對照對象**：`sep_from-nosky/mask.fits`（≈41%） vs `sep_from-wsky/mask.fits`（≈36%），疊在同一影像上比。
+**Compared against**: `sep_from-nosky/mask.fits` (≈41%) vs `sep_from-wsky/mask.fits`
+(≈36%), overlaid on the same image so the two can be compared.
 
-**物理意義**：遮罩是 ZAP 成敗關鍵（遮太小 → 源被當天空學走、掉 70%）。展示遮罩涵蓋範圍與 mask 來源差異。
+**Physical meaning**: the mask is what decides whether ZAP succeeds or fails (mask too
+little → the source is learned as sky, and 70% of it is lost). This shows how far the
+mask reaches and how the two mask sources differ.
 
-**版面（一張圖、左右兩 panel，共用 `nosky` 底圖）**：
-- 左 panel：**Hα 窄帶影像**（nosky）為底 —— 看遮罩貼不貼合 Hα 發射（遮罩即用 Hα 偵測建的）。
-- 右 panel：**白光影像**（nosky，整段 nansum）為底 —— 看遮罩相對恆星連續光（Hα 暈延伸超過星光，遮罩會超出一圈）。
-- 兩 panel 都疊**兩條遮罩輪廓**：`nosky`-built（一色）、`wsky`-built（另一色）。灰階底圖，輪廓用對比色。
+**Layout (one figure, two panels side by side, sharing a `nosky` background image)**:
+- Left panel: an **Hα narrow-band image** (nosky) underneath -- this shows whether the
+  mask follows the Hα emission, which is what the mask was detected on in the first place.
+- Right panel: a **white-light image** (nosky, the nansum over the whole range) underneath
+  -- this shows the mask against the stellar continuum light; the Hα halo reaches beyond
+  the starlight, so the mask extends a ring further out.
+- Both panels carry **two mask contours**: the `nosky`-built one in one colour and the
+  `wsky`-built one in another. The background image is greyscale and the contours are in
+  contrasting colours.
 
-**標註**：各遮罩覆蓋率（nosky 41% / wsky 36%）、最遠半徑。
+**Annotations**: the coverage of each mask (nosky 41% / wsky 36%), and the largest radius
+it reaches.
 
-**命名**（屬遮罩，放 masks/）：
-- 檔案：`results/zap/masks/fig_source-mask.png`。
-- 標題（單行）：`Source mask (sep) — built from nosky vs wsky`。
+**Naming** (it belongs to the masks, so it goes in masks/):
+- File: `results/zap/masks/fig_source-mask.png`.
+- Title, in a single line: `Source mask (sep) — built from nosky vs wsky`.
 
-**計算**：Hα 窄帶 = 線內 − 連續譜（共用 settings `halpha_narrowband_image`）；白光 = 整段 nansum；輪廓 = 兩張 mask 的 0.5 等值線；底圖皆取自 `nosky`（最乾淨、可公平共用）。
+**Computation**: the Hα narrow band is the in-line flux − the continuum (using the shared
+`halpha_narrowband_image` settings); the white light is the nansum over the whole range;
+the contours are the 0.5 level of the two masks; both background images are taken from
+`nosky`, which is the cleanest and can be shared fairly.
 
-**依據**：無文獻圖（ZAP 無遮罩圖）；純為可重現性交代，屬診斷，不列 removal/preservation 判準。
+**Basis**: there is no figure in the literature to follow -- ZAP has no mask figure. This
+exists purely to account for reproducibility; it is a diagnostic, and it carries no
+removal or preservation criterion.
 
-### 純量摘要表（Scalar summary table）
+### Scalar summary table
 
-**用途**：把 M1–M3 的關鍵數字濃縮成一張終端機/報告表；不看圖也能判「扣乾淨 + 源沒被吃」。**removal 與 preservation 並列**（原則1）。
+**Purpose**: to condense the key numbers of M1–M3 into a single table for the terminal or
+a report, so that "the sky came off cleanly and the source was not eaten" can be judged
+without looking at the figures. **Removal and preservation stand side by side**
+(principle 1).
 
-**版面**：欄 = 四個 run（2×2，`{target}_maskfrom-{masksrc}`）；基準 = `nosky` raw。
+**Layout**: the columns are the four runs (2×2, `{target}_maskfrom-{masksrc}`); the
+baseline is `nosky` raw.
 
-| 列 | 定義 | 來自 | 及格 |
+| Row | Definition | From | Pass |
 |---|---|---|---|
-| sky 5577 殘餘（% of sky） | 空白區中位殘餘 ÷ 原始天空 @5577.339 Å | M1 | < 5%（目標 2%） |
-| sky 6300 殘餘（% of sky） | 同上 @6300.304 Å | M1 | < 5% |
-| sky OH 殘餘（% of sky） | 同上 @OH 帶（波長見 M1；現行 settings 用 8400） | M1 | < 5% |
-| 連續譜殘餘（% of sky） | line-free 波長的中位 | M1 | < 1% |
-| 殘餘 RMS ÷ (√STAT×1.5) | line-free 波長的中位 | M2 | ≈ 1 |
-| Hα EW 保留率 | EW_zap ÷ EW_truth（1″ 孔徑、亮核） | M3 | ≈ 1（100%） |
+| sky 5577 residual (% of sky) | median residual in the blank region ÷ the original sky @5577.339 Å | M1 | < 5% (target 2%) |
+| sky 6300 residual (% of sky) | the same @6300.304 Å | M1 | < 5% |
+| sky OH residual (% of sky) | the same @ the OH band (for the wavelength see M1; the current settings use 8400) | M1 | < 5% |
+| continuum residual (% of sky) | the median over the line-free wavelengths | M1 | < 1% |
+| residual RMS ÷ (√STAT×1.5) | the median over the line-free wavelengths | M2 | ≈ 1 |
+| Hα EW retention | EW_zap ÷ EW_truth (1″ aperture, bright core) | M3 | ≈ 1 (100%) |
 
-**M4（延展暈）暫緩** → 徑向剖面相關的數字（暈偵測半徑、大半徑 SB 保留率等）**待 M4 定案後再補**。
+**M4 (the extended halo) is deferred** → the numbers that go with the radial profile (the
+radius out to which the halo is detected, the SB retention at large radius, and so on)
+**will be added once M4 is settled**.
 
-**判讀**：`wsky+ZAP` 應同時 removal 及格（前 5 列）+ preservation ≈ 100%（末列）。
+**Reading it**: `wsky+ZAP` should pass on removal (the first 5 rows) and preserve ≈ 100%
+(the last row) at the same time.

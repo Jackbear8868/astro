@@ -119,7 +119,7 @@ step5 與 step6(界定源區)—— 都是從那裡讀的。要和原本的結�
 
 這個 2x2 是 `exp02_basis_solver_matrix.py` 自帶的實作,不經過 step5,所以仍然跑得動。
 但要知道 **pipeline 那邊只剩 `unw` 這一半**:step5 的加權路徑在 2026-08-18 比較後
-移除(見 `docs/tried-not-adopted.md` 第二節),而被標成「教授的方式(字面上)」的
+移除(見 `docs/archive/tried-not-adopted.md` 第二節),而被標成「教授的方式(字面上)」的
 `chi2+free` 在 pipeline 裡已無對應選項。
 
 ### 記帳原則

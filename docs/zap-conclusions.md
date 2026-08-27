@@ -1,82 +1,105 @@
-# ZAP 既定結論(Haro11 MUSE cube)
+# Settled ZAP conclusions (Haro11 MUSE cube)
 
-> ZAP(Zurich Atmosphere Purge, Soto+2016)在 Haro11 資料上的**定案結論與量化數字**,
-> 作為 sky reconstruction 的對照組依據。
-> 資料:`Haro11_wsky.fits`(含天空)/`Haro11_nosky.fits`(MUSE 已扣天空),WFM,499×559×3679,
-> λ 4750–9348 Å,z≈0.0206,Hα ~6699 Å,大範圍延展電離氣(CGM)。
-> 現行 ZAP pipeline:`src/zap/`;參數參考:`docs/zap-parameters-reference.md`;
-> 產出在 `results/zap/`(gitignored,本機)。
-
----
-
-## 1. 核心結論
-
-1. **ZAP 的正確輸入是還含天空的 `wsky`。** 對已扣過天空的 `nosky` 跑 ZAP 是 null test:
-   沒有天空訊號可學,只會擬合並重新注入雜訊(源 Hα 峰掉 ~70%、blank 殘餘惡化)。
-   且**任何成分數都救不了**——nevals 從 3 掃到 55,line-free 雜訊仍 ≥2.9、Hα 保留僅 89%
-   → 這是**輸入問題,不是調參問題**;勿誤判為「ZAP 壞了/要調 nevals」。
-
-2. **源遮罩必須涵蓋整個延展電離氣,否則 ZAP 把源吃掉。**
-   白光 2σ 門檻只遮 8%,但延展電離氣覆蓋視場 ~31–44%(>3σ 達 21%);
-   未被遮的 spaxel 混進天空基底(「空白」樣本的 Hα 90 百分位 19.4,雜訊 σ≈2.2),
-   ZAP 把 Hα 當天空學起來 → **70% 源流量損失**。
-   偵測 + 膨脹安全邊界把遮罩擴到 44% 後:天空基底乾淨(Hα 90 百分位 19.4 → 1.9),
-   源保留 124%(整張)。
-
-3. **源保留 >100%(110–124%)不是 bug。** 源 spaxel 被排除於天空基底外,ZAP 對亮源扣得
-   溫和、不過扣;MUSE 在亮源反而可能略過扣。對保留微弱延展訊號而言,寧可略保留也不要過扣。
+> The **settled conclusions and the numbers behind them** for ZAP (Zurich Atmosphere Purge,
+> Soto+2016) on the Haro11 data, which is what the sky reconstruction is compared against.
+> Data: `Haro11_wsky.fits` (sky included) / `Haro11_nosky.fits` (sky already subtracted by
+> MUSE), WFM, 499×559×3679, λ 4750–9348 Å, z≈0.0206, Hα ~6699 Å, with ionised gas (CGM)
+> extending over a large area.
+> The current ZAP pipeline is `src/zap/`; the parameter reference is
+> `docs/zap-parameters-reference.md`; the products go to `results/zap/` (gitignored, local).
 
 ---
 
-## 2. 量化成果(整張視場 499×559,`wsky` + ZAP)
+## 1. The core conclusions
 
-| 空白天空指標 | `wsky` 原始(含天空) | **`wsky` + ZAP** | `nosky`(MUSE 真值) |
+1. **The correct input to ZAP is `wsky`, the cube that still contains the sky.** Running ZAP on
+   `nosky`, which has already had its sky subtracted, is a null test: there is no sky signal
+   left to learn, so all it can do is fit noise and inject it back in (the source's Hα peak
+   drops by ~70%, and the blank residual gets worse).
+   And **no number of components rescues it** — sweeping nevals from 3 to 55 still leaves the
+   line-free noise at ≥2.9 and only 89% of Hα preserved
+   → this is **a problem with the input, not a tuning problem**; do not read it as "ZAP is
+   broken" or "nevals needs adjusting".
+
+2. **The source mask must cover the whole of the extended ionised gas, or ZAP eats the source.**
+   A 2σ threshold on the white light image masks only 8%, but the extended ionised gas covers
+   ~31–44% of the field (21% of it above 3σ);
+   the spaxels left unmasked go into the sky basis (the 90th percentile of Hα in the "blank"
+   sample is 19.4, against a noise σ≈2.2), and ZAP learns Hα as if it were sky
+   → **70% of the source flux is lost**.
+   Once detection plus a dilated safety margin grows the mask to 44%, the sky basis is clean
+   (Hα 90th percentile 19.4 → 1.9) and 124% of the source is preserved (whole field).
+
+3. **Preserving more than 100% of the source (110–124%) is not a bug.** The source spaxels are
+   held out of the sky basis, so ZAP subtracts gently on a bright source and does not
+   over-subtract it; MUSE, on a bright source, may in fact slightly over-subtract. When the
+   point is to preserve faint extended signal, preserving a little too much is the better error
+   to make.
+
+---
+
+## 2. The numbers (whole 499×559 field, `wsky` + ZAP)
+
+| blank-sky metric | `wsky` as it comes (sky included) | **`wsky` + ZAP** | `nosky` (the MUSE truth) |
 |---|---|---|---|
-| 天空線 5577Å(中位) | 252.7 | **0.62** | 2.30 |
-| 天空線 6300Å(中位) | 175.1 | **−0.26** | 0.45 |
-| 天空線 8400Å(中位) | 463.9 | **1.26** | 1.08 |
-| line-free 純雜訊 | 5.71 | **1.70** | 1.30 |
-| 源 Hα 積分通量 | — | **保留 124%** | (100%) |
+| sky line 5577Å (median) | 252.7 | **0.62** | 2.30 |
+| sky line 6300Å (median) | 175.1 | **−0.26** | 0.45 |
+| sky line 8400Å (median) | 463.9 | **1.26** | 1.08 |
+| line-free pure noise | 5.71 | **1.70** | 1.30 |
+| source Hα integrated flux | — | **124% preserved** | (100%) |
 
-ZAP 把天空線從 ~250–460 壓到 ~0–1.3,基本還原 MUSE 的扣天空,且保留源。
-主驗證圖:`results/zap/fig5_zap_validation.png`。
-(300² 裁切版結論一致:天空線 267→1、雜訊 5.71→1.70、源保留 110.6%。)
-
----
-
-## 3. faint CGM:MUSE `nosky` 比 ZAP 乾淨
-
-(CGM Hα 分析,`fig6`/`fig7`)
-
-- 兩種扣天空法都還原出星系 + 到 ~20–30″ 的 Hα halo。
-- 外圍每-spaxel 雜訊:`nosky` **1σ≈13.8** vs `wsky`+ZAP **≈35.5**(ZAP 約 2.5× 噪)。
-- 大半徑(>35″):`nosky` 中位略轉**負**(MUSE 輕微過扣);`wsky`+ZAP 維持**正**,
-  但正偏移落在天空曝光的**矩形足跡**內,較可能是扣天空殘差而非真實 CGM。
-- 結論:**不能說「ZAP 揭露了更多 CGM」**;ZAP 的價值在於能**獨立(不依賴 pipeline)重現扣天空**,
-  不在於更深。對 faint CGM,`nosky` 較適合。
+ZAP pushes the sky lines from ~250–460 down to ~0–1.3, essentially reproducing the MUSE sky
+subtraction while keeping the source.
+The main validation figure is `results/zap/fig5_zap_validation.png`.
+(The 300² cutout gives the same conclusions: sky line 267→1, noise 5.71→1.70, source
+preserved 110.6%.)
 
 ---
 
-## 4. 執行成本(整張視場)
+## 3. Faint CGM: MUSE `nosky` is cleaner than ZAP
 
-- ZAP on `wsky`:**~65 分鐘**(3899 s,ncpu=16),記憶體峰值 **43.7 GB**,自動選 **53** 個特徵譜。
-- 遮罩涵蓋 44%,留 ~140k 乾淨 blank spaxel 建天空基底。
+(the CGM Hα analysis, `fig6`/`fig7`)
+
+- Both sky subtractions recover the galaxy plus an Hα halo out to ~20–30″.
+- Per-spaxel noise in the outskirts: `nosky` **1σ≈13.8** against `wsky`+ZAP **≈35.5**
+  (ZAP is about 2.5× noisier).
+- At large radius (>35″) the `nosky` median turns slightly **negative** (MUSE over-subtracts a
+  little), while `wsky`+ZAP stays **positive** — but that positive offset falls inside the
+  **rectangular footprint** of the sky exposure, which makes it more likely to be a
+  sky-subtraction residual than real CGM.
+- The conclusion: **it cannot be said that "ZAP reveals more CGM"**. ZAP's value is that it can
+  **reproduce the sky subtraction independently, without relying on the pipeline**, not that it
+  goes deeper. For faint CGM, `nosky` is the better choice.
 
 ---
 
-## 5. 已知限制
+## 4. What a run costs (whole field)
 
-- 只有 1 個含天空的 cube(`wsky`)→ 只能做單曝光重建,無法測跨曝光泛化
-  (逐次曝光資料已備:`data/wsky/`、`data/nosky/` 各 14 顆)。
-- ZAP 在天空線波長的殘餘 std 略高於 MUSE(經驗式 PCA 的正常特性)。
-- **STAT(逐 voxel 變異)是原始照抄、未經 ZAP 傳遞**;需要正確誤差時須自行處理。
-- CGM 大半徑的正偏移帶有足跡形狀的系統性,尚未釐清是否可校正。
-- `nosky` 的 null test 僅在 300² 裁切版量化;整張版未補(價值低)。
+- ZAP on `wsky`: **~65 minutes** (3899 s, ncpu=16), peak memory **43.7 GB**, choosing **53**
+  eigenspectra by itself.
+- The mask covers 44%, leaving ~140k clean blank spaxels to build the sky basis from.
 
 ---
 
-## 6. 主要產出(`results/zap/`,本機)
+## 5. Known limitations
 
-- `fig5_zap_validation.png` — **主驗證**(wsky+ZAP vs nosky 真值)。
-- `fig6_cgm_halpha_maps.png` — CGM Hα 表面亮度圖(nosky vs wsky+ZAP)。
-- `fig7_cgm_radial_profile.png` — 方位平均 Hα 徑向剖面 + 偵測極限。
+- There is only 1 cube with the sky still in it (`wsky`) → only single-exposure reconstruction
+  is possible, and generalisation across exposures cannot be tested (the per-exposure data is
+  ready: 14 pointings each under `data/wsky/` and `data/nosky/`).
+- ZAP's residual std at the sky-line wavelengths is slightly higher than MUSE's (a normal
+  property of empirical PCA).
+- **STAT (the per-voxel variance) is copied through unchanged and is not propagated by ZAP**;
+  anything that needs correct errors has to handle that itself.
+- The positive offset at large CGM radius carries a systematic shaped like the footprint, and
+  whether it can be corrected has not been established.
+- The `nosky` null test has only been quantified on the 300² cutout; the whole-field version
+  was never done (little value in it).
+
+---
+
+## 6. The main products (`results/zap/`, local)
+
+- `fig5_zap_validation.png` — **the main validation** (wsky+ZAP against the nosky truth).
+- `fig6_cgm_halpha_maps.png` — CGM Hα surface brightness maps (nosky against wsky+ZAP).
+- `fig7_cgm_radial_profile.png` — the azimuthally averaged Hα radial profile, with the
+  detection limit.

@@ -1,64 +1,76 @@
-# 恆星模板(data/stellar_templates)
+# Stellar templates (data/stellar_templates)
 
-> 用於 sky reconstruction 的**源模型**恆星那一支:step4 拿它們和星系本徵譜在同一組
-> 通道上競爭,reduced chi2 低的勝出。教授提供(2026-08-19,`stars.tgz`)。
-> 檔案位置:`data/stellar_templates/`(**已 gitignore,不在版控內**)。
+> The stellar branch of the **source model** used for the sky reconstruction: The template fit sets these
+> against the galaxy eigenspectra over the same set of channels, and whichever gives the lower
+> reduced chi2 wins. Given to the project (2026-08-19, `stars.tgz`).
+> Where the files live: `data/stellar_templates/`. The seven the pipeline uses are
+> **tracked in git**, since they are small and nothing runs without them; `l5v.dat` is
+> not, for the reason in section 2.
 
 ---
 
-## 1. 內容
+## 1. What is in it
 
-8 個兩欄 ASCII 檔(波長 Å、流量),共用同一個波長格點:
+The tarball held 8 two-column ASCII files (wavelength in Å, flux), all sharing one
+wavelength grid; 7 of them ship with the code:
 
 ```
-1200 - 24200 Å,  每 2.5 Å 一格,  9201 個點
+1200 - 24200 Å,  one point every 2.5 Å,  9201 points
 ```
 
-| 檔案 | 光譜型 | | 檔案 | 光譜型 |
+| file | spectral type | | file | spectral type |
 |---|---|---|---|---|
 | `o5v.dat` | O5V | | `g5v.dat` | G5V |
 | `b3v.dat` | B3V | | `k0v.dat` | K0V |
 | `a0v.dat` | A0V | | `m4.5v.dat` | M4.5V |
-| `f0v.dat` | F0V | | `l5v.dat` | L5V |
+| `f0v.dat` | F0V | | `l5v.dat` | L5V (not shipped) |
 
-光度型全部是 V(主序),從 O 到 L 一條溫度序列。流量是 F_λ,O5V 到 K0V 在
-5556 Å 歸一到 1.0;M4.5V 與 L5V 在該處是 0.196,歸一方式不同。缺資料的通道
-填 0 而不是 NaN。
+Every luminosity class is V (main sequence), and O through L makes one temperature sequence.
+The flux is F_λ, with O5V through K0V normalised to 1.0 at 5556 Å; M4.5V and L5V are at 0.196
+there, so they were normalised some other way. Channels with no data hold 0 rather than NaN.
 
-**來源不明。** tarball 裡沒有 header、README 或任何來源標記。5556 Å 歸一與
-`o5v`/`b3v`/`a0v` 這組命名和 Pickles (1998) 一致(ESO 發行版是 `uko5v.dat.gz`
-等),但 Pickles 是 1150–25000 Å、5 Å 取樣,也沒有 L 型與小數次型,所以這份經過
-重取樣並從別處補了 `m4.5v` 與 `l5v` 兩條。要引用的話需要向教授確認出處。
+**The origin is unknown.** The tarball carries no header, no README and no mark of where the
+data came from. Normalising at 5556 Å, and the naming of `o5v`/`b3v`/`a0v`, both agree with
+Pickles (1998) (the ESO release names them `uko5v.dat.gz` and so on), but Pickles covers
+1150–25000 Å sampled every 5 Å and has neither L types nor fractional subtypes, so this set has
+been resampled and had `m4.5v` and `l5v` added from somewhere else. Citing it would first
+require confirming the origin with whoever supplied the tarball.
 
-## 2. 載入時的兩個處理
+## 2. Two things done at load time
 
-**波長軸是空氣波長,載入時轉真空。** 量 `a0v` 的氫線質心(Hβ、Hα、Pa16–Pa11):
-對空氣波長的中位偏移是 −18 km/s,對真空是 −100 km/s。本徵譜是真空波長,下游
-也一律在真空波長上取值,不轉的話恆星紅移會系統性偏 −83 km/s。
-見 `templates.load_ascii_template`。
+**The wavelength axis is in air wavelengths, and is converted to vacuum on load.** Measuring
+the centroids of the hydrogen lines in `a0v` (Hβ, Hα, Pa16–Pa11): the median shift against air
+wavelengths is −18 km/s, and against vacuum −100 km/s. The eigenspectra are on vacuum
+wavelengths and everything downstream reads values on vacuum wavelengths too, so leaving the
+conversion out puts a systematic −83 km/s into every stellar redshift.
+See `utils.load_ascii_template`.
 
-`air_to_vacuum` 的 Morton 公式在 1602.8 Å 有極點,在那附近既不正確也不單調,
-所以轉換前先把波長軸裁在 2000 Å(空氣在該波長以下不透光,「空氣波長」本來就
-沒有意義)。
+The Morton formula inside `air_to_vacuum` has a pole at 1602.8 Å and is neither correct nor
+monotonic anywhere near it, so the wavelength axis is cut at 2000 Å before the conversion
+(air is opaque below that wavelength, so an "air wavelength" there has no meaning to begin
+with).
 
-**`l5v` 蓋不住 MUSE,被 step4 排除。** 它只有 5390 Å 以上有資料,MUSE 需要的
-靜止範圍是 4578–9399 Å。step4 對每一條模板檢查覆蓋範圍,蓋不住的印出訊息後
-略過。
+**`l5v` does not cover MUSE, and `classify_sources` excludes it.** It only holds data above
+5390 Å, while the rest-frame range MUSE needs is 4578–9399 Å. Every template's coverage is
+checked, and one that falls short is reported and skipped. Since the check would reject it on
+every run, `l5v.dat` is not shipped with the code and is not in the repository.
 
-## 3. 為什麼用這一組
+## 3. Why this set
 
-**理由是波長覆蓋。** MUSE 是 4600–9350 Å,源模型要在整段都有值。另一組候選是
-SDSS 的 spDR2 恆星模板,那 23 條止於約 9200 Å:`fit_source` 會把設計矩陣含 NaN
-的通道對每一個 spaxel 丟掉,源區域最紅的約 120 個通道因此沒有源模型,也不參與
-求解天空係數。這一組覆蓋 1200–24200 Å,整段都有值。
+**The reason is wavelength coverage.** MUSE runs 4600–9350 Å, and the source model needs a
+value across the whole of it. The other candidate was SDSS's spDR2 stellar templates, whose 23
+spectra stop at about 9200 Å: `fit_source` throws away, for every spaxel, any channel whose
+design matrix holds a NaN, which would leave the reddest ~120 channels of the source region
+with no source model, and out of the solve for the sky coefficients as well. This set covers
+1200–24200 Å, with a value everywhere in it.
 
-代價在取樣、解析度與型別數:
+The price is paid in sampling, in resolution and in how many types there are:
 
-| | 這一組 | SDSS spDR2-000..022 |
+| | this set | SDSS spDR2-000..022 |
 |---|---|---|
-| 波長覆蓋 | 1200–24200 Å | 3806–9219 Å |
-| 取樣 | 2.5 Å | 1.36 Å(log-λ,紅端)|
-| 解析度 | Hα FWHM ≈ 10 Å(Na D 雙線未分開)| Hα FWHM ≈ 3 Å |
-| 型別數 | 7 條可用(主序 O–M)| 23 條,含白矮星、碳星、K 次矮星、M1–M8 |
+| wavelength coverage | 1200–24200 Å | 3806–9219 Å |
+| sampling | 2.5 Å | 1.36 Å (log-λ, at the red end) |
+| resolution | Hα FWHM ≈ 10 Å (the Na D doublet is not resolved) | Hα FWHM ≈ 3 Å |
+| number of types | 7 usable (main sequence O–M) | 23, including white dwarfs, carbon stars, K subdwarfs, M1–M8 |
 
-逐源的結果圖見 `results/skymodel/evaluation/pNN/star_library/`。
+The per-source result figures are in `results/skymodel/evaluation/pNN/star_library/`.
