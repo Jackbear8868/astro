@@ -80,5 +80,5 @@ s 場乘上 `C_sky` 之後扣在**每一個** spaxel 上（含源區）。這條
 
 `src/skymodel/experiments/`、`src/zap/`、`libs/`；擬合的物理正確性；`evaluation/` 的
 繪圖細節；效能與記憶體。審查過程沒有重跑任何一個 step，第一節的數字是用存下來的
-`s_free.npy` 重建 `build_s_field` 的訓練遮罩得到的（`n_train` 逐位元符合各顆的
-`meta.json`）。
+`sky_continuum_amplitude_per_spaxel.npy` 重建 `build_s_field` 的訓練遮罩得到的
+（`n_train` 逐位元符合各顆的 `meta.json`）。

@@ -134,13 +134,13 @@ def main():
     p = sky_amplitude_params(meta)
     cube = ROOT / meta["cube"]
 
-    seg   = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
+    seg   = fits.getdata(W / "step01/segmentation_input.fits").astype(int)
+    white = np.asarray(fits.getdata(W / "step01/whitelight_nosky.fits"), float)
     wl    = np.load(W / "step03/wavelength.npy")
     C_sky = np.load(W / "step03/sky_continuum.npy")
-    basis = np.load(W / f"step03/sky_basis_{meta['basis']}_K{meta['K']}.npy")
+    basis = np.load(W / f"step03/sky_line_basis_{meta['basis']}_K{meta['K']}.npy")
     sky   = np.vstack([C_sky, basis])
-    s_free = np.load(run / "s_free.npy").astype(float)
+    s_free = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     valid  = white != 0
     main, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")

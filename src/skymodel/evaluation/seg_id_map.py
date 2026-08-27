@@ -38,9 +38,10 @@ def main():
                     help="pointing work directory, e.g. results/skymodel/p01. "
                          "seg and background default to its step01/")
     ap.add_argument("--seg", default=None,
-                    help="segmentation image to plot; defaults to step01/seg.fits in the work directory")
+                    help="segmentation image to plot; defaults to "
+                         "step01/segmentation_input.fits in the work directory")
     ap.add_argument("--white", default=None,
-                    help="background image; defaults to step01/whitelight.fits. "
+                    help="background image; defaults to step01/whitelight_nosky.fits. "
                          "when using a different seg, the background must still be "
                          "that pointing's own whitelight -- a mismatched background "
                          "creates a false impression of misalignment")
@@ -52,8 +53,8 @@ def main():
 
     STEP01 = ROOT / args.work / "step01"
     white = fits.getdata(Path(args.white) if args.white
-                         else STEP01 / "whitelight.fits")
-    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+                         else STEP01 / "whitelight_nosky.fits")
+    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
     seg   = fits.getdata(seg_path)
     if seg.shape != white.shape:
         raise SystemExit(f"seg {seg.shape} and whitelight {white.shape} have different dimensions")
@@ -71,8 +72,8 @@ def main():
                          group="galaxy"))
 
     # the filename carries the working directory name and the seg's own directory:
-    # step01/seg.fits has the same name for all 14 pointings, and two different
-    # segmentations of the same pointing are also both called seg.fits, so either
+    # step01/segmentation_input.fits has the same name for all 14 pointings, and two
+    # different segmentations of the same pointing also share their filename, so either
     # part alone lets one figure silently overwrite another.
     name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"

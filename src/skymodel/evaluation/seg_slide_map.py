@@ -116,9 +116,9 @@ def main():
                     help="pointing work directory, e.g. results/skymodel/p01. "
                          "seg and background default to its step01/")
     ap.add_argument("--seg", default=None,
-                    help="segmentation image; defaults to step01/seg.fits")
+                    help="segmentation image; defaults to step01/segmentation_input.fits")
     ap.add_argument("--white", default=None,
-                    help="background image; defaults to step01/whitelight.fits. "
+                    help="background image; defaults to step01/whitelight_nosky.fits. "
                          "with a different seg the background must still be this "
                          "pointing's own whitelight, or the two look misaligned")
     ap.add_argument("--color", default=COLOR, help="source colour")
@@ -145,8 +145,8 @@ def main():
 
     STEP01 = ROOT / args.work / "step01"
     white = fits.getdata(Path(args.white) if args.white
-                         else STEP01 / "whitelight.fits")
-    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+                         else STEP01 / "whitelight_nosky.fits")
+    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
     seg = fits.getdata(seg_path)
     if seg.shape != white.shape:
         raise SystemExit(f"seg {seg.shape} and whitelight {white.shape} have different dimensions")
@@ -161,8 +161,8 @@ def main():
         ids.append(int(i))
 
     # The output name carries both the pointing and the seg's parent directory: two
-    # different segmentations are both called seg.fits, so the stem alone collides
-    # and one silently overwrites the other.
+    # different segmentations share their filename, so the stem alone collides and one
+    # silently overwrites the other.
     name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"slide_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)

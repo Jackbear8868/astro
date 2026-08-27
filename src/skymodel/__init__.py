@@ -4,7 +4,7 @@ The method learns the sky from the blank spaxels of a sky-included cube and subt
 it, in six steps:
 
     whitelight         collapse a cube along wavelength into a white light image
-    object_spectra     sum each source's spectrum over the spaxels its seg ID covers
+    source_spectra     sum each source's spectrum over the spaxels its seg ID covers
     sky_basis          learn the sky continuum and the sky-line basis from blank
     classify_sources   fit templates to every source, giving it a class and a redshift
     fit_sky_amplitude  force the sky continuum amplitude s onto a spatial field

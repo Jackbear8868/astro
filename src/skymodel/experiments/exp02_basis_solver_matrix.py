@@ -199,8 +199,8 @@ NOSKY  = ROOT / "data/Haro11_NEpointing_esonosky.fits"
 OUT    = STEP01 / "zap_style"
 OUT.mkdir(parents=True, exist_ok=True)
 
-white_mask = fits.getdata(STEP01 / "whitelight.fits")
-seg_mask   = fits.getdata(STEP01 / "seg.fits")
+white_mask = fits.getdata(STEP01 / "whitelight_nosky.fits")
+seg_mask   = fits.getdata(STEP01 / "segmentation_input.fits")
 valid_mask = white_mask != 0
 blank_mask = valid_mask & ~((seg_mask > 0) & valid_mask)
 ys, xs = np.where(blank_mask)

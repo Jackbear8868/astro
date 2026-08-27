@@ -40,9 +40,10 @@ def sky_amplitude_params(meta):
 def fit_dirs(work, run=None):
     """Where one pointing's fitted products are -- (s-field dir, cube dir).
 
-        s-field dir   s_hat.npy, s_free.npy       written by step5
-        cube dir      sky_subtracted.fits, sky_model.fits, A_map.npy, s_map.npy
-                                                  written by step6
+        s-field dir   sky_continuum_amplitude_field.npy and
+                      sky_continuum_amplitude_per_spaxel.npy      by step5
+        cube dir      sky_subtracted.fits, sky_model.fits and
+                      source_template_amplitude_map.npy           by step6
 
     With no `run`, or with run="default", the two are step05 and step06. Any
     other `run` names a single directory under step05 holding both kinds of

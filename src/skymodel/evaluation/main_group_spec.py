@@ -64,18 +64,18 @@ def area_keep(seg, ids, min_frac):
 def branch_best(work, sid):
     """The best solution of each of the two branches of one seg ID.
 
-    step4b stores the two branches separately: scan1 is the star (z is the radial
-    velocity), scan2 is the galaxy.
+    step4b stores the two branches separately: scan_star is the star (z is the radial
+    velocity), scan_galaxy is the galaxy.
     Returns (best star rchi2, best galaxy rchi2, best galaxy z, the galaxy's z and
     rchi2 arrays).
     """
-    f1 = sorted((work/"step04").glob(f"scan1_id{sid}_*.npz"))
-    f2 = sorted((work/"step04").glob(f"scan2_id{sid}_*.npz"))
-    if not f1 or not f2:
+    f_star = sorted((work/"step04").glob(f"scan_star_id{sid}_*.npz"))
+    f_gal  = sorted((work/"step04").glob(f"scan_galaxy_id{sid}_*.npz"))
+    if not f_star or not f_gal:
         return None
-    r_star = float(np.load(f1[0], allow_pickle=True)["red_chi2"].min())
-    d2 = np.load(f2[0], allow_pickle=True)
-    z, r = d2["z"], d2["red_chi2"]
+    r_star = float(np.load(f_star[0], allow_pickle=True)["red_chi2"].min())
+    d_gal = np.load(f_gal[0], allow_pickle=True)
+    z, r = d_gal["z"], d_gal["red_chi2"]
     j = int(np.argmin(r))
     return r_star, float(r[j]), float(z[j]), z, r
 

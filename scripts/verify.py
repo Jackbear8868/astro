@@ -28,7 +28,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = ROOT / "results" / "_verify"
 VOLATILE = {"created", "git_commit"}
 
-
 def same_values(a, b):
     """Value equality that treats NaN as equal to NaN in the same place."""
     a, b = np.asarray(a), np.asarray(b)
@@ -41,7 +40,12 @@ def same_values(a, b):
 
 
 def normalise(obj, out_name):
-    """Drop the keys that record the run, and the output path it ran into."""
+    """Drop the keys that record the run, and the output path it ran into.
+
+    A recorded path names a product, so its last segment goes through the rename
+    as well; without that, every meta.json pointing at the segmentation, the
+    classification or the s field differs on the name alone.
+    """
     if isinstance(obj, dict):
         return {k: normalise(v, out_name) for k, v in obj.items() if k not in VOLATILE}
     if isinstance(obj, list):
@@ -53,7 +57,7 @@ def normalise(obj, out_name):
 
 def compare_file(ref, new, out_name, fails):
     """Append one message per difference found in this pair of files."""
-    rel = ref.name
+    rel = new.name                           # the name it goes by now
     if ref.suffix == ".npy":
         if not same_values(np.load(ref), np.load(new)):
             fails.append(f"{rel}: values differ")
@@ -90,15 +94,19 @@ def compare_file(ref, new, out_name, fails):
 
 
 def compare_dir(ref_dir, new_dir, out_name, fails):
-    ref_files = {p.name for p in ref_dir.iterdir() if p.is_file()}
+    """Compare one directory of the stored run against the new one, file by file."""
     new_files = {p.name for p in new_dir.iterdir() if p.is_file()}
-    for n in sorted(ref_files - new_files):
-        fails.append(f"{ref_dir.name}/{n}: missing from the new run")
-    for n in sorted(new_files - ref_files):
-        fails.append(f"{ref_dir.name}/{n}: new run wrote a file the reference has not")
-    for n in sorted(ref_files & new_files):
-        compare_file(ref_dir / n, new_dir / n, out_name, fails)
-    return len(ref_files & new_files)
+    seen, n = set(), 0
+    for ref in sorted(p for p in ref_dir.iterdir() if p.is_file()):
+        seen.add(ref.name)
+        if ref.name not in new_files:
+            fails.append(f"{ref_dir.name}/{ref.name}: missing from the new run")
+            continue
+        compare_file(ref, new_dir / ref.name, out_name, fails)
+        n += 1
+    for name in sorted(new_files - seen):
+        fails.append(f"{ref_dir.name}/{name}: new run wrote a file the reference has not")
+    return n
 
 
 def reference(pointing):

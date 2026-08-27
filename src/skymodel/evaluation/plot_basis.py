@@ -81,15 +81,16 @@ def main():
     W = ROOT / args.work
     STEP03 = W / "step03"
     wl = np.load(STEP03 / "wavelength.npy")
-    B  = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
-    lm = np.load(STEP03 / "line_mask.npy")
+    B  = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
+    # The mask is stored per iteration; the last row is the one step3 finished with.
+    lm = np.load(STEP03 / "sky_line_mask_per_iteration.npy")[-1]
     K  = B.shape[0]          # not hard-coded to 10 -- step3's -K can change the count
 
     # --- diagnostic: the energy concentration exposes basis vectors wasted on bad
     #     pixels ---
     print(f"basis={args.basis}   K={K}   {wl.size} channels "
           f"({wl.min():.1f}-{wl.max():.1f} A air)")
-    print(f"line_mask {lm.sum()}/{lm.size} ({100*lm.mean():.1f}%)\n")
+    print(f"sky line mask {lm.sum()}/{lm.size} ({100*lm.mean():.1f}%)\n")
     print(f"{'#':>3}{'L2 norm':>11}{'peak':>10}{'neg%':>8}"
           f"{'chan for 90% energy':>20}{'peak wl':>12}")
     print("-" * 66)
@@ -102,7 +103,7 @@ def main():
     print("\n90% energy in only a few channels = that basis vector is dominated by a single bad pixel, not a sky line.")
 
     # ------- figures: one per basis vector, all into the same folder -------
-    ms  = np.load(STEP03 / "mean_sky.npy")
+    ms  = np.load(STEP03 / "blank_mean_spectrum.npy")
     out = pointing_dir(W.name, "basis")
     out.mkdir(parents=True, exist_ok=True)
 

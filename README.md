@@ -110,9 +110,11 @@ The products land under the config's `output` directory:
 ```
 results/skymodel/p01/
   step01/  white light image, and the segmentation placed beside it
-  step02/  every source's summed spectrum, its variance, its spaxel count
-  step03/  the sky continuum, the sky-line mask, the K basis vectors
-  step04/  the template fit: each source's class, redshift and amplitudes
+  step02/  source_spectra.npz: every source's summed spectrum, variance, spaxel count
+  step03/  the sky continuum, the sky-line mask of every continuum iteration,
+           the K basis vectors
+  step04/  the template fit: each source's class, redshift and amplitudes,
+           scanned once against the stellar library and once against the galaxies
   step05/  s solved per blank spaxel, and the smooth field it is forced onto
   step06/  sky_subtracted.fits, sky_model.fits, and the per-spaxel coefficients
   stepN.log  each step's full output, headed by the call that produced it
@@ -125,7 +127,7 @@ results/skymodel/p01/
 The pipeline is six steps in order:
 
     whitelight         collapse a cube along wavelength into a white light image
-    object_spectra     sum each source's spectrum over the spaxels its seg ID covers
+    source_spectra     sum each source's spectrum over the spaxels its seg ID covers
     sky_basis          learn the sky continuum and the sky-line basis from blank
     classify_sources   fit templates to every source, giving it a class and a redshift
     fit_sky_amplitude  force the sky continuum amplitude s onto a spatial field
@@ -147,8 +149,8 @@ looked at after the run. `src/skymodel/README.md` says what each step reads and 
 Runs are bit-reproducible: the same config gives the same products, byte for byte. Each
 fitting step holds BLAS at one thread while it works, which is what makes it so -- the
 randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
-the basis moves by about 1 part in 10⁴. Steps 3, 5 and 6 stamp the git commit into
-their `meta.json`, each `stepN.log` opens with the call that produced the products
+the basis moves by about 1 part in 10⁴. Steps 1, 3, 4, 5 and 6 stamp the git commit
+into their `meta.json`, each `stepN.log` opens with the call that produced the products
 beside it, and `{output}/config.json` records the config the run was given.
 
 ```bash

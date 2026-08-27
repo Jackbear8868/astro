@@ -19,7 +19,8 @@ separates it out.
            labelled with its number
     right  after: those that passed the redshift criterion and were kept
 
-step5 already draws this for the pointing it is running, into step05/main_group.png,
+step5 already draws this for the pointing it is running, into
+step05/main_source_group.png,
 by calling the same utils.plot_main_group. This script exists for the two things
 that one cannot do: several pointings in one command, and the numbers underneath --
 which IDs were rejected, and how much of the field's flux the group holds.
@@ -28,7 +29,6 @@ which IDs were rejected, and how much of the field's flux the group holds.
     conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 1 --tag ...
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -38,28 +38,8 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, pointing_dir  # noqa: E402
-from products import fit_dirs  # noqa: E402
+from common import ROOT, load_field, pointing_dir, step04_tag  # noqa: E402
 from utils import DZ_MAX, main_source_group, plot_main_group  # noqa: E402
-
-
-def step04_tag(W, run=None):
-    """Which step4 run this pointing's redshifts come from, or None.
-
-    A work directory can hold several step4 runs -- different windows, different
-    mask iterations -- and the redshift decides which members belong to the main
-    source, so picking one by filename order would be an invisible error.
-    utils.galaxy_redshifts refuses to guess; the answer is recorded in the step5
-    meta.json, as the name of the classification file that run was given.
-    """
-    meta = fit_dirs(W, run)[0] / "meta.json"
-    if not meta.exists():
-        return None
-    m = json.loads(meta.read_text())
-    # "classification" is the key; "best" is what step5 wrote before the parameter
-    # was renamed, and products made then are still on disk.
-    c = m.get("classification") or m.get("best")
-    return Path(c).stem.removeprefix("classification_") if c else None
 
 
 def main():

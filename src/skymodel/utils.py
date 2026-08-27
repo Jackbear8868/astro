@@ -200,7 +200,7 @@ def estimate_continuum(mean_sky, thresholds=(1, 2), window=300, max_iter=5,
 def load_line_masks(masks, cumulative=True):
     """The per-iteration sky-line masks step3 produced; cumulative by default.
 
-    `masks` is either the stack step3 returns or the path of the iter_line_mask.npy
+    `masks` is either the stack step3 returns or the path of the per-iteration file
     it wrote, so a script reading the products applies the same rule the pipeline
     applied.
 
@@ -557,7 +557,8 @@ def galaxy_redshifts(step04, ids, tag=None):
     """
     out = {}
     for i in ids:
-        pat = f"scan2_id{i}_*.npz" if tag is None else f"scan2_id{i}_{tag}.npz"
+        pat = (f"scan_galaxy_id{i}_*.npz" if tag is None
+               else f"scan_galaxy_id{i}_{tag}.npz")
         f = sorted(Path(step04).glob(pat))
         if not f:
             raise SystemExit(f"{pat} not found in {step04}")

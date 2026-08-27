@@ -38,7 +38,7 @@ args = ap.parse_args()
 
 W = ROOT / args.work
 wl = np.load(W / "step03/wavelength.npy")
-B = np.load(W / "step03" / f"sky_basis_{args.basis}_K{args.K}.npy")
+B = np.load(W / "step03" / f"sky_line_basis_{args.basis}_K{args.K}.npy")
 n = min(args.top, B.shape[0])
 
 # The offset is set from the whole basis, not from the vectors drawn, so a trace looks

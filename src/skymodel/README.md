@@ -18,13 +18,21 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 
 | | function | reads | writes |
 |---|---|---|---|
-| 1 | `whitelight` | the ESO nosky cube | `step01/whitelight.fits` + preview |
-| — | `place_segmentation` | the segmentation it is given | `step01/seg.fits`, after checking the two share a pixel grid |
-| 2 | `object_spectra` | nosky cube, seg | `step02/object_{ids,flux,var,nspax}.npy` |
-| 3 | `sky_basis` | wsky cube, seg | `step03/` continuum, line mask, `sky_basis_{method}_K{K}.npy` |
-| 4 | `classify_sources` | `step02/`, `step03/` | `step04/scan{1,2}_id*.npz`, `best_*.npz`, `classification_*.npz` |
-| 5 | `fit_sky_amplitude` | wsky cube, `step03/`, `step04/` | `step05/s_free.npy`, `s_hat.npy`, `main_group.png` |
-| 6 | `subtract_sky` | wsky cube, `step03/`–`step05/` | `step06/sky_subtracted.fits`, `sky_model.fits`, `s_map.npy`, `A_map.npy` |
+| 1 | `whitelight` | the ESO nosky cube | `step01/whitelight_nosky.fits` + preview |
+| — | `place_segmentation` | the segmentation it is given | `step01/segmentation_input.fits`, after checking the two share a pixel grid |
+| 2 | `source_spectra` | nosky cube, seg | `step02/source_spectra.npz` |
+| 3 | `sky_basis` | wsky cube, seg | `step03/sky_continuum.npy`, three `*_per_iteration.npy` stacks, `sky_line_basis_{method}_K{K}.npy` |
+| 4 | `classify_sources` | `step02/`, `step03/` | `step04/scan_{star,galaxy}_id*.npz`, `source_fits_*.npz`, `classification_*.npz` |
+| 5 | `fit_sky_amplitude` | wsky cube, `step03/`, `step04/` | `step05/sky_continuum_amplitude_per_spaxel.npy`, `sky_continuum_amplitude_field.npy`, `main_source_group.png` |
+| 6 | `subtract_sky` | wsky cube, `step03/`–`step05/` | `step06/sky_subtracted.fits`, `sky_model.fits`, `source_template_amplitude_map.npy` |
+
+Step 3 writes no single sky-line mask: the three stacks hold the continuum, the detection
+threshold and the mask of every iteration, one row each, and steps 4 to 6 use the row
+`source_fit.line_mask_iter` names. The two scans step 4 writes per source are
+its two branches, the stellar library and the galaxy eigenspectra, not two passes over
+one of them. Step 6 does not write the s it applied: wherever that has a value it is
+step 5's field to the bit, and which spaxels step 6 solved is `np.isfinite` of any
+channel of `sky_model.fits`.
 
 The white light comes from the **nosky** cube, not the wsky one: downstream needs it to
 find the main source (the blob holding the brightest pixel), and the sky continuum of

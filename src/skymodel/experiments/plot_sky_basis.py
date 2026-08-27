@@ -13,7 +13,7 @@
 
     conda run -n astro python src/skymodel/experiments/plot_sky_basis.py --work results/skymodel/p01
     conda run -n astro python src/skymodel/experiments/plot_sky_basis.py \\
-        --basis results/skymodel/experiments/seg_threshold/prof2sigma/step03/sky_basis_svd_K54.npy
+        --basis results/skymodel/experiments/seg_threshold/prof2sigma/step03/sky_line_basis_svd_K54.npy
 """
 import argparse
 from pathlib import Path
@@ -34,7 +34,7 @@ def main():
     # seg_threshold/ 的門檻掃描產物),兩者擇一。
     ap.add_argument("--work", default=None,
                     help="pointing 的工作區,例如 results/skymodel/p01;"
-                         "會去讀它的 step03/sky_basis_{method}_K{K}.npy")
+                         "會去讀它的 step03/sky_line_basis_{method}_K{K}.npy")
     ap.add_argument("--method", default="svd", help="--work 模式下的分解方法")
     ap.add_argument("-K", type=int, default=30, help="--work 模式下的 basis 條數")
     ap.add_argument("--basis", default=None,
@@ -51,13 +51,13 @@ def main():
     if bool(args.work) == bool(args.basis):
         raise SystemExit("★ --work 與 --basis 請擇一指定")
     bp = (Path(args.basis) if args.basis else
-          ROOT / args.work / "step03" / f"sky_basis_{args.method}_K{args.K}.npy")
+          ROOT / args.work / "step03" / f"sky_line_basis_{args.method}_K{args.K}.npy")
     B  = np.load(bp)
     wl = np.load(Path(args.wavelength) if args.wavelength else bp.parent / "wavelength.npy")
     K  = B.shape[0]
     print(f"{bp}  {B.shape}   波長 {wl[0]:.1f}-{wl[-1]:.1f} A")
 
-    # 來源標籤 = basis 檔的上兩層目錄。sky_basis_svd_K30.npy 這個檔名只說得出
+    # 來源標籤 = basis 檔的上兩層目錄。sky_line_basis_svd_K30.npy 這個檔名只說得出
     # 方法與 K,說不出「從哪些 spaxel 學的」,而那正是不同版本之間唯一的差別
     # (p01 / p02 / 膨脹遮罩 / 門檻掃描 ...)。只用檔名的話,不同來源的同 K 會
     # 寫成同一個檔互相覆蓋,而且從檔名完全看不出來被蓋掉了。
@@ -70,7 +70,7 @@ def main():
     if args.per_component:
         d = (Path(args.out) if args.out
              else FIGURES / "step3_basis" /
-                  f"{src}__{bp.stem.replace('sky_basis_', 'basis_')}")
+                  f"{src}__{bp.stem.replace('sky_line_basis_', 'basis_')}")
         d.mkdir(parents=True, exist_ok=True)
         # y 範圍全部成分共用 —— 各自 autoscale 的話,一條只有雜訊的成分會被
         # 放大到和真正的天光線成分看起來一樣強,逐張翻閱時完全誤導。

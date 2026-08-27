@@ -8,8 +8,8 @@ is exactly mean_sky - C_sky, because C_sky is one value per channel and shifts
 every spaxel by the same amount. That is the curve drawn here.
 
 Being the mean, it shows the lines the basis has to describe but not how much they
-vary between spaxels, which is the part the basis exists to capture. sky_sigma,
-also written by step3, is drawn as a band for that.
+vary between spaxels, which is the part the basis exists to capture. The sky line
+threshold, also written by step3, is drawn as a band for that.
 
     conda run -n astro python src/skymodel/evaluation/sky_line_residual.py \\
         --work results/skymodel/p01
@@ -50,9 +50,11 @@ def main():
 
     d = ROOT / args.work / "step03"
     wl = np.load(d / "wavelength.npy")
-    ms = np.load(d / "mean_sky.npy")
+    ms = np.load(d / "blank_mean_spectrum.npy")
     C  = np.load(d / "sky_continuum.npy")
-    sg = np.load(d / "sky_sigma.npy")
+    # The threshold is stored per iteration; the last row is the one step3 finished
+    # with.
+    sg = np.load(d / "sky_line_threshold_per_iteration.npy")[-1]
     res = ms - C
 
     print(f"{args.work}: {wl.size} channels {wl.min():.1f}-{wl.max():.1f} A")
@@ -67,8 +69,8 @@ def main():
 
     fig, a = plt.subplots(figsize=args.figsize)
     if not args.no_band:
-        # sky_sigma is the running median of |mean_sky - continuum|, so the band is
-        # the typical channel-to-channel scatter, not an error on the mean.
+        # The threshold is the running median of |mean sky - continuum|, so the band
+        # is the typical channel-to-channel scatter, not an error on the mean.
         a.fill_between(wl, -sg, sg, color=C_BAND, alpha=0.55, lw=0,
                        label="$\\pm\\sigma$ (running median of $|$residual$|$)")
     a.axhline(0, lw=0.8, color=C_ZERO)

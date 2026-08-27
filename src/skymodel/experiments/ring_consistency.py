@@ -126,7 +126,7 @@ def main():
                     help="含天空的 cube;預設由 pNN 的編號推出 "
                          "data/wsky/DATACUBE_FINAL_N.fits")
     ap.add_argument("--seg", default=None,
-                    help="segmentation;預設為工作區的 step01/seg.fits")
+                    help="segmentation;預設為工作區的 step01/segmentation_input.fits")
     ap.add_argument("--basis", default="svd")
     ap.add_argument("-K", type=int, default=30)
     ap.add_argument("--rmax", type=int, default=12)
@@ -145,16 +145,16 @@ def main():
     W = ROOT / args.work
     STEP01, STEP03 = W / "step01", W / "step03"
     CUBE = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{int(W.name[1:])}.fits")
-    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
 
     fig_dir = Path(args.figdir); fig_dir.mkdir(parents=True, exist_ok=True)
     seg   = fits.getdata(seg_path).astype(int)
-    white = fits.getdata(STEP01 / "whitelight.fits")
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
     # 固定用現有的 step03 basis,**不重學** —— 重學的話遮罩會透過 basis 影響自己
     # 的判定,那正是要避開的迴圈。
-    L = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
-    print(f"basis: sky_basis_{args.basis}_K{args.K}.npy  {L.shape}(固定,不重學)")
+    L = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
+    print(f"basis: sky_line_basis_{args.basis}_K{args.K}.npy  {L.shape}(固定,不重學)")
 
     with fits.open(CUBE, memmap=True) as h:
         D = np.asarray(h["DATA"].data, np.float32)

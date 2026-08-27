@@ -19,8 +19,9 @@ the data cancelled out of it. It is off by default: when both curves are being r
 against zero, subtracting one from the other answers a question nobody asked -- how
 far each is from zero is already in the panel above.
 
---mode sky compares the inputs instead: our blank mean sky (step3's mean_sky, the sky
-as observed) against wsky - nosky (the sky ESO chose to remove). That answers a
+--mode sky compares the inputs instead: our blank mean sky (step3's
+blank_mean_spectrum, the sky as observed) against wsky - nosky (the sky ESO chose to
+remove). That answers a
 different question -- what the two think the sky *is*, rather than what each leaves
 behind -- and its --diff panel is mean(nosky) in blank.
 
@@ -76,7 +77,7 @@ def blank_mask(work, meta):
     Not "blank" in general -- *that* run's blank. A comparison made on a different
     set of spaxels than the number it is compared against is not a comparison.
     """
-    white = fits.getdata(work / "step01/whitelight.fits")
+    white = fits.getdata(work / "step01/whitelight_nosky.fits")
     seg_p = ROOT / meta["seg"] if not Path(meta["seg"]).is_absolute() else Path(meta["seg"])
     seg = fits.getdata(seg_p)
     valid = white != 0
@@ -155,17 +156,17 @@ def robust_range(y, pct=0.5, pad=0.35):
 
 
 def check_against_step3(work, wl, ours):
-    """Does the reconstruction land on step3's own mean_sky?
+    """Does the reconstruction land on step3's own blank mean spectrum?
 
     Not expected to be zero: step3 kept the spaxels complete in wsky, this keeps the
     ones complete in both cubes, and a different sample gives a different mean. It is
     reported as a fraction of the level, and with where the worst of it is, because on
     a bright sky line a small fractional change is a large number.
     """
-    saved = np.load(Path(work) / "step03/mean_sky.npy")
+    saved = np.load(Path(work) / "step03/blank_mean_spectrum.npy")
     d = np.abs(ours - saved)
     k = int(np.argmax(d))
-    print(f"  vs step03/mean_sky.npy (different sample, see above): "
+    print(f"  vs step03/blank_mean_spectrum.npy (different sample, see above): "
           f"median |diff| {np.median(d):.4g} on a typical level of {np.median(saved):.2f} "
           f"({100 * np.median(d) / max(abs(np.median(saved)), 1e-9):.3f}%)")
     print(f"    worst channel {wl[k]:.1f} A: {saved[k]:.2f} -> {ours[k]:.2f} "

@@ -38,8 +38,8 @@ COLORS = ["#ff7f0e", "#1f77b4", "#2ca02c", "#d62728"]
 def source_residual(cube_dir, seg, sid, lam_vac):
     """一個源的平均殘差、平均 sigma,以及模板蓋不到的通道數。
 
-    A_map 的第 j 列是第 j 條模板成分的係數,超過該源成分數的列是 NaN(step6 用
-    固定寬度 N_COMPONENTS 存),所以要照模板實際的欄數去切。
+    source_template_amplitude_map 的第 j 列是第 j 條模板成分的係數,超過該源成分數
+    的列是 NaN(step6 用固定寬度 N_COMPONENTS 存),所以要照模板實際的欄數去切。
 
     模板的靜止範圍蓋不到的通道,源模型是 **0** 而不是 NaN —— 那才是交付出去的
     產物實際的樣子:step6 在那些通道沒有源模型,源的流量原封不動留在資料裡。
@@ -60,7 +60,8 @@ def source_residual(cube_dir, seg, sid, lam_vac):
         sub = np.asarray(h["DATA"].data[:, y0:y1 + 1, x0:x1 + 1], np.float32)[:, sub_box]
         var = np.asarray(h["STAT"].data[:, y0:y1 + 1, x0:x1 + 1], np.float32)[:, sub_box]
 
-    A = np.load(cube_dir / "A_map.npy")[:, y0:y1 + 1, x0:x1 + 1][:, sub_box]
+    A = np.load(cube_dir / "source_template_amplitude_map.npy")[
+        :, y0:y1 + 1, x0:x1 + 1][:, sub_box]
     n_uncovered = len(lam_vac)
     if T is not None:
         n_uncovered = int((~np.all(np.isfinite(T), axis=1)).sum())
@@ -91,7 +92,7 @@ def main():
         ROOT / f"results/skymodel/evaluation/{W.name}/star_library"
     out.mkdir(parents=True, exist_ok=True)
 
-    seg = fits.getdata(W / "step01/seg.fits")
+    seg = fits.getdata(W / "step01/segmentation_input.fits")
     wl  = np.load(W / "step03/wavelength.npy")
     lam_vac = air_to_vacuum(wl)
     band = np.ones(len(wl), bool) if args.band is None else \

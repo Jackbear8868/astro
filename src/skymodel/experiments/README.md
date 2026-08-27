@@ -45,7 +45,7 @@ conda run -n astro python src/skymodel/experiments/choose_K.py --work results/sk
 
 要用 `dilate_seg.py` 產的遮罩跑 pipeline,把該顆 `configs/pNN.yaml` 的 `input.seg`
 指到那份 `seg_dil{r}.fits`:`pipeline.place_segmentation` 會把它複製成
-`step01/seg.fits`,而讀遮罩的四步 —— step2(抽源光譜)、step3(界定 blank)、
+`step01/segmentation_input.fits`,而讀遮罩的四步 —— step2(抽源光譜)、step3(界定 blank)、
 step5 與 step6(界定源區)—— 都是從那裡讀的。要和原本的結果並存的話,`output`
 也要一起改:產物的檔名不帶遮罩,同一個 `output` 會被後跑的那次蓋掉。這條路徑的
 好處是「這次跑用的是哪一份遮罩」留在 config 檔裡,命令列旗標留不住。

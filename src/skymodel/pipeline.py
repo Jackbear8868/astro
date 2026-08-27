@@ -6,7 +6,7 @@
 Pipeline.run() below is the whole method in one place:
 
     step 1  whitelight        collapse a cube along wavelength into a white light image
-    step 2  object_spectra    sum each source's spectrum over the spaxels its seg ID covers
+    step 2  source_spectra    sum each source's spectrum over the spaxels its seg ID covers
     step 3  sky_basis         learn the sky continuum and the sky-line basis from blank
     step 4  classify_sources  fit templates to every source, giving it a class and a redshift
     step 5  fit_sky_amplitude force the sky continuum amplitude s onto a spatial field
@@ -37,6 +37,7 @@ around its own work (utils.blas_single_thread).
 import argparse
 import contextlib
 import datetime
+import hashlib
 import inspect
 import json
 import os
@@ -272,10 +273,13 @@ def _scan_one(t):
     # The whole scan of each branch is a product, not how the result travels: the row
     # below comes back through the Pool either way.
     if S["keep_intermediate"]:
+        # The branch is named, not numbered: the two files carry identical keys and
+        # differ only in row count, so the name is all that tells them apart, and
+        # galaxy_redshifts reads one of them by name.
         if r1:
-            _save_scan(STEP04 / f"scan1_id{t}_{S['tag']}.npz", r1)
+            _save_scan(STEP04 / f"scan_star_id{t}_{S['tag']}.npz", r1)
         if r2:
-            _save_scan(STEP04 / f"scan2_id{t}_{S['tag']}.npz", r2)
+            _save_scan(STEP04 / f"scan_galaxy_id{t}_{S['tag']}.npz", r2)
 
     # The two branch winners face each other. The scans come back sorted by chi2, so
     # [0] is each branch's best.
@@ -378,7 +382,7 @@ class SkyAmplitude(NamedTuple):
     file and the fit hold the same field.
     """
     data: np.ndarray          # (ny, nx) float32
-    path: Path                # step05/s_hat.npy
+    path: Path                # step05/sky_continuum_amplitude_field.npy
 
 
 # =========================================================================
@@ -455,6 +459,9 @@ class Pipeline:
 
     # Which lines of a step reach the terminal while it runs; the rest is in the log.
     TERMINAL_LINES = {
+        # The grid offset decides whether the pointing may run at all, so it belongs
+        # in front of whoever started the run and not only in the log.
+        "step1": r"sources, mask|grid offset",
         "step3": r"spatial restriction|exclude-box|blank spaxels|svd |pca ",
         # step5's s_hat median is the one number that shows the field was estimated at
         # all; left in the log only, a field of NaN passes the terminal unremarked.
@@ -522,10 +529,13 @@ class Pipeline:
         # it is checked against the white light and written beside it, in step01.
         print("--- [1/6] step1 white light (from the nosky cube), and the segmentation")
         white = self.run_step("step1", self.whitelight, {})
-        seg = self.place_segmentation(white)
+        # Same log as the white light, appended: the grid offset it measures decides
+        # whether the pointing may run at all, and it is worth a record.
+        seg = self.run_step("step1", self.place_segmentation, dict(white=white),
+                            echo=self.TERMINAL_LINES["step1"], append=True)
 
         print("--- [2/6] step2 source spectra (nosky, for classification)")
-        spectra = self.run_step("step2", self.object_spectra,
+        spectra = self.run_step("step2", self.source_spectra,
                                 dict(white=white, seg=seg))
 
         print("--- [3/6] step3 sky basis")
@@ -576,15 +586,19 @@ class Pipeline:
             json.dumps(plain(self.cfg), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
 
-    def run_step(self, label, fn, kwargs, echo=None, tail=0):
+    def run_step(self, label, fn, kwargs, echo=None, tail=0, append=False):
         """Call one step in this process, sending its output to {output}/{label}.log.
 
         Whatever the step returns is passed back, which is how the pipeline hands
         one step's results to the next.
+
+        append adds to the log rather than starting it, for the second call that
+        shares a step's label -- without it the second call truncates the first
+        call's output.
         """
         log_path = self.out / f"{label}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("w", encoding="utf-8") as log:
+        with log_path.open("a" if append else "w", encoding="utf-8") as log:
             log.write(self.call_repr(fn, kwargs) + "\n\n")
             log.flush()
             step_log = StepLog(log, echo, tail)
@@ -721,9 +735,11 @@ class Pipeline:
     def whitelight(self, rows=32):
         """Collapse `cube` along wavelength; return the image and its WCS.
 
-        With keep_intermediate the same image is written to `out` as whitelight.fits
-        plus a preview png. rows is the number of image rows collapsed at a time --
-        memory and speed only.
+        With keep_intermediate the same image is written to `out` as
+        whitelight_nosky.fits plus a preview png. The filename names the cube because
+        the pointing has two -- a sky-included one and this sky-subtracted one -- and
+        an evaluation script collapses the other. rows is the number of image rows
+        collapsed at a time -- memory and speed only.
         """
         cube = self.inp["nosky"]
         out = self.out / "step01"
@@ -732,8 +748,8 @@ class Pipeline:
         cube, out = Path(cube), Path(out)
         if keep_intermediate:
             out.mkdir(parents=True, exist_ok=True)
-        white_fits = out / "whitelight.fits"
-        white_png = out / "whitelight.png"
+        white_fits = out / "whitelight_nosky.fits"
+        white_png = out / "whitelight_preview.png"
 
         with fits.open(cube, memmap=True) as hdul:
             data = hdul["DATA"].data
@@ -780,8 +796,11 @@ class Pipeline:
         matrix while the cube uses PC + CDELT, and their CRPIX differ, both of which a
         literal comparison would report as a mismatch.
 
-        With keep_intermediate the map is copied next to the white light, so the output
-        directory records which segmentation the run was given.
+        With keep_intermediate the map is copied next to the white light, so the
+        evaluation scripts have it at a fixed path and need to know nothing about where
+        the inputs live. The copy is byte-identical, so what it cannot show is that it
+        was checked -- meta.json beside it carries the measured offset and the source's
+        checksum, which is what makes the copy answer "which segmentation, verified how".
 
         max_offset above the default is a decision to run anyway on a pointing whose
         headers disagree; it is printed when it is above the default, so the bypass is
@@ -792,7 +811,7 @@ class Pipeline:
         max_offset = self.cfg["max_grid_offset"]
         keep_intermediate = self.keep_intermediate
 
-        dst = out / "step01/seg.fits"
+        dst = out / "step01/segmentation_input.fits"
         s, hs = fits.getdata(seg_src, header=True)
         if keep_intermediate:
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -822,6 +841,18 @@ class Pipeline:
                   f"{MAX_GRID_OFFSET:g} px and was allowed by max_grid_offset "
                   f"{max_offset:g} in the config. Anything this pointing produces from sky "
                   f"coordinates carries that offset.")
+        if keep_intermediate:
+            self.write_meta(
+                out / "step01",
+                cube=str(self._repo_path(self.inp["nosky"])),
+                seg_source=str(self._repo_path(seg_src)),
+                # The copy beside this file is byte-identical to its source, and the
+                # source can be replaced. The digest is what still identifies it then.
+                seg_md5=hashlib.md5(Path(seg_src).read_bytes()).hexdigest(),
+                grid_offset_px=round(float(off), 4),
+                max_grid_offset=max_offset,
+                n_sources=int(len(np.unique(s)) - 1),
+                mask_fraction=round(float((s > 0).mean()), 4))
         return Seg(s, dst)
 
     # =========================================================================
@@ -898,11 +929,11 @@ class Pipeline:
 
         return flux, var, nspax
 
-    def object_spectra(self, white, seg, var_cube=None, top=20):
+    def source_spectra(self, white, seg, var_cube=None, top=20):
         """Sum every source's spectrum over the spaxels its segmentation ID covers.
 
         white and seg come from step1 and from the segmentation check, in memory. With
-        keep_intermediate the four summed arrays are written into `out` as well.
+        keep_intermediate the summed arrays are written into `out` as one npz as well.
 
         top sets how many rows of the SNR table are printed and changes nothing that is
         saved. The table is there to notice a source far weaker than the rest, which no
@@ -938,11 +969,14 @@ class Pipeline:
             print(f"{ids[k]:>5d} {counts[k]:>7d} {np.sqrt(counts[k]):>9.1f} {snr[k]:>12.2f}")
 
         if keep_intermediate:
-            np.save(out / "object_ids.npy",   ids)
-            np.save(out / "object_flux.npy",  flux)
-            np.save(out / "object_var.npy",   var)
-            np.save(out / "object_nspax.npy", nspax)
-            print("saved ->", out)
+            # One bundle, not four arrays: the four have to be read together to mean
+            # anything -- ids is the row order of the rest, and the flux is a sum that
+            # needs spaxel_count to become a mean -- and the wavelength axis rides along
+            # so the file can be opened without also finding step03.
+            np.savez(out / "source_spectra.npz",
+                     ids=ids, flux_sum=flux, variance_sum=var, spaxel_count=nspax,
+                     wavelength=wavelength_grid(fits.getheader(cube, "DATA")))
+            print("saved ->", out / "source_spectra.npz")
         return SourceSpectra(ids, flux, var, nspax, out)
 
     # =========================================================================
@@ -1099,7 +1133,7 @@ class Pipeline:
         mean_sky = (blank * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1)
         print(f"mean_sky: sigma-clip {clip_sigma:g} sigma rejected {int((~keep).sum()):,} / "
               f"{keep.size:,} elements ({100*(~keep).mean():.6f}%)")
-        C_sky, sigma, line_mask, history = estimate_continuum(
+        C_sky, _, line_mask, history = estimate_continuum(
             mean_sky, thresholds=tuple(line_thresholds),
             window=continuum_window, max_iter=max_iter,
             min_unmasked_frac=min_unmasked_frac)
@@ -1112,14 +1146,18 @@ class Pipeline:
         iter_line_mask = np.array([h[2] for h in history])
 
         if keep_intermediate:
-            np.save(out_dir / "wavelength.npy",    wl)
-            np.save(out_dir / "mean_sky.npy",      mean_sky)
-            np.save(out_dir / "sky_continuum.npy", C_sky)
-            np.save(out_dir / "sky_sigma.npy",     sigma)
-            np.save(out_dir / "line_mask.npy",     line_mask)
-            np.save(out_dir / "iter_continuum.npy", np.array([h[0] for h in history]))
-            np.save(out_dir / "iter_sigma.npy",     np.array([h[1] for h in history]))
-            np.save(out_dir / "iter_line_mask.npy", iter_line_mask)
+            np.save(out_dir / "wavelength.npy",         wl)
+            np.save(out_dir / "blank_mean_spectrum.npy", mean_sky)
+            np.save(out_dir / "sky_continuum.npy",      C_sky)
+            # The final continuum is kept under its own name because it is C_sky, the
+            # scientific product; the final sigma and mask are not, being the last row
+            # of the stacks below and nothing more. A second name for the same bytes is
+            # what makes "which one is authoritative" a question at all.
+            np.save(out_dir / "sky_continuum_per_iteration.npy",
+                    np.array([h[0] for h in history]))
+            np.save(out_dir / "sky_line_threshold_per_iteration.npy",
+                    np.array([h[1] for h in history]))
+            np.save(out_dir / "sky_line_mask_per_iteration.npy", iter_line_mask)
 
         # The same keep mask applies: blank - C_sky differs by a per-channel constant
         # only, which shifts x and its median alike, so |x - med| / sg is unchanged.
@@ -1134,7 +1172,10 @@ class Pipeline:
             t0 = time.time()
             bases[method] = basis = self.learn_sky_basis(residual, K=K, method=method, seed=seed)
             if keep_intermediate:
-                np.save(out_dir / f"sky_basis_{method}_K{K}.npy", basis)   # filename includes K so different K values can coexist
+                # "line" because the continuum was subtracted before the decomposition:
+                # the sky cannot be rebuilt from this file alone. K is in the name so
+                # different K values can coexist.
+                np.save(out_dir / f"sky_line_basis_{method}_K{K}.npy", basis)
             print(f"{method:13s} basis {basis.shape}  {time.time() - t0:6.1f}s", flush=True)
 
         # Provenance of the products. Only method and K reach the filename, so a re-run
@@ -1155,8 +1196,16 @@ class Pipeline:
                 continuum_window=continuum_window,
                 line_thresholds=list(line_thresholds),
                 max_iter=max_iter, clip_sigma=clip_sigma,
+                min_unmasked_frac=min_unmasked_frac,
+                # max_iter is the cap, not what happened: the loop usually stops on the
+                # unmasked-fraction floor well before it, and the pass that triggered
+                # the stop is discarded, so the stack's row count is the only record.
+                n_iterations=len(history),
                 xlim=xlim, ylim=ylim, exclude_box=exclude_box,
-                n_blank_all=n_all, n_blank_used=int(blank_mask.sum()))
+                n_blank_all=n_all, n_blank_used=int(blank_mask.sum()),
+                # The spaxels that actually made mean_sky: the ones above minus those
+                # dropped for incomplete spectral coverage at the field edges.
+                n_blank_complete=int(complete.sum()))
         return SkyModel(wl, C_sky, bases, iter_line_mask)
 
     # =========================================================================
@@ -1187,20 +1236,23 @@ class Pipeline:
     # out, because the gap between them is what says whether the answer is firm.
 
     @staticmethod
-    def make_tag(basis, K, fix_s_at, star_window, gal_window, sky_basis, line_iter,
+    def make_tag(basis, K, fix_s_at, window, sky_basis, line_iter,
                  cumulative=True, suffix=""):
         """The output filename. Every setting that changes the result is encoded into
         it, so a re-run cannot quietly overwrite the previous one.
 
-        The windows and the mask iteration are in there because they decide which
+        The window and the mask iteration are in there because they decide which
         channels enter chi2, and different channel sets are different scientific
-        products that have to coexist. The diagnostic scripts call this same function,
-        so a naming written out twice cannot drift into "reading the wrong file".
+        products that have to coexist. One window, not two: both branches are given the
+        same one, so a second copy could never differ from the first and would only
+        suggest that the branches were fitted on different channels.
+
+        fix_s_at goes through :g rather than str, or 0 and 0.0 -- the same run -- would
+        write two different filenames.
         """
         base = f"{basis}_K{K}" if sky_basis else "nobasis"
-        return (f"{base}_s{'free' if fix_s_at is None else fix_s_at}"
-                f"_{star_window[0]:.0f}-{star_window[1]:.0f}"
-                f"_{gal_window[0]:.0f}-{gal_window[1]:.0f}"
+        s = "free" if fix_s_at is None else f"{fix_s_at:g}"
+        return (f"{base}_s{s}_{window[0]:.0f}-{window[1]:.0f}"
                 f"_L{line_iter}{'cum' if cumulative else 'raw'}" + suffix)
 
     @staticmethod
@@ -1254,7 +1306,7 @@ class Pipeline:
             r1, r2 = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
 
             if t in over:
-                s2 = np.load(out_dir / f"scan2_id{t}_{tag}.npz")
+                s2 = np.load(out_dir / f"scan_galaxy_id{t}_{tag}.npz")
                 j  = int(np.argmin(np.abs(s2["z"] - over[t])))
                 group, tpl = "galaxy", str(s2["template"][j])
                 z, A = float(s2["z"][j]), np.asarray(s2["A"][j], float)
@@ -1309,7 +1361,7 @@ class Pipeline:
         """Fit every source of `spectra`; return the last mask iteration's classification.
 
         sky is step3's model and spectra is step2's, both in memory. With
-        keep_intermediate one best_*.npz and one classification_*.npz per mask
+        keep_intermediate one source_fits_*.npz and one classification_*.npz per mask
         iteration are written into step04, alongside each source's full scan.
         """
         s = self.source_fit
@@ -1444,7 +1496,7 @@ class Pipeline:
             line = line_masks[it - 1]
             fit_star, fit_gal = win_star & ~line, win_gal & ~line
             tag = self.make_tag(basis, K, fix_s_at, star_window,
-                                gal_window, sky_basis, it, not raw_mask, suffix)
+                                sky_basis, it, not raw_mask, suffix)
 
             print(f"\n{'=' * 112}")
             print(f"mask iter{it}{'(cumulative)' if not raw_mask else '(independent)'}: flagged {int(line.sum()):,} / {line.size} channels"
@@ -1481,7 +1533,7 @@ class Pipeline:
 
             new = {k: np.array([x[k] for x in summary]) for k in KEYS}
 
-            out = STEP04 / f"best_{tag}.npz"
+            out = STEP04 / f"source_fits_{tag}.npz"
             # Merge rather than overwrite: re-running a single ID should update that
             # row and nothing else.
             if keep_intermediate and out.exists():
@@ -1523,6 +1575,20 @@ class Pipeline:
                   f"{ns:>7}{len(summary) - ns:>9}{med:>20.2f}{neg:>13}")
         if keep_intermediate:
             print("\n" + "\n".join(f"saved -> {o}" for _, o, _ in outs))
+            # The tag encodes what one filename can hold; the z grid and the library
+            # decide every number in the scans and fit in neither. Without this the
+            # directory's only record of how it was fitted is 40 characters of filename.
+            self.write_meta(
+                STEP04,
+                cube=str(self._repo_path(self.inp["nosky"])),
+                seg=str(self._repo_path(self.out / "step01/segmentation_input.fits")),
+                source_fits=[o.name for _, o, _ in outs],
+                basis=basis, K=K, sky_basis=sky_basis,
+                fix_s_at=fix_s_at, fit_window=list(star_window),
+                line_mask_iter=list(line_mask_iter), cumulative=not raw_mask,
+                z_min=zmin, z_max=zmax, z_step=zstep, star_dz=star_dz,
+                star_library=STAR_LIBRARY,
+                n_sources=len(summary))
         return classified
 
     # =========================================================================
@@ -1543,7 +1609,8 @@ class Pipeline:
         """Build the sky-continuum spatial field; return it.
 
         white, seg, sky and classification are what steps 1, 3 and 4 returned, in
-        memory. With keep_intermediate s_hat.npy, s_free.npy, main_group.png and
+        memory. With keep_intermediate the field, the per-spaxel solve,
+        main_source_group.png and
         meta.json are written into step05 as well.
         """
         a = self.sky_amplitude
@@ -1641,7 +1708,7 @@ class Pipeline:
 
         if keep_intermediate:
             plot_main_group(seg, white, mg, mids, all_ids, mk,
-                            out / "main_group.png", title=Path(work).name)
+                            out / "main_source_group.png", title=Path(work).name)
 
         # build field
         t0 = time.time()
@@ -1672,10 +1739,11 @@ class Pipeline:
         # they came from: the file and the fit have to hold the same field, and
         # narrowing afterwards instead would move the last bits of every spaxel.
         s_hat32 = s_hat.astype(np.float32)
-        s_hat_path = out / "s_hat.npy"
+        s_hat_path = out / "sky_continuum_amplitude_field.npy"
         if keep_intermediate:
             np.save(s_hat_path, s_hat32)
-            np.save(out / "s_free.npy", s_free.reshape(ny, nx).astype(np.float32))
+            np.save(out / "sky_continuum_amplitude_per_spaxel.npy",
+                    s_free.reshape(ny, nx).astype(np.float32))
 
         if keep_intermediate:
             self.write_meta(
@@ -1694,7 +1762,16 @@ class Pipeline:
                     train_xlim=train_xlim, train_ylim=train_ylim,
                     main_source_dz=main_source_dz, n_iter=n_iter),
                 main_ids=[int(i) for i in mids],
-                n_blank=int(blank.sum()), n_train=int(sf_train.sum()))
+                n_blank=int(blank.sum()), n_train=int(sf_train.sum()),
+                # A row with no training spaxel gets an offset of 0 -- "apply no
+                # correction", which utils.nanmed calls an assumption rather than a
+                # measurement. The field itself cannot show it: every spaxel comes out
+                # finite either way, so these two lists are the only record of where
+                # the field is asserting instead of measuring.
+                untrained_rows=[int(i) for i in
+                                np.flatnonzero(sf_train.sum(axis=1) == 0)],
+                untrained_cols=[int(i) for i in
+                                np.flatnonzero(sf_train.sum(axis=0) == 0)])
             print(f"saved -> {out}")
         return SkyAmplitude(s_hat32, s_hat_path)
 
@@ -1795,7 +1872,6 @@ class Pipeline:
         valid    = (white != 0).reshape(-1) & (coverage >= min_channel_coverage)
         sky_model = np.full((nz, ny * nx), np.nan, np.float32)
         A_map     = np.full((N_COMPONENTS, ny * nx), np.nan, np.float32)
-        s_map     = np.full(ny * nx, np.nan, np.float32)
 
         blank = valid & (seg_f == 0)
         rids  = np.unique(seg_f[valid & (seg_f > 0)])
@@ -1807,7 +1883,6 @@ class Pipeline:
         t0 = time.time()
         c = fit_blank(D[:, blank], sky, fit_mask=fit_mask, s_fix=s_hat[blank])
         sky_model[:, blank] = sky.T @ c
-        s_map[blank] = c[0]
         print(f" {time.time() - t0:.1f}s", flush=True)
 
         # source regions
@@ -1822,7 +1897,6 @@ class Pipeline:
             c = fit_source(D[:, m], sky, T, s_fix=s_hat[m], progress=True)
             A_map[:, m] = c[:N_COMPONENTS]
             sky_model[:, m] = sky.T @ c[N_COMPONENTS:]
-            s_map[m] = c[N_COMPONENTS]
 
             done += int(m.sum())
             el = time.time() - t0
@@ -1843,8 +1917,11 @@ class Pipeline:
             self.write_cube(out / "sky_subtracted.fits", cube(sub),
                             hdr_pri, hdr_data, hdul["STAT"].data, hdr_stat)
         self.write_cube(out / "sky_model.fits", cube(sky_model), hdr_pri, hdr_data)
-        np.save(out / "A_map.npy", A_map.reshape(N_COMPONENTS, ny, nx))
-        np.save(out / "s_map.npy", s_map.reshape(ny, nx))
+        np.save(out / "source_template_amplitude_map.npy",
+                A_map.reshape(N_COMPONENTS, ny, nx))
+        # The s actually applied is not written: on every spaxel it has a value it is
+        # step5's field to the bit, and the mask of which spaxels were solved is
+        # np.isfinite of any channel of sky_model.fits.
 
         self.write_meta(
             out,

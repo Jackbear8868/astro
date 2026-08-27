@@ -58,12 +58,12 @@ def main():
     run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
     p = sky_amplitude_params(meta)
-    seg   = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
+    seg   = fits.getdata(W / "step01/segmentation_input.fits").astype(int)
+    white = np.asarray(fits.getdata(W / "step01/whitelight_nosky.fits"), float)
     wl    = np.load(W / "step03/wavelength.npy")
     C_sky = np.load(W / "step03/sky_continuum.npy")
-    basis = np.load(W / f"step03/sky_basis_{meta['basis']}_K{meta['K']}.npy")
-    s_free = np.load(run / "s_free.npy").astype(float)
+    basis = np.load(W / f"step03/sky_line_basis_{meta['basis']}_K{meta['K']}.npy")
+    s_free = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     valid = white != 0
     mg, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")

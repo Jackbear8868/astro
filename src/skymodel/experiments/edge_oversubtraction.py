@@ -113,7 +113,7 @@ def main():
     ap.add_argument("--run", nargs="+", default=None,
                     help="step05 底下要比的替代 run 目錄名(可給多個,一個一欄);\n預設用 pipeline 自己的 step06")
     ap.add_argument("--seg", default=None,
-                    help="segmentation;預設為工作區的 step01/seg.fits")
+                    help="segmentation;預設為工作區的 step01/segmentation_input.fits")
     ap.add_argument("--main-id", type=int, default=1, help="單獨拿出來看的源")
     ap.add_argument("--band", type=float, nargs=2, default=(5000, 6000),
                     help="甜甜圈影像用哪個波段")
@@ -133,8 +133,9 @@ def main():
 
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
-    seg   = fits.getdata(Path(args.seg) if args.seg else STEP01 / "seg.fits").astype(int)
-    white = fits.getdata(STEP01 / "whitelight.fits")
+    seg   = fits.getdata(Path(args.seg) if args.seg
+                         else STEP01 / "segmentation_input.fits").astype(int)
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
     dist, owner = rings_by_label(seg, args.far)
     far    = (dist > args.far) & (seg == 0)

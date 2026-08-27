@@ -209,10 +209,10 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04, tag=None
     return boxes, notes, main, peak
 
 
-def draw_map(white, seg, s_hat, boxes, out_path, title):
+def draw_map(white, seg, amplitude_field, boxes, out_path, title):
     """The boxes drawn on the white light image and on the s field -- reporting only
     the coordinates would not show which patch of the sky that is."""
-    n = 1 if s_hat is None else 2
+    n = 1 if amplitude_field is None else 2
     fig, axes = plt.subplots(1, n, figsize=(8.5 * n, 8), squeeze=False)
     q0 = max(float(np.nanpercentile(white[white != 0], 20)), 1e-3)
     d  = np.arcsinh(white / q0)
@@ -220,13 +220,13 @@ def draw_map(white, seg, s_hat, boxes, out_path, title):
                       vmin=float(np.nanpercentile(d, 30)),
                       vmax=float(np.nanpercentile(d, 99.7)))
     axes[0][0].set_title("whitelight", fontsize=10)
-    if s_hat is not None:
+    if amplitude_field is not None:
         # The colour scale is centred on 1.0 with a half width of 3 x the robust
         # spread. Switching to percentiles would be asymmetric about the centre and
         # narrower as well, and the same s field would look far more strongly
         # striped -- that is a difference of the colour scale, not of the data.
-        v = 3 * robust_spread(s_hat[np.isfinite(s_hat)])
-        im = axes[0][1].imshow(s_hat, origin="lower", cmap="RdBu_r",
+        v = 3 * robust_spread(amplitude_field[np.isfinite(amplitude_field)])
+        im = axes[0][1].imshow(amplitude_field, origin="lower", cmap="RdBu_r",
                                vmin=1 - v, vmax=1 + v)
         plt.colorbar(im, ax=axes[0][1], fraction=0.045, pad=0.01)
         axes[0][1].set_title("s field (new continuum map)", fontsize=10)
@@ -388,7 +388,8 @@ def main():
     seg, white, _ = load_field(W)
     s_dir, run = fit_dirs(W, args.run)
     wl    = np.load(W / "step03/wavelength.npy")
-    s_hat = np.load(s_dir / "s_hat.npy") if (s_dir / "s_hat.npy").exists() else None
+    s_file = s_dir / "sky_continuum_amplitude_field.npy"
+    amplitude_field = np.load(s_file) if s_file.exists() else None
 
     # 主源分組要用的紅移必須出自畫的是哪一次擬合;工作區裡可能有好幾次 step4。
     meta = json.loads((run / "meta.json").read_text())
@@ -416,7 +417,7 @@ def main():
                else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, notes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
-        draw_map(white, seg, s_hat, boxes, out.with_suffix(".map.png"),
+        draw_map(white, seg, amplitude_field, boxes, out.with_suffix(".map.png"),
                  f"{'box' if args.half else 'point'} locations   {W.name}")
         return
 
@@ -531,7 +532,7 @@ def main():
         plt.close(fig)
         print(f"saved -> {o}")
 
-    draw_map(white, seg, s_hat, boxes, outdir / "map.png",
+    draw_map(white, seg, amplitude_field, boxes, outdir / "map.png",
              f"{kind} locations   {W.name}")
 
 

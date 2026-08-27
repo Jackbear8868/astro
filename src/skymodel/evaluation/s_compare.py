@@ -46,9 +46,13 @@ from common import EVAL, ROOT, S_CMAP, load_field, pointing_dir  # noqa: E402
 
 FIGURES = EVAL / "sfield"
 
+# --which's two kinds -> the file step5 writes for each.
+S_FILE = {"hat":  "sky_continuum_amplitude_field.npy",
+          "free": "sky_continuum_amplitude_per_spaxel.npy"}
+
 
 def s_dir(work, pattern=None):
-    """Where this pointing's s_hat/s_free live.
+    """Where this pointing's two sky continuum amplitude files live.
 
     The pipeline writes them straight into step05, but the 14-pointing runs were made
     into named run directories under it, and the name carries that pointing's template
@@ -62,8 +66,8 @@ def s_dir(work, pattern=None):
     """
     d = Path(work) / "step05"
     runs = [x for x in d.glob(pattern if pattern else "*")
-            if x.is_dir() and (x / "s_hat.npy").exists()]
-    if pattern is None and (d / "s_hat.npy").exists():
+            if x.is_dir() and (x / S_FILE["hat"]).exists()]
+    if pattern is None and (d / S_FILE["hat"]).exists():
         runs.append(d)
     if not runs:
         return None
@@ -143,7 +147,7 @@ def main():
         seg, white, valid = load_field(W)
         meta = json.loads((d / "meta.json").read_text())
         for k in kinds:
-            f = d / f"s_{k}.npy"
+            f = d / S_FILE[k]
             if not f.exists():
                 print(f"  skip {name} s_{k}: {f.name} not in {d.name}")
                 continue

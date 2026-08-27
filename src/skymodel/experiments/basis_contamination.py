@@ -69,25 +69,25 @@ def main():
     STEP01, STEP03, STEP04 = W / "step01", W / "step03", W / "step04"
 
     wl = np.load(STEP03 / "wavelength.npy")
-    IN = np.load(STEP03 / "iter_line_mask.npy")[0]
-    B  = np.load(STEP03 / f"sky_basis_{args.basis}_K{args.K}.npy")
+    IN = np.load(STEP03 / "sky_line_mask_per_iteration.npy")[0]
+    B  = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
     B  = B / np.linalg.norm(B, axis=1, keepdims=True)
     nz = wl.size
 
-    # 檔名裡的 tag 由 step4 的設定組成,與這支無關 —— 直接找目錄裡的 best
-    bf = sorted(STEP04.glob("best_*.npz"))
-    if not bf:
-        raise SystemExit(f"{STEP04} 裡沒有 best_*.npz,先跑這顆 pointing 的 pipeline:\n"
+    # 檔名裡的 tag 由 step4 的設定組成,與這支無關 —— 直接找目錄裡的 source_fits
+    sf = sorted(STEP04.glob("source_fits_*.npz"))
+    if not sf:
+        raise SystemExit(f"{STEP04} 裡沒有 source_fits_*.npz,先跑這顆 pointing 的 pipeline:\n"
                          "  conda run -n astro python src/skymodel/pipeline.py "
                          "configs/pNN.yaml")
-    best = np.load(bf[0])
-    j = int(np.flatnonzero(best["id"] == args.id)[0])
-    z = float(best["z"][j])
+    src_fit = np.load(sf[0])
+    j = int(np.flatnonzero(src_fit["id"] == args.id)[0])
+    z = float(src_fit["z"][j])
     print(f"Haro 11 (ID {args.id}) 的紅移 z = {z:.5f}"
           f"   (cz = {z*299792.458:,.0f} km/s)")
 
-    seg = fits.getdata(STEP01 / "seg.fits")
-    white = fits.getdata(STEP01 / "whitelight.fits")
+    seg = fits.getdata(STEP01 / "segmentation_input.fits")
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits")
     tot = int((white != 0).sum())
     blank = int(((white != 0) & (seg == 0)).sum())
     print(f"有效 spaxel {tot:,}   blank {blank:,}   被遮罩的源 {tot-blank:,}"

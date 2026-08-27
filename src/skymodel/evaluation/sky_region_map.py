@@ -6,10 +6,12 @@ different masks, and they must not be conflated:
     step3  sky basis      blank = inside the field of view & seg == 0, then the
                           --xlim / --ylim / --exclude-box selected visually for each
                           pointing. **No dilation.**
-    step5  s spatial      on top of the above, additionally requires > r_far from
-           field          **any** source and > r_far_haro from the main source group,
-                          and rejects the pixels with |s − median| > clip x spread.
-                          This layer is the one that "avoids the unstable regions".
+    step5  s spatial      on top of the above, additionally requires
+           field          > min_source_distance from **any** source and
+                          > min_main_source_distance from the main source group, and
+                          rejects the pixels with |s − median| > train_clip_sigma x
+                          spread. This layer is the one that "avoids the unstable
+                          regions".
 
 Why the two layers use different criteria
 -----------------------------------------
@@ -86,7 +88,7 @@ def main():
     # --- step5: back further off the sources, and reject the pixels where the fit
     #     failed ---
     p = sky_amplitude_params(json.loads((run / "meta.json").read_text()))
-    s = np.load(run / "s_free.npy").astype(float)
+    s = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
     ok = valid & (seg == 0) & np.isfinite(s)
     _, s_train = build_amplitude_field(s, seg, ok, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
@@ -124,9 +126,9 @@ def main():
 
     lim = "  ".join(f"{k} {v}" for k, v in reg.items()) or "(無空間限制)"
     fig.suptitle(f"{W.name}    step3: {lim}    "
-                 f"step5: > {p['r_far']:.0f} px from any source, "
-                 f"> {p['r_far_haro']:.0f} px from Haro 11, "
-                 f"clip {p['clip']:.0f} sigma", fontsize=12)
+                 f"step5: > {p['min_source_distance']:.0f} px from any source, "
+                 f"> {p['min_main_source_distance']:.0f} px from Haro 11, "
+                 f"clip {p['train_clip_sigma']:.0f} sigma", fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     o = pointing_dir(W.name) / "sky_region.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")

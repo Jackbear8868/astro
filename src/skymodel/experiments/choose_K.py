@@ -83,9 +83,9 @@ def main():
     STEP01, STEP03 = W / "step01", W / "step03"
     WSKY = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{int(W.name[1:])}.fits")
 
-    seg   = fits.getdata(STEP01 / "seg.fits")
-    white = fits.getdata(STEP01 / "whitelight.fits")
-    lm    = np.load(STEP03 / "iter_line_mask.npy")[0]
+    seg   = fits.getdata(STEP01 / "segmentation_input.fits")
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits")
+    lm    = np.load(STEP03 / "sky_line_mask_per_iteration.npy")[0]
     C_sky = np.load(STEP03 / "sky_continuum.npy")
 
     with fits.open(WSKY, memmap=True) as h:

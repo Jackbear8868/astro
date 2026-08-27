@@ -39,15 +39,15 @@ LOG_RATIO = 20.0        # span above which the shared y axis switches to log
 
 def scan_files(step04, sid, tag):
     """(stars, galaxy) scan arrays for one source, either possibly None."""
-    def one(n):
-        hits = sorted(step04.glob(f"scan{n}_id{sid}_{tag}.npz"))
+    def one(branch):
+        hits = sorted(step04.glob(f"scan_{branch}_id{sid}_{tag}.npz"))
         if not hits:
             return None
         if len(hits) > 1:
-            raise SystemExit(f"{len(hits)} files match scan{n}_id{sid}_{tag}.npz; "
+            raise SystemExit(f"{len(hits)} files match scan_{branch}_id{sid}_{tag}.npz; "
                              "narrow it with --tag")
         return np.load(hits[0])
-    return one(1), one(2)
+    return one("star"), one("galaxy")
 
 
 def curves(d, spectral=False):
@@ -119,17 +119,17 @@ def main():
     W = ROOT / args.work
     name = Path(args.work).name
     step04 = W / "step04"
-    best_hits = sorted(step04.glob(f"best_{args.tag}.npz"))
-    if not best_hits:
-        raise SystemExit(f"no best_{args.tag}.npz under {step04}")
-    if len(best_hits) > 1:
-        raise SystemExit(f"{len(best_hits)} files match best_{args.tag}.npz; "
+    fit_hits = sorted(step04.glob(f"source_fits_{args.tag}.npz"))
+    if not fit_hits:
+        raise SystemExit(f"no source_fits_{args.tag}.npz under {step04}")
+    if len(fit_hits) > 1:
+        raise SystemExit(f"{len(fit_hits)} files match source_fits_{args.tag}.npz; "
                          "narrow it with --tag")
-    best = np.load(best_hits[0])
-    run = best_hits[0].stem[len("best_"):]
-    print(f"{name}: {best_hits[0].name}")
+    source_fits = np.load(fit_hits[0])
+    run = fit_hits[0].stem[len("source_fits_"):]
+    print(f"{name}: {fit_hits[0].name}")
 
-    ids = best["id"].tolist() if args.id == "all" else [int(args.id)]
+    ids = source_fits["id"].tolist() if args.id == "all" else [int(args.id)]
     out_dir = Path(args.out_dir) if args.out_dir else pointing_dir(name, "template_fit")
     out_dir.mkdir(parents=True, exist_ok=True)
     tab10 = plt.get_cmap("tab10").colors
@@ -139,9 +139,10 @@ def main():
         if d1 is None and d2 is None:
             print(f"  id {sid}: no scan files")
             continue
-        k = best["id"].tolist().index(sid)
-        won, tpl, z_best = str(best["group"][k]), str(best["template"][k]), float(best["z"][k])
-        rs, rg = float(best["star_red_chi2"][k]), float(best["gal_red_chi2"][k])
+        k = source_fits["id"].tolist().index(sid)
+        won, tpl, z_best = (str(source_fits["group"][k]), str(source_fits["template"][k]),
+                            float(source_fits["z"][k]))
+        rs, rg = float(source_fits["star_red_chi2"][k]), float(source_fits["gal_red_chi2"][k])
         margin = max(rs, rg) / min(rs, rg)
 
         fig, (axs, axg) = plt.subplots(1, 2, sharey=True, figsize=args.figsize,

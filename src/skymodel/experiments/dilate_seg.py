@@ -62,7 +62,8 @@ def main():
     ap.add_argument("--work", required=True,
                     help="pointing 的工作區,例如 results/skymodel/p01")
     ap.add_argument("--seg", default=None,
-                    help="要膨脹的 segmentation;預設為工作區的 step01/seg.fits")
+                    help="要膨脹的 segmentation;預設為工作區的 "
+                         "step01/segmentation_input.fits")
     ap.add_argument("--radii", type=int, nargs="+", default=[2, 4, 8])
     ap.add_argument("--rstop-json", default=None,
                     help="改用 ring_consistency.py 量出來的逐源 r_stop。"
@@ -74,7 +75,7 @@ def main():
 
     W = ROOT / args.work
     STEP01 = W / "step01"
-    seg_path = Path(args.seg) if args.seg else STEP01 / "seg.fits"
+    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
 
     # 輸出目錄預設分 pointing:seg_dil4.fits 這個名字只說得出半徑,說不出是哪一顆
     # 的遮罩,14 顆寫進同一層會互相覆蓋,而下游 step3/step5 是照路徑讀的。
@@ -83,7 +84,7 @@ def main():
     fig = Path(args.figdir); fig.mkdir(parents=True, exist_ok=True)
     hdr   = fits.getheader(seg_path)
     seg   = fits.getdata(seg_path).astype(np.int32)
-    white = fits.getdata(STEP01 / "whitelight.fits")
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits")
     valid = white != 0
     n_src0, n_blank0 = int((seg > 0).sum()), int(((seg == 0) & valid).sum())
     print(f"{W.name} 原始 {seg_path.name}:源 {n_src0:,} spaxel,"

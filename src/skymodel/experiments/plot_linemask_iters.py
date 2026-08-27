@@ -5,7 +5,7 @@
   - 遮罩是逐輪累加的嗎?(不是 —— 每輪都用原始 mean_sky 重新判定)
   - 迭代停在哪裡、為什麼停(收斂 or 撞到 min_unmasked_frac 地板)
 
-需要 step3 存下的 iter_*.npy。若還沒有,重跑一次該顆的 pipeline 即可:
+需要 step3 存下的 sky_*_per_iteration.npy。若還沒有,重跑一次該顆的 pipeline 即可:
     conda run -n astro python src/skymodel/pipeline.py configs/pNN.yaml
 
 輸出 results/skymodel/evaluation/sky_basis/linemask_iters_{pNN}/ 底下,每一輪兩張:
@@ -13,12 +13,13 @@
     iter{N}_unmasked.png  沒被遮掉的通道 —— 連續譜就是在這些通道上擬的
 
 --with-rejected 會多畫一輪。estimate_continuum 是先判斷停止條件才存檔,所以
-觸發停止的那一輪不在 iter_*.npy 裡,沒有它就看不到迭代是停在什麼狀態上。這個
+觸發停止的那一輪不在 sky_*_per_iteration.npy 裡,沒有它就看不到迭代是停在什麼
+狀態上。這個
 旗標從最後一輪的遮罩把它重算出來,存成 iter{N+1}_*_rejected.png,檔名和採用的
 那幾輪分開,不會蓋掉任何東西。
 
-兩張的標題講的是這些通道被怎麼處理,不是它們「是不是線」:判準只知道某個通道
-超出了門檻,叫它「線」是多一層解讀。兩個數字加起來就是總通道數。
+兩張的檔名講的是這些通道被怎麼處理,不是它們「是不是線」:判準只知道某個通道
+超出了門檻,叫它「線」是多一層解讀。各輪的通道數看上面印出來的表。
 
 用法:
     python src/skymodel/experiments/plot_linemask_iters.py --work results/skymodel/p01
@@ -54,6 +55,19 @@ C_SKY, C_CONT, C_UP, C_DN = "0.72", "#b30000", "#e6550d", "#fdae61"
 C_HI,  C_LO = "#2ca02c", "#6a51a3"
 C_KEEP = "#d62728"      # 沒被遮掉的通道 —— 連續譜就是在這些點上擬的
 
+# masked 與 unmasked 是同一輪的兩種看法,要能在投影片上疊著切換,所以兩張的幾何
+# 必須逐像素相同。做法是把座標框釘死在畫布的這個矩形上(左, 下, 寬, 高,單位是
+# 畫布比例),並且存檔不裁切 —— bbox_inches="tight" 是依內容裁的,而兩張的圖例
+# 內容本來就不一樣,裁出來的寬度就會差一點,疊起來就是整張圖跳動。
+# 右邊留下的 0.116 是圖例的位置:圖例畫在座標框外,不佔資料的空間。它要放得下
+# 兩張圖裡最寬的那一列("not masked"),放不下就會被畫布右緣切掉半個字。
+AXES_RECT     = (0.042, 0.115, 0.842, 0.785)
+LEGEND_ANCHOR = (1.005, 1.0)     # 錨在座標框右上角外側,兩張圖同一個點
+
+# 這些圖是投影片上的整頁圖,離螢幕遠,字和線都要比論文裡的粗一號。
+FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 26, 22, 18, 20
+LW_SKY, LW_CONT, LW_THRESH = 1.2, 3.2, 1.8
+
 
 def main():
     ap = argparse.ArgumentParser(description="畫 line_mask 每一輪的演變")
@@ -65,7 +79,9 @@ def main():
                          "被切掉的線頂端不是這張圖要看的東西")
     ap.add_argument("--figsize", type=float, nargs=2, metavar=("W", "H"),
                     default=(24, 7),
-                    help="畫布尺寸(吋)。3801 個通道橫向排開,窄的畫布會把天光線擠成一團")
+                    help="畫布尺寸(吋)。3801 個通道橫向排開,窄的畫布會把天光線擠成一團。"
+                         "圖例的欄寬是畫布寬度的一個比例(見 AXES_RECT),所以窄到"
+                         "二十吋以下時圖例的字會被右緣切掉")
     ap.add_argument("--dpi", type=int, default=220)
     ap.add_argument("--with-rejected", action="store_true",
                     help="多畫觸發停止的那一輪。它沒有被 estimate_continuum 存下來,"
@@ -75,7 +91,9 @@ def main():
     W = ROOT / args.work
     STEP03 = W / "step03"
 
-    need = ["iter_continuum.npy", "iter_sigma.npy", "iter_line_mask.npy"]
+    need = ["sky_continuum_per_iteration.npy",
+            "sky_line_threshold_per_iteration.npy",
+            "sky_line_mask_per_iteration.npy"]
     missing = [f for f in need if not (STEP03 / f).exists()]
     if missing:
         raise SystemExit(
@@ -84,10 +102,10 @@ def main():
             "  (方法、K 與學天空的空間範圍都在 config 裡,不必另外帶)")
 
     wl = np.load(STEP03 / "wavelength.npy")
-    ms = np.load(STEP03 / "mean_sky.npy")
-    C  = np.load(STEP03 / "iter_continuum.npy")     # (n_iter, nz)
-    S  = np.load(STEP03 / "iter_sigma.npy")
-    M  = np.load(STEP03 / "iter_line_mask.npy")
+    ms = np.load(STEP03 / "blank_mean_spectrum.npy")
+    C  = np.load(STEP03 / "sky_continuum_per_iteration.npy")     # (n_iter, nz)
+    S  = np.load(STEP03 / "sky_line_threshold_per_iteration.npy")
+    M  = np.load(STEP03 / "sky_line_mask_per_iteration.npy")
     n_saved = M.shape[0]
     n_iter  = n_saved
 
@@ -147,8 +165,34 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):
-        fig.savefig(out / name, dpi=args.dpi, bbox_inches="tight")
+        # 不裁切:每張都正好是 figsize x dpi 個像素,理由見 AXES_RECT。
+        fig.savefig(out / name, dpi=args.dpi)
         plt.close(fig)
+
+    def blank_panel(title):
+        """開一張空圖:畫布、座標框、字級、軸標籤,兩張圖共用這一段。
+
+        座標框用 add_axes 釘在 AXES_RECT,不交給自動版面:框的位置只由那一個常數
+        決定,不會被 rcParams 的預設邊界、或日後某人加的 tight_layout 挪走,右邊
+        也才有一塊寬度確定的地方放圖例。
+        """
+        fig = plt.figure(figsize=args.figsize)
+        a = fig.add_axes(AXES_RECT)
+        # x 範圍明寫:主圖用 add_collection 加資料,它不會帶動自動縮放。兩張圖
+        # 共用這一行,波長也就一定對得上。
+        a.set_xlim(wl.min(), wl.max())
+        a.set_ylim(*args.ylim)
+        a.set_xlabel("wavelength [$\\AA$]", fontsize=FS_LABEL)
+        a.set_ylabel("flux", fontsize=FS_LABEL)
+        a.tick_params(labelsize=FS_TICK)
+        a.set_title(title, fontsize=FS_TITLE)
+        return fig, a
+
+    def legend(a, handles):
+        """圖例:兩張圖同一個錨點、同一組間距,只有列數不同。"""
+        a.legend(handles=handles, fontsize=FS_LEGEND, loc="upper left",
+                 bbox_to_anchor=LEGEND_ANCHOR, borderaxespad=0, frameon=False,
+                 handlelength=1.8, handletextpad=0.8, labelspacing=0.7)
 
     def panel(i, title, name):
         """一輪:mean_sky、連續譜、上下兩條門檻,被判成線的通道換顏色。
@@ -179,28 +223,20 @@ def main():
         cols[hi[:-1] | hi[1:]] = C_HI
         cols[lo[:-1] | lo[1:]] = C_LO
 
-        fig, a = plt.subplots(figsize=args.figsize)
-        a.add_collection(LineCollection(segs, colors=list(cols), linewidths=0.6,
-                                        zorder=2))
-        a.plot(wl, C[i], lw=1.4, color=C_CONT, zorder=4)
-        a.plot(wl, C[i] + THRESHOLDS[0] * S[i], lw=0.8, color=C_UP, zorder=5)
-        a.plot(wl, C[i] - THRESHOLDS[1] * S[i], lw=0.8, color=C_DN, zorder=5)
+        fig, a = blank_panel(title)
+        a.add_collection(LineCollection(segs, colors=list(cols),
+                                        linewidths=LW_SKY, zorder=2))
+        a.plot(wl, C[i], lw=LW_CONT, color=C_CONT, zorder=4)
+        a.plot(wl, C[i] + THRESHOLDS[0] * S[i], lw=LW_THRESH, color=C_UP, zorder=5)
+        a.plot(wl, C[i] - THRESHOLDS[1] * S[i], lw=LW_THRESH, color=C_DN, zorder=5)
         # LineCollection 沒有可用的圖例代表,所以圖例的樣本自己造。
         # 上下兩色不列進圖例:綠色在 +sigma 線之上、紫色在 -sigma 線之下,
         # 圖上看得出來,再寫一次只是把圖例拉長。
-        a.legend(handles=[
-            Line2D([], [], color=C_SKY,  lw=1.5, label="mean sky"),
-            Line2D([], [], color=C_CONT, lw=2.0, label="continuum"),
-            Line2D([], [], color=C_UP,   lw=1.0, label=f"+{THRESHOLDS[0]}$\\sigma$"),
-            Line2D([], [], color=C_DN,   lw=1.0, label=f"-{THRESHOLDS[1]}$\\sigma$")],
-            fontsize=11, loc="upper left", bbox_to_anchor=(1.005, 1.0),
-            borderaxespad=0, frameon=False)
-        # add_collection 不會帶動自動縮放,x 範圍要自己設。
-        a.set_xlim(wl.min(), wl.max())
-        a.set_ylim(*args.ylim)
-        a.set_xlabel("wavelength [$\\AA$]")
-        a.set_ylabel("flux")
-        a.set_title(title, fontsize=15)
+        legend(a, [
+            Line2D([], [], color=C_SKY,  lw=2.6, label="mean sky"),
+            Line2D([], [], color=C_CONT, lw=3.4, label="continuum"),
+            Line2D([], [], color=C_UP,   lw=2.2, label=f"+{THRESHOLDS[0]}$\\sigma$"),
+            Line2D([], [], color=C_DN,   lw=2.2, label=f"-{THRESHOLDS[1]}$\\sigma$")])
         save(fig, name)
 
     def panel_unmasked(i, name, title):
@@ -211,19 +247,16 @@ def main():
         通道畫成紅點疊在 mean_sky 上,點的疏密就是可用資料的分布。
         """
         keep = ~M[i]
-        fig, a = plt.subplots(figsize=args.figsize)
-        # x 範圍和主圖用同一組。主圖因為 add_collection 不會自動縮放而必須明寫,
-        # 這張用 plot 會自己留邊 —— 不對齊的話兩張圖並看時波長會對不上。
-        a.set_xlim(wl.min(), wl.max())
-        a.plot(wl, ms, lw=0.45, color=C_SKY, label="mean sky")
-        a.plot(wl[keep], ms[keep], ".", ms=3.0, color=C_KEEP, lw=0,
-               label="not masked")
-        a.set_ylim(*args.ylim)
-        a.set_xlabel("wavelength [$\\AA$]")
-        a.set_ylabel("flux")
-        a.legend(fontsize=11, loc="upper left", bbox_to_anchor=(1.005, 1.0),
-                 borderaxespad=0, frameon=False, markerscale=7)
-        a.set_title(title, fontsize=15)
+        fig, a = blank_panel(title)
+        a.plot(wl, ms, lw=LW_SKY, color=C_SKY)
+        a.plot(wl[keep], ms[keep], ".", ms=4.0, color=C_KEEP, lw=0)
+        # 圖例的紅點自己造,不用 markerscale 去放大圖上的那顆。markerscale 是
+        # 乘法,圖上的點一改,圖例的點就跟著改;這裡要的是一顆和字級相稱的點,
+        # 和圖上那顆多大無關 —— 圖上的點小到單獨一顆在圖例裡幾乎看不見。
+        legend(a, [
+            Line2D([], [], color=C_SKY, lw=2.6, label="mean sky"),
+            Line2D([], [], color=C_KEEP, marker=".", ms=20, lw=0,
+                   label="not masked")])
         save(fig, name)
 
     for i in range(n_iter):
@@ -231,13 +264,9 @@ def main():
         # 讓它不會蓋掉採用的那幾輪。兩套畫法或兩套標題會讓兩張圖之間多出一個
         # 「是不是畫法不一樣」的解釋,而它們本來就該長得一樣。
         sfx = "_rejected" if i >= n_saved else ""
-        n_line = int(M[i].sum())
-        n_keep = M[i].size - n_line
-        panel(i, f"iteration {i+1}: {n_line} channels excluded "
-                 f"from the continuum", f"iter{i+1}_masked{sfx}.png")
-        panel_unmasked(i, f"iter{i+1}_unmasked{sfx}.png",
-                      f"iteration {i+1}: {n_keep} channels kept "
-                      f"for the continuum")
+        title = f"iteration {i+1}"
+        panel(i, title, f"iter{i+1}_masked{sfx}.png")
+        panel_unmasked(i, f"iter{i+1}_unmasked{sfx}.png", title)
 
     print(f"\nsaved {2 * n_iter} figures -> {out}")
 

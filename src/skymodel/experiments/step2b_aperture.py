@@ -22,7 +22,7 @@
        完全相同的孔徑形狀與像素數,源之間直接可比。
 
 輸出 <工作區>/step02b/,格式和 step02 相同,step4 加 --aperture 就會改讀它:
-    object_ids.npy / object_flux.npy / object_var.npy / object_nspax.npy
+    source_spectra.npz  ids / flux_sum / variance_sum / spaxel_count / wavelength
     aperture.npz    圓心、像素數、視場覆蓋率、是否有效
     aperture.txt    同一份表的純文字版
 
@@ -30,10 +30,14 @@
         --work results/skymodel/p01
 """
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils import wavelength_grid  # noqa: E402
 
 ROOT    = Path(__file__).resolve().parents[3]
 
@@ -131,8 +135,8 @@ def main():
     WSKY = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{int(W.name[1:])}.fits")
     STEP02B.mkdir(parents=True, exist_ok=True)
 
-    seg   = fits.getdata(STEP01 / "seg.fits")
-    white = fits.getdata(STEP01 / "whitelight.fits").astype(np.float64)
+    seg   = fits.getdata(STEP01 / "segmentation_input.fits")
+    white = fits.getdata(STEP01 / "whitelight_nosky.fits").astype(np.float64)
     fov   = white != 0
     seg   = np.where(fov, seg, 0)                 # 視場外一律歸 0
 
@@ -172,10 +176,11 @@ def main():
 
     flux, var, nspax = sum_spectra_by_mask(WSKY, masks)
 
-    np.save(STEP02B / "object_ids.npy",   ids)
-    np.save(STEP02B / "object_flux.npy",  flux)
-    np.save(STEP02B / "object_var.npy",   var)
-    np.save(STEP02B / "object_nspax.npy", nspax)
+    # 波長軸從抽光譜用的那個 cube 的 DATA 標頭建 —— 光譜就是逐通道從它加總來的,
+    # 兩者必須是同一條軸。
+    np.savez(STEP02B / "source_spectra.npz", ids=ids, flux_sum=flux,
+             variance_sum=var, spaxel_count=nspax,
+             wavelength=wavelength_grid(fits.getheader(WSKY, "DATA")))
     np.savez(STEP02B / "aperture.npz", radius=r,
              **{k: np.array([x[k] for x in rows]) for k in
                 ("id", "cy", "cx", "n_pix", "n_iter", "covered", "valid")})

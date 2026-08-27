@@ -15,6 +15,7 @@ The file must not be named utils.py: the scripts here point sys.path at the leve
 above in order to import `src/skymodel/utils.py`, and a file with the same name would
 shadow it.
 """
+import json
 import re
 from pathlib import Path
 
@@ -134,12 +135,32 @@ def load_field(work):
     field of view are 0 in the white light image, so valid means "this pixel has
     data".
     """
-    seg   = fits.getdata(work / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(work / "step01/whitelight.fits"), float)
+    seg   = fits.getdata(work / "step01/segmentation_input.fits").astype(int)
+    white = np.asarray(fits.getdata(work / "step01/whitelight_nosky.fits"), float)
     return seg, white, white != 0
 
 
 from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
+from products import fit_dirs  # noqa: E402
+
+
+def step04_tag(W, run=None):
+    """Which step4 run this pointing's redshifts come from, or None.
+
+    A work directory can hold several step4 runs -- different windows, different
+    mask iterations -- and the redshift decides which members belong to the main
+    source, so picking one by filename order would be an invisible error.
+    utils.galaxy_redshifts refuses to guess; the answer is recorded in the step5
+    meta.json, as the name of the classification file that run was given.
+    """
+    meta = fit_dirs(W, run)[0] / "meta.json"
+    if not meta.exists():
+        return None
+    m = json.loads(meta.read_text())
+    # "classification" is the key; "best" is what step5 wrote before the parameter
+    # was renamed, and products made then are still on disk.
+    c = m.get("classification") or m.get("best")
+    return Path(c).stem.removeprefix("classification_") if c else None
 
 
 def collapse(path, band, wl, seg):

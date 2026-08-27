@@ -54,11 +54,11 @@ def load_all(ns):
     for n in ns:
         W = ROOT / f"results/skymodel/p{n:02d}"
         sdir, _ = fit_dirs(W)
-        if not (sdir / "s_free.npy").exists():
+        if not (sdir / "sky_continuum_amplitude_per_spaxel.npy").exists():
             continue
-        s = np.load(sdir / "s_free.npy").astype(float)
-        seg = fits.getdata(W / "step01/seg.fits").astype(int)
-        white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
+        s = np.load(sdir / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
+        seg = fits.getdata(W / "step01/segmentation_input.fits").astype(int)
+        white = np.asarray(fits.getdata(W / "step01/whitelight_nosky.fits"), float)
         valid = white != 0
         mg, _, pk = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")

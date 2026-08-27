@@ -110,9 +110,9 @@ def main():
     run, _ = fit_dirs(W, args.run)
     meta = json.loads((run / "meta.json").read_text())
     p = sky_amplitude_params(meta)
-    seg   = fits.getdata(W / "step01/seg.fits").astype(int)
-    white = np.asarray(fits.getdata(W / "step01/whitelight.fits"), float)
-    s     = np.load(run / "s_free.npy").astype(float)
+    seg   = fits.getdata(W / "step01/segmentation_input.fits").astype(int)
+    white = np.asarray(fits.getdata(W / "step01/whitelight_nosky.fits"), float)
+    s     = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
     valid = white != 0
     main, _, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                         W / "step04")
