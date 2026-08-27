@@ -1,298 +1,399 @@
-# 聯合分解扣天空法（Joint Sky Factorization）— 方法規格
+# Joint Sky Factorization -- the method specification
 
-> 本檔是**聯合分解扣天空法**的權威方法規格：模型定義、目標函數、前處理、求解、
-> 超參數決定程序、防過扣機制、驗證協定與升級路線。實作以本檔為準。
+> This file is the **authoritative method specification for Joint Sky Factorization**: the
+> definition of the model, the objective function, the preprocessing, the solver, the
+> procedure by which the hyper-parameters are decided, the mechanisms against
+> over-subtraction, the validation protocol and the upgrade path. The implementation
+> follows this file.
 >
-> 方法屬於 `CLAUDE.md` Principle 1 的 sky reconstruction 家族（策略一：預測 sky）：
-> NMF 低秩天空基底與空間建模的聯合分解，為主要研究貢獻路線（不走監督式 DL）。
-> 資料/指標框架見 `docs/plan/data-and-metrics-overview.md`；指標定義見 `docs/archive/metric_spec.md`(封存)；
-> ZAP 對照組的參數見 `docs/zap-parameters-reference.md`。
+> **Nothing here is built yet.** None of the nine modules in section 9 exists, and the
+> repository holds no PyTorch, no graph Laplacian and no NMF sky basis. What runs today
+> is a different, deliberately simpler pipeline -- six steps, an SVD line basis, and an
+> additive spatial field for the sky continuum amplitude (`src/skymodel/`,
+> `docs/pipeline-products.md`). This file is what the method is meant to become, and it
+> is written in the settled voice of a specification because that is what a
+> specification is for; it is not a description of running code.
 >
-> **方法不含任何 neural network。**所有被擬合的參數（天空基底、係數圖、源項）本身即物理量，
-> 逐一可畫圖檢查。超參數一律由 held-out 資料或物理尺度決定（Principle 2）。
+> Three of its premises have moved since it was written. It describes the single
+> 499x559x3679 field rather than the 14-pointing mosaic the pipeline now runs; it
+> assumes the mask is detected here, with a matched filter and dilation, whereas the
+> segmentation is now an input the run is given; and the nine module names it reserves
+> under `src/skymodel/` would land in a directory that is already occupied.
+>
+> The method belongs to the sky reconstruction family of `CLAUDE.md` Principle 1 (strategy
+> one: predict the sky): a joint factorization of a low-rank NMF sky basis with a spatial
+> model, and the main line of research contribution (no supervised DL).
+> The data and metric framework is in `docs/plan/data-and-metrics-overview.md`; the metric
+> definitions are in `docs/archive/metric_spec.md` (archived); the parameters of the ZAP
+> comparison arm are in `docs/zap-parameters-reference.md`.
+>
+> **The method contains no neural network of any kind.** Every parameter that is fitted --
+> the sky basis, the coefficient maps, the source term -- is itself a physical quantity,
+> and every one of them can be plotted and inspected. The hyper-parameters are decided by
+> held-out data or by a physical scale, without exception (Principle 2).
 
 ---
 
-## 0. 一句話與定位
+## 0. In one line, and where it sits
 
-把整個 cube 一次拆解為三個部分：
+The whole cube is taken apart, in one go, into three parts:
 
 ```
-觀測(線譜) = 天空(低秩 × 空間平滑) + 源(僅遮罩內、稀疏) + 雜訊
+observation(line spectrum) = sky(low rank × spatially smooth) + source(inside the mask only, sparse) + noise
 L[p,λ]   ≈ Σₖ A[p,k]·B[k,λ]      + S[p,λ]
 ```
 
-三者由**同一個目標函數聯合擬合**，源是模型的顯式成分而非被剔除的髒資料。
+The three are **fitted jointly by one objective function**, and the source is an explicit
+component of the model rather than dirty data to be thrown out.
 
-與既有方法的結構關係：
+How it stands structurally against the existing methods:
 
-| | 基底來源 | 係數的空間假設 | 源的處理 |
+| | Where the basis comes from | The spatial assumption on the coefficients | What is done with the source |
 |---|---|---|---|
-| Super Sky | blank 平均（1 成分） | 全場相同（最強假設） | 無 |
-| ZAP | blank spaxel PCA | 逐 spaxel 自由（無假設） | 遮罩剔除於基底外；投影時源可漏入係數 → 過扣風險 |
-| **本法** | blank spaxel NMF（定案後固定） | **空間平滑先驗**（graph Laplacian） | **顯式成分 S**，稀疏 + 局部 |
+| Super Sky | The mean of the blanks (1 component) | The same over the whole field (the strongest assumption) | Nothing |
+| ZAP | PCA on the blank spaxels | Free per spaxel (no assumption) | Masked out of the basis; at the projection the source can leak into the coefficients → a risk of over-subtraction |
+| **This method** | NMF on the blank spaxels (fixed once settled) | **A spatial smoothness prior** (a graph Laplacian) | **An explicit component S**, sparse and local |
 
-本法防過扣的機制是**結構性**的：源訊號要進入天空項，必須同時違反基底形狀（B 無源線特徵）、
-空間平滑（係數圖須隆起成星系形狀）與成本會計（S 承接更便宜）——而非依賴遮罩大小或成分數的微調。
+This method's defence against over-subtraction is **structural**: for source signal to enter
+the sky term it has to violate the shape of the basis (B holds no source-line feature), the
+spatial smoothness (the coefficient map would have to swell into the shape of the galaxy)
+and the cost accounting (S takes it on more cheaply) all at once -- rather than resting on a
+fine adjustment of the mask size or the number of components.
 
 ---
 
-## 1. 資料與記號
+## 1. The data and the notation
 
-| 記號 | 內容 | 本專案數值 |
+| Symbol | What it is | Its value in this project |
 |---|---|---|
-| `D[p,λ]` | 輸入 cube（**wsky**，未扣天空），空間攤平 | 499×559×3679；`ESO PRO DATANCOM = 3`（3 曝光合併） |
-| `V[p,λ]` | STAT extension（逐 voxel 變異數） | **以面值使用**（σ=√V、理想 χ=1）。舊文件記載的 ~1.8× 低估修正（`data-and-metrics-overview.md` §3.1）未經教授確認，列為待討論問題、不使用 |
-| `M` | 源遮罩（2D，源=1） | 現行 matched-filter（核=seeing 4 px）+2σ+膨脹流程產出，遮 ~44% |
-| blank | `M` 外的有效 spaxel | 天空樣本；訓練基底、釘定係數場的主力 |
-| P, Nλ, K | spaxel 數、波長數、基底數 | P ≈ 2×10⁵；Nλ = 3679；K 由 held-out 選（預期 O(10)） |
+| `D[p,λ]` | The input cube (**wsky**, the sky not yet subtracted), flattened spatially | 499×559×3679; `ESO PRO DATANCOM = 3` (3 exposures combined) |
+| `V[p,λ]` | The STAT extension (the per-voxel variance) | **Taken at face value** (σ=√V, an ideal χ=1). The ~1.8× underestimate correction recorded in the older document (`data-and-metrics-overview.md` §3.1) has not been confirmed by the professor; it is listed as an open question and is not used |
+| `M` | The source mask (2D, source=1) | Produced by the current matched-filter procedure (kernel = the seeing, 4 px) plus 2σ plus dilation, masking ~44% |
+| blank | The valid spaxels outside `M` | The sky samples; the mainstay that trains the basis and pins the coefficient field down |
+| P, Nλ, K | The number of spaxels, of wavelengths and of basis vectors | P ≈ 2×10⁵; Nλ = 3679; K is chosen on held-out data, and is expected to be O(10) |
 
-輸入必須是 wsky。對已扣天空的 nosky 跑本法是 null test（無天空可學），
-與 ZAP 的既定結論相同（`docs/zap-conclusions.md` §1）。
+The input must be wsky. Running this method on a nosky whose sky is already subtracted is a
+null test, since there is no sky left to learn from, which is the settled conclusion for ZAP
+as well (`docs/zap-conclusions.md` §1).
 
-第二個資料集 `Haro11_NEpointing_wsky.fits`（同為 3 曝光合併）作為方法穩健性的獨立重跑對象。
-
----
-
-## 2. 前處理
-
-### 2.1 Throughput 歸一（含診斷閘門）
-
-**目的**：係數空間平滑是本法的核心先驗；MUSE 由 24 IFU × slicer 拼接，flat-field 殘餘在
-slice 邊界跳變，會直接打破該先驗。ZAP 逐 spaxel 自由擬合對此免疫，本法必須顯式處理。
-
-**cube 層的現實**：slice 標籤只存在於 pixel table 層，最終 cube（3 曝光重取樣合併）內不可得，
-且合併已部分抹開條紋。因此採**純經驗自我標定**，不依賴 slice 幾何：
-
-1. **診斷閘門（必做，先做）**：對 wsky 做 5577 Å [O I] 振幅圖（線心窄窗積分 − 鄰近無線區同寬積分，
-   逐 spaxel）。氣輝在 1′ 視場內物理上均勻，圖上任何超出雜訊的空間結構即 throughput 殘餘。
-   **圖平（無結構超出雜訊）→ `t≡1`，本節全部跳過。**
-2. **建 t 圖**：取 N 條強天光線（5577、6300、紅端強 OH 線各若干），各線振幅圖除以自身全場中位數，
-   逐 spaxel 對線取中位 → `t[p]`（雜訊 ↓√N）；再做 3×3 中位濾波（尺度遠小於條紋尺度）。
-   **灰色性檢驗**：比較 5577 圖與紅端 OH 圖；一致 → 單張 t 全譜通用；不一致 → 分波段建 t。
-3. **套用**：擬合前 `L[p,λ] /= t[p]`；扣除時從原始資料減 `t[p]·sky_model`。
-   通量標定全程不動，t 只存在於模型內部。
-
-`t[p]` 是「該曝光組 + 該次合併 + 該網格」的性質：**每個 cube 各自量測、不跨 cube 轉移**
-（方法自我標定，每個 wsky cube 自帶尺；同曝光組衍生的 cube 共用同一 t）。
-診斷圖（步驟 1、以及套用後複查）納入固定 QC 圖集。
-
-### 2.2 連續譜 / 發射線分離
-
-對每條光譜做大窗中位濾波（沿用 ZAP 的 `cfwidth` 概念與既定值域）得連續譜 `C[p,λ]`；
-`L = D − C` 為線譜，低秩模型只作用於 `L`。
-
-天空連續譜（月光、黃道光）另行處理：對 `C` 沿波長粗分箱（~50 Å/箱），每箱在 blank spaxel 上
-擬低階 2D 面、以平滑延伸至源區後扣除；源的恆星連續譜即為各箱殘餘，保留不動。
-（同一「blank 學、平滑推」邏輯，基底換成波長方向的平滑函數。）
-
-### 2.3 權重與壞資料
-
-`w[p,λ] = 1/V[p,λ]`。**所有壞資料一律 `w=0` 剔除**，不做內插補值：
-NaN、視場邊緣、（AO 資料時）5800–6000 Å 鈉缺口。目標函數形式天然支援缺失資料，
-此為相對 ZAP（需 NaN 內插）的實作簡化。
-
-### 2.4 波長軸：全譜單一模型
-
-**決定：全譜（4750–9348 Å）單一模型，不分段。**理由：
-
-1. 與 vendored ZAP 2.1 的單段預設同構（`zap-parameters-reference.md` §4.1；CHANGELOG 2.0 記載
-   多段造成邊界連續譜震盪、逐段選成分脆弱），方法對比不被分段策略混淆。
-2. NMF 非負、禁止抵消，成分自然局域於天空線族——分段想手工實現的塊結構由資料自行學出，
-   且無硬邊界；跨線族的真實相關（共同地球物理驅動）可被利用。
-3. 本法成分數 K 為全域單一值、由 held-out 誤差選定，無逐段脆弱選擇問題。
-
-**分段僅作為救援手段**，觸發條件：殘餘診斷顯示某一天空線族系統性扣不乾淨而其他良好，
-且加大 K 無效。屆時以 2–3 段物理分段實驗，依 §7 雙指標驗證後方可採用（科學決定，
-同 `CLAUDE.md` 對 SKYSEG 的規範）。
+The second dataset, `Haro11_NEpointing_wsky.fits` (3 exposures combined as well), is what
+the method is re-run on independently to test its robustness.
 
 ---
 
-## 3. 模型與目標函數
+## 2. Preprocessing
 
-### 3.1 未知數與約束
+### 2.1 Throughput normalisation (with a diagnostic gate)
 
-| 量 | 形狀 | 意義 | 約束 |
+**The purpose**: the spatial smoothness of the coefficients is this method's central prior,
+and MUSE is pieced together from 24 IFU × slicer units, so flat-field residual jumps at the
+slice boundaries and breaks that prior outright. ZAP's free per-spaxel fit is immune to it;
+this method has to handle it explicitly.
+
+**What is actually available at cube level**: the slice labels exist only in the pixel
+table and cannot be had in the final cube, which is 3 exposures resampled and combined, and
+the combination has already smeared the striping in part. The calibration is therefore
+**purely empirical and self-contained**, and does not rely on the slice geometry:
+
+1. **The diagnostic gate (mandatory, and done first)**: build the 5577 Å [O I] amplitude
+   map of the wsky -- a narrow window integrated at the line centre − a window of the same
+   width integrated in the line-free region beside it, spaxel by spaxel. Airglow is physically
+   uniform over a 1′ field, so any spatial structure on that map rising above the noise is
+   throughput residual.
+   **A flat map (no structure above the noise) → `t≡1`, and the whole of this section is skipped.**
+2. **Building the t map**: take N strong sky lines (5577, 6300, and a number of strong OH
+   lines at the red end), divide each line's amplitude map by its own whole-field median,
+   and take the median over the lines spaxel by spaxel → `t[p]` (the noise ↓√N);
+   then apply a 3×3 median filter, on a scale far smaller than that of the striping.
+   **The greyness test**: compare the 5577 map against the red-end OH map; agreement → one t
+   serves the whole spectrum, disagreement → t is built per wavelength band.
+3. **Applying it**: before the fit, `L[p,λ] /= t[p]`; at subtraction, `t[p]·sky_model` is
+   taken off the original data.
+   The flux calibration is never touched, and t exists only inside the model.
+
+`t[p]` is a property of that exposure group, that combination and that grid: **it is
+measured for each cube on its own and is never carried across cubes** (the method calibrates
+itself, and every wsky cube brings its own yardstick; cubes derived from the same exposure
+group share one t). The diagnostic figures, from step 1 and from the re-check after it is
+applied, go into the standing QC figure set.
+
+### 2.2 Separating the continuum from the emission lines
+
+Each spectrum is median filtered with a large window, carrying over ZAP's `cfwidth` concept
+and its settled range, to give the continuum `C[p,λ]`;
+`L = D − C` is the line spectrum, and the low-rank model acts on `L` alone.
+
+The sky continuum -- moonlight and zodiacal light -- is handled separately: `C` is coarsely
+binned along wavelength (~50 Å per bin), a low-order 2D surface is fitted to each bin over
+the blank spaxels, extended smoothly into the source region and then subtracted; the
+source's stellar continuum is what is left over in each bin, and it is kept untouched.
+(The same "learn on the blanks and push it out smoothly" logic, with the basis replaced by a
+smooth function along wavelength.)
+
+### 2.3 The weights and the bad data
+
+`w[p,λ] = 1/V[p,λ]`. **All bad data is thrown out with `w=0`, without exception**, and
+nothing is interpolated in its place: NaN, the edge of the field, and (on AO data) the
+5800–6000 Å sodium notch. The form of the objective function supports missing data
+natively, which is a simplification of the implementation relative to ZAP, where NaNs have
+to be interpolated.
+
+### 2.4 The wavelength axis: one model over the whole spectrum
+
+**The decision: one model over the whole spectrum (4750–9348 Å), with no segmentation.**
+The reasons:
+
+1. It matches the single-segment default of the vendored ZAP 2.1
+   (`zap-parameters-reference.md` §4.1; CHANGELOG 2.0 records that several segments make
+   the continuum oscillate at the boundaries and the per-segment component choice fragile),
+   so the comparison between the methods is not confounded by a segmentation strategy.
+2. NMF is non-negative and forbids cancellation, so the components localise on the sky-line
+   families of their own accord: the block structure segmentation tries to impose by hand
+   is learned from the data itself, and without a hard boundary; and the genuine
+   correlation across line families, driven by the same geophysics, can be exploited.
+3. This method's component count K is a single global value, chosen on the held-out error,
+   so the fragile per-segment choice does not arise at all.
+
+**Segmentation is a rescue measure and nothing more.** It is triggered when the residual
+diagnostics show one sky-line family systematically failing to come off cleanly while the
+others are fine, and raising K does not help. At that point 2–3 physical segments are tried,
+and they may only be adopted once they have been validated against the two indicators of §7
+(a scientific decision, following `CLAUDE.md`'s rule for SKYSEG).
+
+---
+
+## 3. The model and the objective function
+
+### 3.1 The unknowns and the constraints
+
+| Quantity | Shape | What it means | Constraint |
 |---|---|---|---|
-| `B` | K×Nλ | 天空光譜基底（≈ 各天空線族的譜形） | 非負；**blank-only NMF 定案後固定**（防線一，§6） |
-| `A` | P×K | 各基底的空間振幅圖 | 非負；空間平滑 |
-| `S` | P×Nλ | 源線譜（僅 v2） | `M` 外恆為 0；`M` 內稀疏 |
+| `B` | K×Nλ | The sky spectral basis (≈ the shape of each sky-line family) | Non-negative; **settled by a blank-only NMF and then held fixed** (the first line of defence, §6) |
+| `A` | P×K | The spatial amplitude map of each basis vector | Non-negative; spatially smooth |
+| `S` | P×Nλ | The source line spectrum (v2 only) | Identically 0 outside `M`; sparse inside `M` |
 
-### 3.2 目標函數
-
-```
-min  Σ_{p,λ} w[p,λ]·( L[p,λ] − (A·B)[p,λ] − S[p,λ] )²          ── ① 資料保真
-   + λ_sp · Σₖ Σ_{(p,q)∈E} ( A[p,k] − A[q,k] )²                 ── ② 空間平滑
-   + λ_S  · Σ_{p∈M,λ} |S[p,λ]| / σ[p,λ]                          ── ③ 源稀疏（v2）
-s.t. A ≥ 0,  B ≥ 0（固定）,  S[p,·] = 0 for p ∉ M
-```
-
-- **①**：加權殘餘平方和。blank spaxel 上 S≡0，~10⁵ 條 blank 光譜是釘死 A、B 的主力。
-- **②**：E 為 spaxel 4-鄰接圖；此項為各係數圖的離散 ∫|∇a|²（等價於 Gaussian MRF / GP 先驗的
-  離散形式）。物理依據：天空空間變化的全部已知來源（月光梯度、~90 km 氣輝、大氣透射）皆為
-  大尺度平滑；唯一違反者（slicer throughput）已由 §2.1 移除。
-- **③**：L1 懲罰，逐 voxel 閉式解為**軟門檻** `S = sign(r)·max(|r|−τ, 0)`，τ ∝ λ_S·σ。
-  效果：殘餘低於門檻的 voxel，S **恰好為 0**（稀疏）；門檻以 σ 為單位，λ_S 的意義即
-  「幾 σ 以上算訊號」。注意 S 帶軟門檻的系統性壓低（−τ），**不得用 S 量源通量**；
-  最終科學產品恆為 `D − t·sky_model`。
-
-**分解為何成立（成本會計）**：天空全場皆有、形狀在 B 的張成內——由 A·B 解釋幾乎免費；
-源局部、形狀不在 B 內——A·B 要吸收它須同時付 ②（係數圖隆起）與 ①（B 形狀不符）的代價，
-而 S 只付 ③。兩種訊號各走最便宜的路，即完成分離。
-
-### 3.3 v1（首發版本）：無 S、源線窗剔除
-
-Haro11 紅移已知（z ≈ 0.0206），源發射線的觀測波長完全可預測。v1 不引入 S 變數：
+### 3.2 The objective function
 
 ```
-對 p ∈ M 的 spaxel，源線窗內的 voxel 直接設 w = 0；模型退化為 L ≈ A·B（僅 ①+②）。
+min  Σ_{p,λ} w[p,λ]·( L[p,λ] − (A·B)[p,λ] − S[p,λ] )²          ── ① data fidelity
+   + λ_sp · Σₖ Σ_{(p,q)∈E} ( A[p,k] − A[q,k] )²                 ── ② spatial smoothness
+   + λ_S  · Σ_{p∈M,λ} |S[p,λ]| / σ[p,λ]                          ── ③ source sparsity (v2)
+s.t. A ≥ 0,  B ≥ 0 (fixed),  S[p,·] = 0 for p ∉ M
 ```
 
-線窗由已知紅移程式化產生（線心 ± 窗半寬，半寬取線寬 + LSF 的保守值），主要譜線（觀測波長）：
-Hβ 4961、[O III] 5061/5110、He I 5997、[O I] 6430、[N II] 6683/6719、Hα 6698、
-[S II] 6854/6870，及 Ca II 三重線吸收帶 8675–8845（源連續譜特徵，一併剔除）。
-`M` 內其餘波長（絕大多數 channel 無源線）照常約束當地天空係數。
-`M` 內保真項採 Huber loss，廉價吸收線表外的意外源特徵。
+- **①** is the weighted sum of squared residuals. On a blank spaxel S≡0, and the ~10⁵ blank
+  spectra are the mainstay that pins A and B down.
+- **②**: E is the 4-neighbour graph of the spaxels, and the term is the discrete ∫|∇a|² of
+  each coefficient map (the discrete form of a Gaussian MRF or GP prior). The physical
+  grounds: every known source of spatial variation in the sky -- the moonlight gradient,
+  airglow at ~90 km, atmospheric transmission -- is smooth on a large scale, and the one
+  thing that violates it, the slicer throughput, has already been removed by §2.1.
+- **③** is an L1 penalty, and its closed-form solution voxel by voxel is a **soft
+  threshold**, `S = sign(r)·max(|r|−τ, 0)` with τ ∝ λ_S·σ. The effect is that a voxel whose
+  residual falls below the threshold has S **exactly 0**, which is the sparsity; the
+  threshold is in units of σ, so what λ_S means is how many σ it takes to count as signal.
+  Note that the soft threshold pushes S systematically low, by −τ, so **S must not be used
+  to measure the source's flux**; the final science product is always `D − t·sky_model`.
 
-### 3.4 v2（升級版本）：加入 S
+**Why the decomposition holds (the cost accounting)**: the sky is everywhere in the field
+and its shape lies within the span of B, so explaining it with A·B is almost free; the
+source is local and its shape is not in B, so for A·B to absorb it costs both ② (the
+coefficient map swelling) and ① (B's shape not matching), while S pays only ③. Each of the
+two signals takes the cheapest road open to it, and that is the separation.
 
-**升級觸發條件**：§7 注入測試顯示 v1 在源位置有系統性偏差（線窗外的源特徵——寬線翼、
-連續譜殘餘——污染 A）。v2 在同一 loss 上疊加 ③ 與變數塊 S，程式碼嚴格疊加。
-λ_S 的兩個極端各退化為已知方法（λ_S→∞：源 spaxel 全譜強迫由天空解釋，ZAP 式風險；
-λ_S→0：M 內資料不參與，退化為純空間內插），中間值即「無源 channel 貢獻天空資訊、
-有源 channel 由 S 承接」。
+### 3.3 v1 (the first release): no S, and the source line windows thrown out
+
+Haro11's redshift is known (z ≈ 0.0206), so the observed wavelength of every source emission
+line is entirely predictable. v1 introduces no S variable:
+
+```
+For a spaxel p ∈ M, the voxels inside a source line window are simply set to w = 0; the model degenerates to L ≈ A·B (① + ② only).
+```
+
+The line windows are generated programmatically from the known redshift (the line centre ±
+a half-width, the half-width taken as a conservative value of the line width plus the LSF).
+The main lines, at their observed wavelengths, are:
+Hβ 4961, [O III] 5061/5110, He I 5997, [O I] 6430, [N II] 6683/6719, Hα 6698,
+[S II] 6854/6870, and the Ca II triplet absorption band 8675–8845 (a feature of the source
+continuum, thrown out along with them).
+The remaining wavelengths inside `M` -- the great majority of channels, which hold no source
+line -- constrain the local sky coefficients as usual.
+The fidelity term inside `M` uses a Huber loss, which cheaply absorbs an unexpected source
+feature outside the line list.
+
+### 3.4 v2 (the upgrade): S added
+
+**What triggers the upgrade**: the injection test of §7 showing that v1 carries a systematic
+offset at the source's position, because source features outside the line windows -- broad
+line wings, continuum residual -- contaminate A. v2 lays ③ and the variable block S on top
+of the same loss, and the code adds to it strictly. The two extremes of λ_S each degenerate
+into a known method (λ_S→∞ forces the whole spectrum of a source spaxel to be explained by
+the sky, which is the ZAP-style risk; λ_S→0 leaves the data inside M out of it entirely, and
+degenerates into pure spatial interpolation), and an intermediate value is what makes the
+source-free channels contribute sky information while the channels that do hold a source are
+taken on by S.
 
 ---
 
-## 4. 求解
+## 4. Solving it
 
-### 4.1 初始化（本身即完整的傳統方法，兼作 baseline）
+### 4.1 Initialisation (a complete conventional method in itself, and the baseline besides)
 
-1. blank spaxel 的 `L` 跑 `sklearn.decomposition.NMF` → `B⁰`（此後固定）。
-2. 每 spaxel 對 `B⁰` 解加權 NNLS → `A⁰`（源區 spaxel 只用線窗外波長）。
-3. `S⁰ = 0`。
+1. Run `sklearn.decomposition.NMF` on the `L` of the blank spaxels → `B⁰`, fixed from then on.
+2. Solve a weighted NNLS against `B⁰` for every spaxel → `A⁰` (a spaxel in the source region
+   uses only the wavelengths outside the line windows).
+3. `S⁰ = 0`.
 
-此解（記 **NMF-only**）進入 §7 的對照組。
+This solution, written **NMF-only**, goes into the comparison set of §7.
 
-### 4.2 優化
+### 4.2 The optimisation
 
-**主實作（PyTorch / Adam，GPU）**：`A = softplus(θ_A)`、`S = mask_M · θ_S`，
-整個目標函數直接寫成 loss（~15 行），autodiff 求解。改動模型（加項、換懲罰）只改 loss。
+**The main implementation (PyTorch / Adam, on the GPU)**: `A = softplus(θ_A)` and
+`S = mask_M · θ_S`, with the whole objective function written straight out as the loss
+(~15 lines) and solved by autodiff. Changing the model -- adding a term, swapping a penalty
+-- means changing the loss and nothing else.
 
-**參考實作（block coordinate descent）**：三塊輪流、各為凸子問題——
-解 A：稀疏線性系統 + 非負投影；解 S：逐 voxel 軟門檻（閉式）；（若實驗性放開 B）解 B：逐 λ 加權 NNLS。
-用於驗證主實作與除錯。
+**The reference implementation (block coordinate descent)**: the three blocks take turns,
+and each is a convex subproblem -- A is a sparse linear system followed by a projection onto
+non-negativity; S is a soft threshold voxel by voxel, in closed form; and B, if it is
+experimentally let loose, is a weighted NNLS at each λ.
+It is there to check the main implementation and to debug it.
 
-### 4.3 收斂與計算量
+### 4.3 Convergence and what it costs to compute
 
-- 收斂判準：目標函數相對變化 < 10⁻⁶ 或 held-out blank 誤差連續 20 次迭代無改善。
-- 記憶體：`L`、`w`、殘餘各 P×Nλ×float32 ≈ 3 GB，GPU 峰值 ~12 GB；
-  低於 ZAP 全幅實測的 43.7 GB RAM。
-- 時間：Adam 數百–10³ 迭代，GPU 上預期分鐘級；NE pointing 重跑同級。
+- The convergence criterion is a relative change in the objective function of < 10⁻⁶, or no
+  improvement in the held-out blank error over 20 consecutive iterations.
+- Memory: `L`, `w` and the residual are P×Nλ×float32 ≈ 3 GB each, with a GPU peak of ~12 GB,
+  below the 43.7 GB of RAM measured for ZAP over the whole field.
+- Time: a few hundred–10³ Adam iterations, expected to take minutes on a GPU; the NE
+  pointing re-run is of the same order.
 
 ---
 
-## 5. 超參數（全表與決定程序）
+## 5. The hyper-parameters (the full table, and how each is decided)
 
-**Held-out blank 方塊協定**（所有超參數的共同尺）：自 blank 區挖出若干**連續空間方塊**
-（20×20 px 級、合計 ~5% blank），完全不參與任何擬合；量測模型在方塊上的加權重建 RMSE(λ)。
-必須按塊切分——逐點隨機切分因相鄰 spaxel 雜訊相關會洩漏、低估誤差
-（`data-and-metrics-overview.md` §2.4）。
+**The held-out blank block protocol** is the yardstick every hyper-parameter shares: a
+number of **contiguous spatial blocks** are cut out of the blank region (of order 20×20 px,
+~5% of the blank in total) and take no part in any fit whatsoever; the model's weighted
+reconstruction RMSE(λ) is measured on those blocks. The split has to be made by block --
+splitting point by point at random leaks, because the noise of neighbouring spaxels is
+correlated, and it makes the error look smaller than it is
+(`data-and-metrics-overview.md` §2.4).
 
-| 參數 | 作用 | 決定方式（Principle 2 辯護） |
+| Parameter | What it does | How it is decided (the Principle 2 defence) |
 |---|---|---|
-| K | 天空自由度 | held-out RMSE 肘點（不再下降即停）。**禁止**以「殘餘最平」選取——過扣同樣壓平殘餘（Principle 1 陷阱） |
-| λ_sp | 係數圖等效相關長度 | held-out RMSE 選；複查等效長度落於物理區間（> slicer 條紋尺度 ~數十 px，< 月光梯度 ~視場尺度） |
-| λ_S（v2） | 源判定門檻 | 以修正後 σ 為單位直接設 1–2σ（與遮罩流程 2σ 門檻同邏輯） |
-| cfwidth | 線/連續譜分界 | 沿用 ZAP 既定值域（`zap-parameters-reference.md` §4.2） |
-| 源線窗半寬（v1） | 剔除範圍 | 已知紅移 + 實測線寬 + LSF，取保守值；非調參對象 |
-| M | S 的允許範圍 | 現行 matched-filter 流程。**寧大勿小**：本法中 M 只界定 S 的定義域，blank 約束才是收緊力量；放大 M 的代價僅是少數 S=0 硬約束（與 ZAP 的「遮太大餓死基底」不對稱，遮罩敏感度預期平坦，此差異本身列入 §7 報告） |
+| K | The sky's degrees of freedom | The elbow of the held-out RMSE, stopping where it no longer falls. Choosing it by the flattest residual is **forbidden** -- over-subtraction flattens the residual just as well (the Principle 1 trap) |
+| λ_sp | The effective correlation length of the coefficient maps | Chosen on the held-out RMSE, then checked that the effective length falls in the physical range: longer than the ~tens of px scale of the slicer striping, shorter than the ~field scale of the moonlight gradient |
+| λ_S (v2) | The threshold at which something counts as source | Set directly at 1–2σ in units of the corrected σ, on the same logic as the mask procedure's 2σ threshold |
+| cfwidth | The line/continuum divide | ZAP's settled range, carried over (`zap-parameters-reference.md` §4.2) |
+| The source line window half-width (v1) | How much is thrown out | The known redshift plus the measured line width plus the LSF, taken conservatively; not something to be tuned |
+| M | The range S is allowed | The current matched-filter procedure. **Too large rather than too small**: in this method M only delimits the domain of S, and it is the blank constraint that does the tightening; enlarging M costs no more than a few S=0 hard constraints (an asymmetry with ZAP, where masking too much starves the basis -- the sensitivity to the mask is expected to be flat, and the difference itself goes into the §7 report) |
 
-任何偏離上表決定程序的取值屬科學決定，依 `CLAUDE.md` 規範先驗證、後採用。
-
----
-
-## 6. 防過扣機制（四道防線）與固定診斷
-
-1. **B 自 blank 定案**：基底結構上不含源線（z=0.0206 的 Hα 6698 等特徵在 blank 光譜中不存在），
-   天空項吸收源的先決條件（基底在源線波長有功率）不成立。對延展平滑的 CGM 暈
-   （防線三最弱的情形）此為主力防線。
-2. **源線窗剔除**（v1 起常設）：源區 spaxel 的係數只由無源 channel 決定；依據為已知紅移，
-   零調參成本。
-3. **空間平滑**：係數圖吸收源須隆起成星系形狀，②直接抵抗。對大尺度 CGM 此防線較弱，
-   故 1、2 為主力。
-4. **固定診斷圖**（每次跑完必出）：
-   (a) 重建天空在源位置的光譜、疊源線窗——天空模型於源線波長不得有特徵；
-   (b) 各係數圖 `A[·,k]`——不得出現星系形態；
-   (c) throughput 診斷圖（§2.1）；
-   (d) held-out 方塊殘餘 vs λ。
+Any value that departs from the procedure in the table above is a scientific decision, and
+under `CLAUDE.md`'s rule it is validated first and adopted afterwards.
 
 ---
 
-## 7. 驗證協定
+## 6. The mechanisms against over-subtraction (four lines of defence), and the standing diagnostics
 
-對照組：`super_sky`（Phase 1 基線）、`NMF-only`（§4.1 初始解）、`ZAP`（現行 0706 pipeline）、
-`nosky`（MUSE pipeline model 法）。指標定義沿用 `docs/archive/metric_spec.md`(封存)。
-
-1. **Held-out blank RMSE(λ)**（來源 A）：天空重建準度的直接量化；同表列出全部對照組。
-2. **注入測試**（來源 B；「天體底下」的唯一低成本真值）：取 wsky blank 區真實天空+雜訊，
-   疊上取自 nosky 源區的已知源譜，種於原 blank 位置；全 pipeline 重跑（遮罩須偵測到注入源）。
-   量：(a) 源線通量回收率（過扣定量上限）；(b) 注入位置天空重建誤差
-   （該處原 blank 觀測即帶雜訊真天空；疊加致雜訊重複計入，解讀時註記）。
-3. **Truth-free 全套**：blank 殘餘 std(λ)、5577/6300/OH 8400 線殘、line-free 純雜訊
-   （不得明顯上升）、殘餘 2D 影像（無空間結構）、源 Hα before/after。
-4. **Ablation**（每個設計選擇一組量化證據）：v1 vs v2；有無防線二；λ_sp 掃描；
-   遮罩大小敏感度（對照 ZAP 的敏感度曲線）；全譜 vs 分段（僅於 §2.4 觸發時）。
-5. **獨立重跑**：NE pointing cube 全流程重跑，檢驗方法穩健性（含 t 圖重量測）。
-
-**雙指標鐵律（Principle 1）**：任何結果表必須同時呈現「天空乾淨度」與「源保真」，
-不得以殘餘單指標下結論。
+1. **B is settled on the blanks**: the basis structurally holds no source line (features
+   such as Hα 6698 at z=0.0206 are not present in a blank spectrum), so the precondition for
+   the sky term absorbing the source -- the basis having power at the source lines'
+   wavelengths -- does not hold. For an extended, smooth CGM halo, which is where the third
+   line of defence is weakest, this is the main defence.
+2. **The source line windows are thrown out** (standing from v1 onwards): the coefficients
+   of a spaxel in the source region are decided by the source-free channels alone. It rests
+   on the known redshift, and costs nothing to tune.
+3. **Spatial smoothness**: for a coefficient map to absorb the source it would have to swell
+   into the shape of the galaxy, which ② resists directly. Against a large-scale CGM this
+   defence is the weaker one, which is why 1 and 2 are the mainstays.
+4. **The standing diagnostic figures**, produced after every run:
+   (a) the spectrum of the reconstructed sky at the source's position, with the source line
+   windows overlaid -- the sky model may hold no feature at a source line's wavelength;
+   (b) each coefficient map `A[·,k]` -- no galaxy morphology may appear in it;
+   (c) the throughput diagnostic figure (§2.1);
+   (d) the held-out block residual vs λ.
 
 ---
 
-## 8. 升級路線（插槽定義；非本規格範圍）
+## 7. The validation protocol
 
-框架固定為「基底 × 空間係數 + 源」，以下為各元件的既定升級插槽，逐項以 §7 協定
-與無 NN 版本對比後方可取代：
+The comparison set: `super_sky` (the Phase 1 baseline), `NMF-only` (the initial solution of
+§4.1), `ZAP` (the current 0706 pipeline) and `nosky` (the MUSE pipeline's model method).
+The metric definitions are carried over from `docs/archive/metric_spec.md` (archived).
 
-| 插槽 | 現行元件 | 升級選項 | 動機／觸發條件 |
+1. **The held-out blank RMSE(λ)** (source A): a direct quantification of how accurate the
+   sky reconstruction is, with the whole comparison set listed in the same table.
+2. **The injection test** (source B, and the only cheap truth for underneath a source): take
+   the real sky and noise of a blank region of the wsky, lay on it a known source spectrum
+   taken from a source region of the nosky, and plant it at the original blank position;
+   then re-run the whole pipeline, where the mask has to detect the injected source.
+   Measured: (a) the recovery rate of the source line flux, which is a quantitative upper
+   bound on over-subtraction; (b) the sky reconstruction error at the injected position
+   (the original blank observation there is already the true sky with noise on it, and the
+   addition counts the noise twice over, which is noted when the result is read).
+3. **The full truth-free set**: the blank residual std(λ), the line residual at 5577/6300/OH
+   8400, pure noise in a line-free region (which may not rise appreciably), a 2D image of
+   the residual (with no spatial structure in it), and the source's Hα before and after.
+4. **Ablations** (one set of quantitative evidence for each design choice): v1 vs v2;
+   with and without the second line of defence; a scan over λ_sp; the sensitivity to the
+   mask size (against ZAP's sensitivity curve); the whole spectrum vs segments (only
+   if §2.4 is triggered).
+5. **An independent re-run**: the whole procedure re-run on the NE pointing cube to test the
+   method's robustness, the t map re-measured with it.
+
+**The iron rule of the two indicators (Principle 1)**: every table of results must present
+how cleanly the sky came off and how faithfully the source was preserved at the same time,
+and no conclusion may be drawn from the residual as a single indicator.
+
+---
+
+## 8. The upgrade path (the slots defined; outside the scope of this specification)
+
+The framework is fixed as basis × spatial coefficients + source. What follows are the
+settled upgrade slots for each component; each may replace what is there only once it has
+been compared against the NN-free version under the protocol of §7:
+
+| Slot | The current component | The upgrade option | The motivation, or what triggers it |
 |---|---|---|---|
-| 空間係數場 | graph-Laplacian 平滑 | **兩段式 GP 回歸**（sparse GP；blank 訓練、源區預測） | 需要逐點預測不確定度圖（源區天空可信度、外推危險區）；亦為「內插 vs 內插+當地證據」ablation 的另一端 |
-| 空間係數場 | 同上 | **Neural field**（座標 MLP + Fourier features；Rhea 2024 路線） | 平滑先驗表達力不足時；Fourier 頻寬上限須對齊已知空間尺度 |
-| 光譜基底 | 線性 NMF 張成 | **小型 autoencoder**（非線性譜流形） | 診斷顯示天空譜變化非線性（如 LSF 隨位置的線形變化需過多線性成分逼近） |
-| 基底局域性 | NMF 天然傾向 | B 上加 L1 稀疏懲罰 | 需顯式鼓勵成分局域於線族時；held-out 驗證 |
-| 基底更新 | B 固定（防線一） | 聯合更新 B（配 §6(4) 診斷強制） | blank 樣本不足以張成源區天空變化的證據出現時；屬科學決定 |
-| 多資料 | 單 cube 自建 | 跨曝光/跨 cube 共用 B（類 ZAP extSVD） | 取得多次曝光或 offset sky 時 |
-| 誤差 | STAT 照抄（同 ZAP 限制） | 由 ① 的擬合協方差傳遞天空模型不確定度至輸出 | 下游需要正確誤差時；GP 插槽可直接提供 |
+| The spatial coefficient field | Graph-Laplacian smoothing | **A two-stage GP regression** (a sparse GP; trained on the blanks, predicting over the source region) | When a point-by-point map of the predicted uncertainty is needed (how far the sky over the source region can be trusted, where extrapolation is dangerous); it is also the other end of the "interpolation vs interpolation plus local evidence" ablation |
+| The spatial coefficient field | As above | **A neural field** (a coordinate MLP with Fourier features; Rhea 2024's route) | When the smoothness prior is not expressive enough; the upper bound on the Fourier bandwidth has to be matched to the known spatial scales |
+| The spectral basis | The span of a linear NMF | **A small autoencoder** (a non-linear spectral manifold) | When the diagnostics show the sky spectrum varying non-linearly (if, say, the change of line shape with position through the LSF takes too many linear components to approximate) |
+| The locality of the basis | NMF's natural tendency | An L1 sparsity penalty on B | When the components need explicit encouragement to localise on the line families; validated on held-out data |
+| Updating the basis | B held fixed (the first line of defence) | Updating B jointly (with the diagnostics of §6(4) made mandatory alongside) | When evidence appears that the blank samples do not span the sky's variation over the source region; a scientific decision |
+| More data | Built from a single cube | One B shared across exposures or across cubes (like ZAP's extSVD) | When several exposures or an offset sky become available |
+| The errors | STAT copied verbatim (ZAP's limitation, shared) | Propagating the sky model's uncertainty through to the output from the fit covariance of ① | When downstream needs correct errors; the GP slot supplies it directly |
 
-DL 插槽的既定紀律：無 NN 版本是任何 NN 版本必須擊敗的 baseline；
-NN 版本的超參數同樣走 §5 的 held-out 程序。
+The settled discipline for the DL slots: the NN-free version is the baseline any NN version
+has to beat, and an NN version's hyper-parameters go through the same held-out procedure of
+§5.
 
 ---
 
-## 9. 模組結構
+## 9. The module structure
 
 ```
 src/skymodel/
-  preprocess.py        # throughput 診斷/歸一、連續譜分離、權重與壞資料
-  linewindows.py       # 由紅移產生源線窗
-  nmf_basis.py         # blank-only NMF（B 定案）+ NNLS 初始化（= NMF-only baseline）
-  joint.py             # 目標函數（PyTorch）、v1/v2 開關、優化迴圈
-  bcd_reference.py     # BCD 參考實作（驗證用）
-  holdout.py           # held-out 方塊切分與 RMSE
-  inject.py            # 注入測試
-  diagnostics.py       # §6(4) 固定診斷圖
-  metrics.py           # 對接 docs/archive/metric_spec.md
+  preprocess.py        # throughput diagnostics and normalisation, continuum separation, weights and bad data
+  linewindows.py       # the source line windows, generated from the redshift
+  nmf_basis.py         # blank-only NMF (B settled) + NNLS initialisation (= the NMF-only baseline)
+  joint.py             # the objective function (PyTorch), the v1/v2 switch, the optimisation loop
+  bcd_reference.py     # the BCD reference implementation (for validation)
+  holdout.py           # the held-out block split, and the RMSE
+  inject.py            # the injection test
+  diagnostics.py       # the standing diagnostic figures of §6(4)
+  metrics.py           # the interface to docs/archive/metric_spec.md
 ```
 
 ---
 
-## 10. 交叉參考
+## 10. Cross-references
 
-- `CLAUDE.md` — Principle 1（雙指標）、Principle 2（參數辯護）。
-- `docs/plan/data-and-metrics-overview.md` — 來源 A/B/C 與指標框架。
-- `docs/archive/metric_spec.md`(封存) — 指標定義。
-- `docs/zap-parameters-reference.md` — ZAP 對照組設定（單段、自動 nevals、遮罩）。
-- `docs/zap-conclusions.md` — wsky/nosky 輸入結論、遮罩教訓。
-- 文獻錨點：Kolganov 2023（NMF 低秩天空）、Rhea 2024（IFU 係數空間內插）、
-  Zhang 2025 SMI（逐位置天空、5577 效率歸一）、Soto 2016（ZAP）。
+- `CLAUDE.md` -- Principle 1 (the two indicators), Principle 2 (parameters have to be defensible).
+- `docs/plan/data-and-metrics-overview.md` -- sources A/B/C and the metric framework.
+- `docs/archive/metric_spec.md` (archived) -- the metric definitions.
+- `docs/zap-parameters-reference.md` -- the ZAP comparison arm's settings (a single segment, automatic nevals, the mask).
+- `docs/zap-conclusions.md` -- the conclusion about the wsky/nosky input, and the lesson about the mask.
+- The literature anchors: Kolganov 2023 (a low-rank NMF sky), Rhea 2024 (spatial
+  interpolation of the IFU coefficients), Zhang 2025 SMI (a sky per position, 5577
+  efficiency normalisation), Soto 2016 (ZAP).

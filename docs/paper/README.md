@@ -1,25 +1,26 @@
-# 天空扣除論文庫（依策略分類）
+# The sky-subtraction paper library, filed by strategy
 
-依「預測 sky / 預測 residual / 混合 / 其他」分資料夾管理。分類依據與完整摘要見
-[`../literature/sky-subtraction-papers.md`](../literature/sky-subtraction-papers.md)。
-所有 PDF 由 arXiv 下載（公開取用）。
+The papers are filed into directories by strategy: predicting the sky, predicting the
+residual, mixed, and other. What the classification rests on, and the full summaries, are in
+[`../literature/sky-subtraction-papers.md`](../literature/sky-subtraction-papers.md).
+Every PDF was downloaded from arXiv, which is open access.
 
 ```
-predict-sky/        策略一：建模天空本身再 data − sky
-  empirical/        經驗/觀測法（sky fiber、nod-shuffle、Kelson、skycorr…）
-  data-driven/      低秩/NMF 建天空
-  ml/               機器學習建天空
-  physical-model/   物理/合成天空模型（Cerro Paranal、PALACE…）
-predict-residual/   策略二：先粗扣，再 PCA/資料驅動移除殘餘（ZAP 家族）
-mixed/              pipeline 同時用兩策略（MUSE、DESI、SAMI、LAMOST）
+predict-sky/        strategy 1: model the sky itself, then data − sky
+  empirical/        empirical and observational (sky fiber, nod-shuffle, Kelson, skycorr…)
+  data-driven/      low-rank / NMF models of the sky
+  ml/               machine-learned models of the sky
+  physical-model/   physical and synthetic sky models (Cerro Paranal, PALACE…)
+predict-residual/   strategy 2: subtract roughly, then remove the residual with PCA or a data-driven method (the ZAP family)
+mixed/              the pipeline uses both strategies (MUSE, DESI, SAMI, LAMOST)
 other/
-  sky-line-atlas/   天光發射線表/atlas（建模輸入）
-  telluric/         telluric 吸收校正（姊妹問題）
-  ml-spectral/      ML 光譜去噪/對殘餘 robust/分類
-  strategy/         觀測策略比較
+  sky-line-atlas/   airglow emission line lists and atlases (input to the modelling)
+  telluric/         telluric absorption correction (the sister problem)
+  ml-spectral/      ML spectral denoising, robustness to residuals, classification
+  strategy/         comparisons of observing strategy
 ```
 
-## 各檔對應 arXiv ID
+## The arXiv ID each file corresponds to
 
 ### predict-sky/empirical
 - Kelson2003_background-subtraction — `astro-ph/0303507`
@@ -35,8 +36,8 @@ other/
 - Kolganov2023_NMF-sky-subtraction — `2312.06761`
 
 ### predict-sky/ml
-- Zhang2025_SMI-mutual-info-ML — `2508.19875`（純 DL 預測 sky，光纖）
-- Rhea2024_IFU-background-ML — `2404.01175`（★ IFU 上 ML 背景重建，最貼近本專案）
+- Zhang2025_SMI-mutual-info-ML — `2508.19875` (pure deep learning, predicts the sky, fiber-fed)
+- Rhea2024_IFU-background-ML — `2404.01175` (★ ML background reconstruction on an IFU, the closest to this project)
 
 ### predict-sky/physical-model
 - Noll2012_Cerro-Paranal-sky-model — `1205.2003`
@@ -49,7 +50,7 @@ other/
 - WildHewett2005_OH-forest — `astro-ph/0501460`
 - WildHewett2010_OH-forest-DR7 — `1010.2500`
 - SharpParkinson2010_poisson-limit — `1007.0648`
-- Soto2016_ZAP — `1602.08037` ★ MUSE/IFU 標準
+- Soto2016_ZAP — `1602.08037` ★ the MUSE/IFU standard
 - Marchetti2017_VIPERS-PCA — `1612.01825`
 - Husemann2022_CARS-CubePCA — `2111.10417`
 - Uzsoy2025_bayesian-component-separation — `2504.06870`
@@ -87,19 +88,18 @@ other/
 
 ---
 
-## 無 arXiv、未下載（付費牆／會議論文）— 附 DOI/出處供自行取用
+## No arXiv, not downloaded (paywalled or conference papers) — the DOI or source, to fetch by hand
 
-| 論文 | 類別 | 出處 |
+| paper | category | source |
 |---|---|---|
 | Streicher et al. 2011 — MUSE pipeline sky subtraction | predict-sky | ADS 2011ASPC..442..257S |
 | Han, Song & Zhao 2023 — LAMOST bright night | predict-sky | MNRAS 526,5520 · DOI 10.1093/mnras/stad3115 |
 | Zhang, Zhang & Ye 2016 — NMF+sparsity sky | predict-sky | PASA 33,e058 |
-| Krisciunas & Schaefer 1991 — moonlight brightness | predict-sky(物理) | PASP 103,1033 · DOI 10.1086/132921 |
-| Yoachim et al. 2016 — LSST sky brightness model | predict-sky(物理) | SPIE 9910 |
+| Krisciunas & Schaefer 1991 — moonlight brightness | predict-sky (physical) | PASP 103,1033 · DOI 10.1086/132921 |
+| Yoachim et al. 2016 — LSST sky brightness model | predict-sky (physical) | SPIE 9910 |
 | Hart 2019 — Sky Residual Correction | predict-residual | AJ 157,213 · DOI 10.3847/1538-3881/ab1a35 |
 | Hanuschik 2003 — UVES sky emission atlas | other/atlas | A&A 407,1157 |
 | Rousselot et al. 2000 — NIR OH line list | other/atlas | A&A 354,1134 |
 | Cosby et al. 2006 — nightglow atlas | other/atlas | JGR 111,A12307 · DOI 10.1029/2006JA012023 |
-| ESO SkyCalc（工具，無論文）| predict-sky(物理) | 引用 Noll 2012 / Jones 2013 |
-| Subaru PFS sky subtraction (2024)（待驗證）| predict-sky | SPIE 13096,130962M · DOI 10.1117/12.3015628 |
-</content>
+| ESO SkyCalc (a tool, no paper) | predict-sky (physical) | cites Noll 2012 / Jones 2013 |
+| Subaru PFS sky subtraction (2024) (to be verified) | predict-sky | SPIE 13096,130962M · DOI 10.1117/12.3015628 |

@@ -1,116 +1,115 @@
-# predict-sky 重點論文摘要（聚焦 ML / 資料驅動）
+# Summaries of the key predict-sky papers, with the focus on ML and data-driven work
 
-> 深讀：`ml/Zhang2025_SMI`（深度學習）、`ml/Rhea2024_IFU-background-ML`（★ IFU + PCA/神經場，最貼近本專案）、`data-driven/Kolganov2023_NMF`（非負矩陣分解）。
-> 其餘 empirical / physical-model 為脈絡式摘要。分類見 [`sky-subtraction-papers.md`](sky-subtraction-papers.md)。
-
----
-
-## A. 機器學習 / 資料驅動（深讀）
-
-### A1. Zhang et al. 2025 — SMI：基於互資訊網路建天空（`ml/`）
-**期刊/出處**：RAA，`arXiv:2508.19875`。資料：LAMOST 多目標光纖光譜。**唯一一篇深度學習「預測 sky」**。
-
-**要解決的問題**
-- 現行做法把「sky fiber」的光譜**平均**成一條 "Super Sky" 再扣。問題：平均譜**沒有每個目標周遭的局部環境資訊**，抓不到天空的**空間梯度**（尤其月光是一片從左到右漸變的梯度）。
-
-**核心點子**
-- 用**整片所有光纖**（不只 sky fiber）+ 深度學習 + **互資訊 (Mutual Information, MI)**，估出**每個目標位置專屬的**天空背景。
-- 把天空拆成：`Sl`(連續譜，鄰域中位數求得) + `Ssm`(整區**共同**的發射線) + `So`(該位置**專屬**的發射線)。模型聚焦在**發射線**（連續譜好處理、變化小）。
-  - 觀測譜：`O(i,λ) = [Oo + Sl + Ssm + So]·H`（H=光纖間效率差，用 5577Å 天光線歸一，沿用 Han 2023）。
-
-**網路架構（兩階段）**
-1. **特徵抽取 block**：小卷積核的 1D 卷積 + **校正模組(calibration)** —— 用異常偵測對齊「卷積後位移掉的發射線特徵」（修正 feature shift，否則 MI 估計會失準）+ 激活函數。
-2. **預訓練模型**：用 16 台光譜儀中央 6 台的資料訓練；sky label = 只留發射線的譜（鄰域中位數去連續譜，沿用 Bai 2007）；損失 = KL 散度（DeepInfoMax）。
-3. **互資訊兩階段**（MI 估計用 MINE 類方法，引 Belghazi 2018 / Bachman 2019）：
-   - **階段一**：**最大化**不同光譜表徵間的 MI → 得「**shared**」共同天空 `Ssm`。
-   - **階段二**：**最小化** shared 與 unique 間的 MI → 得「**unique**」該位置專屬發射線 `So`。
-   - 資料依**發射線密度自適應切段**，每段各有一個預訓練模型。
-
-**結果**
-- 對比 LAMOST "Super Sky"：SMI 殘餘**更集中於 0、MAE/RMSE 更小、離群更少**，**藍端改善尤其明顯**；部分光譜儀 RMSE 近**腰斬**。
-- 少數情況較差（如 testplanid-2 的 spec04，歸因 MI 抽取不全 / sky fiber 位置偏差），但 RMSE 仍較小、較穩定。
-- 發射線處殘餘比全譜大（兩法皆然，線難扣）。
-
-**侷限/未來**：尚未做下游任務（扣完後量恆星參數）；未納入時間域變化。
-
-**對本專案的意義**
-- ✅ 屬**策略一（預測 sky）**，方向與老師一致。
-- 關鍵可借用觀念：**「用全部 spaxel 估每個位置專屬的天空」+「共同 vs 專屬發射線分離」**。
-- ⚠️ 它是**多光纖 (LAMOST)**、非 IFU；但 IFU 的整片 spaxel ≈ 大量光纖，概念可移植。
+> Read closely: `ml/Zhang2025_SMI` (deep learning), `ml/Rhea2024_IFU-background-ML` (★ IFU with PCA and a neural field, the closest of all of them to this project), and `data-driven/Kolganov2023_NMF` (non-negative matrix factorisation).
+> The remaining empirical and physical-model entries are summarised for context only. The classification is in [`sky-subtraction-papers.md`](sky-subtraction-papers.md).
 
 ---
 
-### A2. Kolganov, Chilingarian & Grishin 2023 — NMF 天空扣除（`data-driven/`）
-**出處**：ADASS 2023 會議短文（4 頁，"first version"），`arXiv:2312.06761`。資料：MagE/Magellan Echelle。
+## A. Machine learning and data-driven (read closely)
 
-**血統**：延伸 **Kurtz & Mink 2000**（用上百條天空譜做 SVD/PCA，**不需 offset sky** 就能建出該次曝光的天空）。
+### A1. Zhang et al. 2025 — SMI: building the sky with a mutual-information network (`ml/`)
+**Journal and source**: RAA, `arXiv:2508.19875`. Data: LAMOST multi-object fiber spectra. **The only deep-learning "predict the sky" paper.**
 
-**兩項創新**
-1. 用 **NMF（非負矩陣分解）取代 PCA**：天空通量物理上非負 → 可得**約 10 倍**有效本徵譜。
-2. 推廣到 **2D（長狹縫）光譜**：多了空間維 → 可**分離天空連續譜(沿縫平坦) 與 星系連續譜(有峰)**（1D 做不到，兩者會簡併）。
+**The problem it sets out to solve**
+- Current practice **averages** the sky fiber spectra into one "Super Sky" and subtracts that. The trouble is that an averaged spectrum **carries no information about the local environment around each target**, so it cannot capture the **spatial gradient** of the sky — and moonlight in particular is a gradient that shades across the field from one side to the other.
 
-**演算法**
-- 先用一批天空譜算 NMF 成分：`A ≈ W·C`（全非負）。
-- 三個假設：①天空沿縫平坦 ②源的非連續特徵(發射/運動)只佔小部分波長 ③星系輪廓≈Moffat。
-- **步驟1 去星系連續譜**：波長分箱，`F(y)=SKY+GAL(y)`；沿縫平移自減消去平坦天空 → 剩 `GAL(y+Δy)−GAL(y)`，用兩個 Moffat 之差擬合 → 重建並扣星系連續譜（含發射線的箱遮掉）。
-- **步驟2 建天空模型**：沿縫塌縮(提 SNR)，用 NMF 成分最小二乘擬合 `s = Cᵀ·x + r`，再扣重建出的天空。
-- 測試：~200 條天空譜 → 20 個 NMF 成分；**即使源填滿整條縫、且無 offset sky 也能用**。
+**The core idea**
+- Use **every fiber across the whole field**, not only the sky fibers, together with deep learning and **mutual information (MI)**, to estimate a sky background **that belongs to each target's own position**.
+- Split the sky into `Sl` (the continuum, taken as the median of the neighbourhood) + `Ssm` (the emission lines **shared** by the whole region) + `So` (the emission lines **unique** to that position). The model concentrates on the **emission lines**, since the continuum is easy to handle and varies little.
+  - The observed spectrum: `O(i,λ) = [Oo + Sl + Ssm + So]·H` (H is the efficiency difference between fibers, normalised on the 5577Å airglow line, following Han 2023).
 
-**未來**：擴大天空譜庫；套用 ESI/MagE/X-Shooter；結合 Kelson 2003 降低天光線內插雜訊。
+**The network architecture (two stages)**
+1. **The feature extraction block**: a 1D convolution with a small kernel, plus a **calibration module** — anomaly detection realigns the emission-line features that the convolution has shifted (correcting the feature shift, without which the MI estimate goes wrong) — plus an activation function.
+2. **The pretrained model**: trained on the data of the central 6 of the 16 spectrographs; the sky label is a spectrum with only the emission lines left (the continuum removed by the median of the neighbourhood, following Bai 2007); the loss is KL divergence (DeepInfoMax).
+3. **Mutual information in two stages** (the MI is estimated by a MINE-like method, citing Belghazi 2018 / Bachman 2019):
+   - **The first stage** **maximises** the MI between the representations of different spectra, which gives the **shared** common sky `Ssm`.
+   - **The second stage** **minimises** the MI between shared and unique, which gives the **unique** emission lines `So` of that position.
+   - The data is **split into segments adaptively by emission-line density**, and each segment has its own pretrained model.
 
-**對本專案的意義**
-- ✅ 屬**策略一**：資料驅動低秩**建 sky**（非殘餘），且**不需專拍天空**。
-- 介於 PCA 家族(Kurtz/ZAP) 與物理模型之間。其「**2D 分離平坦天空 vs 有峰的源**」恰對應我們先前驗證的「天空全場均勻、源是局部」。
+**Results**
+- Against LAMOST's "Super Sky", the SMI residual is **more concentrated on 0, with smaller MAE and RMSE and fewer outliers**, and **the improvement at the blue end is especially clear**; on some spectrographs the RMSE is close to **halved**.
+- A few cases come out worse (spec04 of testplanid-2, for instance, which is put down to the MI extraction being incomplete or the sky fiber positions being off), but the RMSE is still smaller and steadier there.
+- The residual at the emission lines is larger than across the spectrum as a whole. That is true of both methods; lines are hard to subtract.
 
----
+**Limitations and future work**: no downstream task has been done yet (measuring stellar parameters after the subtraction); variation in the time domain is not included.
 
-### A3. Rhea et al. 2024 — IFU 背景重建（PCA + neural field）（`ml/`）★ 最貼近本專案
-**出處**：`arXiv:2404.01175`。資料：**SITELLE**（CFHT 成像 FTS，IFU）；測試 NGC 4449（充滿 DIG，主線 Hα）、NGC 1275（Perseus BCG）。**唯一在 IFU 上用 ML 做背景重建的論文。**
-
-**要解決的問題**
-- IFU 每個 spaxel 都疊著背景；要量源的真實流量必先把背景建模扣掉。傳統 global（整場一條平均）/ local（源周圍環形）背景，在「源佔視場大比例、乾淨背景零碎」時失準。
-- ⚠️ 這裡「背景」= **天光線 + 天體背景/前景 + 雜訊**（非純 sky），但方法骨架與純天空 reconstruction 完全共用。
-
-**核心點子**：**分割 → PCA（降噪）→ 神經場內插係數 → 重建扣除**。用空間維度，把「被源遮住的 spaxel 的背景」由周圍乾淨背景內插出來。
-
-**流程**
-1. **Segmentation**（photutils）：對 deep image 分箱（box 50×50）→ 3×3 高斯 + sigma-clipped median 估背景 → 扣背景 → 再卷積 → `detect_sources`（門檻 0.01×背景 RMS）→ 分出背景/源 spaxel。此步精度決定整體可靠度。
-2. **正規化**：先用 670–675 nm（無強發射線、雜訊主導、含連續譜水準）最大值正規化，再用整條譜最大值；同規則可套到源 spaxel 以便還原流量。
-3. **PCA on 背景 spaxel**（sklearn incremental PCA）：`s_r = μ + Σ α_i p_i`；依 scree 轉折留 k（NGC4449 留 3、NGC1275 留 2），成分有物理意義（Hα、[NII]、[SII]、DIG 負流量）；丟高階成分 = 降噪。
-4. **Neural field**（TensorFlow）：**輸入 (x,y) → 輸出 k 個 PCA 係數**；2 層 200/300 節點 tanh、Huber loss、Adam lr=1e-2（val 5ep 無進步 lr×0.75、10ep 無進步 early stop、上限 100）；**99%/1% 訓練/驗證**（為最大化空間覆蓋，目標只是學會「這筆 cube 的係數圖」而非泛化）；Optuna 調超參。→ 得「座標→係數」的平滑映射，對源 spaxel 給出無不連續的係數（優於線性/最近鄰）。
-5. **重建扣除**：源 spaxel 預測係數 → `μ+Σα·p` 還原背景 → rescale → 扣掉 → 於 LUCI 用 sinc（FTS 線型）擬合 5 條速度綁定的發射線。背景模型只動振幅/流量，不影響速度/彌散。
-
-**結果**：以振幅差異圖為主（**無量化數字**）。NGC4449 傳統法中央高估、外圍 DIG 區新法找回更多流量；NGC1275 外緣傳統法低估；重建背景雜訊明顯較低（尤其透射區外 6300–6450 Å）。
-
-**侷限**：① 分割誤差傳遞（背景混入 DIG）；② 線性假設（被解釋變異偏低 → 多為雜訊，線性未必恰當）；③ 神經場平滑 → 難捕高頻。**未來**：輸入加 Fourier features 抓高頻；改建恆星連續譜。
-
-**對本專案的意義**
-- ✅ **最直接的起跳板**：IFU 上已跑通 segment → PCA 降噪 → 神經場內插 → 重建扣除，作者明言可推廣到 **MUSE**、且**不需天空模板庫、與波長無關**。
-- 差異化空間：把「背景」收斂成**純天空**、評估改用 **held-out blank**；把線性 PCA 換**非線性/非負/互資訊**；用 Rhea 列的未來工作（Fourier features 捕 OH 高頻）。
-- 與 SMI/NMF 互補：Kolganov/Rhea = 用**空間維度**解耦；SMI = 用**互資訊**分共有/獨有；Zhang2016 = 用**非負+稀疏+同質**把物理寫成約束。
+**What it means for this project**
+- ✅ It belongs to **strategy 1 (predicting the sky)**, which is the direction the professor wants.
+- The ideas worth borrowing: **"use every spaxel to estimate a sky specific to each position"** and **"separate the shared emission lines from the position-specific ones"**.
+- ⚠️ It is **multi-fiber (LAMOST)** rather than an IFU; but a whole field of IFU spaxels is much like a great many fibers, so the concept carries over.
 
 ---
 
-## B. 其餘 predict-sky 脈絡摘要（empirical / physical）
+### A2. Kolganov, Chilingarian & Grishin 2023 — NMF sky subtraction (`data-driven/`)
+**Source**: an ADASS 2023 conference note (4 pages, a "first version"), `arXiv:2312.06761`. Data: MagE/Magellan Echelle.
 
-### empirical（傳統經驗/觀測）
-- **Kelson 2003**：在**抽取/重取樣之前**於 2D 影像上扣天空，善用畸變/LSF 知識做次像素天空取樣。「抽取前扣天空」奠基作，多被後續沿用。
-- **Noll 2014 — skycorr**：把一條**參考天空**的氣輝線**依物理分組縮放**去擬合目標光譜的天光線（連續譜另外分離）。儀器無關的「縮放天空模型」標準工具。
-- **Law 2016 — MaNGA DRP**：~92 根 sky fiber 併成**超取樣天空**，逐 fiber 波長格估算+縮放再減（<8500Å 近 Poisson 極限）。
-- **Sánchez 2016 — CALIFA**：用最暗 sky fiber 平均建天空再減。
-- **Glazebrook & Bland-Hawthorn 2001 — nod-and-shuffle**：望遠鏡 nod + CCD 電荷搬移，**直接同路徑量到天空**(~0.04%)。
-- **Rodrigues 2010 / accurate-sky-continuum (1302.3620)**：多光纖天空空間重建 / fibre 天空連續譜精扣。
+**Lineage**: it extends **Kurtz & Mink 2000**, which took hundreds of sky spectra, ran SVD/PCA on them and built that exposure's own sky **without needing an offset sky**.
 
-### physical-model（物理/合成天空模型；產生可相減的 sky）
-- **Noll 2012 — Cerro Paranal sky model**：輻射轉移建完整天空（散射月光/星光、黃道光、氣輝線+連續譜）；ESO SkyCalc 的底層。
-- **Jones 2013**：散射月光成分。**PALACE 2025 (Noll)**：專門氣輝模型（26541 條線 + 氣候學）。**Patat 2008**：氣輝變動的經驗特徵化。
+**Two things that are new**
+1. **NMF (non-negative matrix factorisation) in place of PCA**: sky flux is physically non-negative, which yields about **10 times** as many useful eigenspectra.
+2. Extension to **2D (long-slit) spectra**: the extra spatial dimension makes it possible to **separate the sky continuum (flat along the slit) from the galaxy continuum (which peaks)** — something 1D cannot do, where the two are degenerate.
+
+**The algorithm**
+- First compute the NMF components from a set of sky spectra: `A ≈ W·C`, everything non-negative.
+- Three assumptions: the sky is flat along the slit; the source's non-continuum features (emission, motion) occupy only a small part of the wavelength range; and the galaxy profile is approximately Moffat.
+- **Step 1, remove the galaxy continuum**: bin in wavelength, where `F(y)=SKY+GAL(y)`; shift along the slit and self-subtract to cancel the flat sky, which leaves `GAL(y+Δy)−GAL(y)`; fit that with the difference of two Moffats; then rebuild and subtract the galaxy continuum (the bins holding emission lines are masked out).
+- **Step 2, build the sky model**: collapse along the slit to raise the SNR, fit the NMF components by least squares as `s = Cᵀ·x + r`, and subtract the sky that reconstructs.
+- The test: ~200 sky spectra give 20 NMF components; **it works even when the source fills the whole slit and there is no offset sky**.
+
+**Future work**: enlarge the library of sky spectra; apply it to ESI/MagE/X-Shooter; and combine it with Kelson 2003 to reduce the interpolation noise on the airglow lines.
+
+**What it means for this project**
+- ✅ It belongs to **strategy 1**: a data-driven low-rank **model of the sky** rather than of the residual, and it needs no dedicated sky exposure.
+- It sits between the PCA family (Kurtz, ZAP) and the physical models. Its **"separate the flat sky from the peaked source in 2D"** is exactly the "the sky is uniform across the field and the source is local" that we verified earlier.
 
 ---
 
-## C. 給本專案的綜合啟示
-1. **兩種 ML/資料驅動「預測 sky」範本**：
-   - **SMI**（深度學習，逐位置、用全部光纖、MI 分離共同/專屬發射線）。
-   - **NMF**（低秩，2D 分離平坦天空 vs 有峰源，免 offset sky）。
-2. **可移植到 MUSE IFU**：IFU 的整片 spaxel ≈ 大量「光纖」→ SMI 的「逐位置估天空」與 NMF 的「2D 分離」都自然適用（呼應我們驗證過的「天空全場均勻、源局部」）。
-3. **共同主線**：都把**連續譜(平滑、共同)** 與 **發射線(多變、位置相關)** 分開處理；**發射線是難點**（殘餘最大）。→ 與老師「把 sky 模型本身做準」一致：重點在天光線 + 隨位置變化。
-</content>
+### A3. Rhea et al. 2024 — IFU background reconstruction (PCA plus a neural field) (`ml/`) ★ the closest to this project
+**Source**: `arXiv:2404.01175`. Data: **SITELLE** (the imaging FTS on CFHT, an IFU); tested on NGC 4449 (full of DIG, with Hα the main line) and NGC 1275 (the Perseus BCG). **The only paper that uses ML for background reconstruction on an IFU.**
+
+**The problem it sets out to solve**
+- Every spaxel of an IFU has the background sitting underneath it, so measuring a source's true flux means modelling that background and subtracting it first. The traditional global background (one average across the whole field) and local background (an annulus around the source) both go wrong when the source covers a large fraction of the field of view and the clean background is left only in scraps.
+- ⚠️ "Background" here means **airglow lines plus astrophysical background and foreground plus noise**, not the sky alone; but the skeleton of the method is exactly the one that reconstructing the sky alone would use.
+
+**The core idea**: **segment → PCA (which denoises) → interpolate the coefficients with a neural field → rebuild and subtract**. It uses the spatial dimension to interpolate the background beneath the spaxels the source covers out of the clean background around them.
+
+**The chain**
+1. **Segmentation** (photutils): bin the deep image (box 50×50) → a 3×3 Gaussian plus a sigma-clipped median estimates the background → subtract the background → convolve again → `detect_sources` (threshold 0.01× the background RMS) → background and source spaxels are separated. How accurate this step is decides how reliable the whole thing is.
+2. **Normalisation**: normalise first on the maximum over 670–675 nm (no strong emission lines there, noise-dominated, and it carries the continuum level), then on the maximum of the whole spectrum; the same rule can be applied to the source spaxels so that the flux can be restored afterwards.
+3. **PCA on the background spaxels** (sklearn incremental PCA): `s_r = μ + Σ α_i p_i`; k is kept at the turn of the scree (3 for NGC4449, 2 for NGC1275); the components carry physical meaning (Hα, [NII], [SII], negative DIG flux); and throwing the higher-order components away is what denoises.
+4. **Neural field** (TensorFlow): **input (x,y) → output the k PCA coefficients**; 2 layers of 200/300 nodes with tanh, Huber loss, Adam at lr=1e-2 (lr×0.75 after 5ep without improvement on validation, early stop after 10ep without improvement, capped at 100); **99%/1% train/validation**, to maximise the spatial coverage, because the goal is only to learn the coefficient map of this one cube rather than to generalise; hyperparameters tuned with Optuna. What comes out is a smooth mapping from coordinate to coefficient that gives the source spaxels coefficients with no discontinuity, which beats linear or nearest-neighbour interpolation.
+5. **Rebuild and subtract**: predict the coefficients at the source spaxels → restore the background as `μ+Σα·p` → rescale → subtract → then in LUCI fit 5 emission lines with tied velocities using a sinc, which is the FTS line shape. The background model moves only amplitude and flux; it does not touch velocity or dispersion.
+
+**Results**: presented mostly as maps of the amplitude difference, **with no quantitative numbers**. On NGC4449 the traditional method overestimates in the centre while the new one recovers more flux out in the DIG region; on NGC1275 the traditional method underestimates at the outer edge; and the reconstructed background is visibly less noisy, especially outside the transmission region at 6300–6450 Å.
+
+**Limitations**: segmentation error propagates (DIG leaks into the background); the linearity assumption is questionable (the explained variance is low, so most of it is noise, and linear may not be the right choice); and the neural field is smooth, which makes high frequencies hard to capture. **Future work**: add Fourier features to the input to catch the high frequencies, and model the stellar continuum instead.
+
+**What it means for this project**
+- ✅ **The most direct springboard**: segment → PCA denoising → neural-field interpolation → rebuild and subtract has already been made to work on an IFU, and the authors say explicitly that it generalises to **MUSE**, needs no library of sky templates and is independent of wavelength.
+- Where we could differ: narrow "background" down to **the sky alone** and evaluate on **held-out blank** instead; replace linear PCA with something **non-linear, non-negative or mutual-information based**; and take up the future work Rhea lists (Fourier features to catch the high-frequency OH).
+- It complements SMI and NMF: Kolganov and Rhea decouple using the **spatial dimension**; SMI separates shared from unique using **mutual information**; Zhang2016 writes the physics in as constraints, **non-negativity, sparsity and homogeneity**.
+
+---
+
+## B. Context summaries of the remaining predict-sky work (empirical and physical)
+
+### empirical (traditional empirical and observational)
+- **Kelson 2003**: subtracts the sky on the 2D image **before extraction and resampling**, making good use of what is known about the distortion and the LSF to sample the sky at sub-pixel scale. The founding work for subtracting the sky before extraction, and followed by much of what came after.
+- **Noll 2014 — skycorr**: takes the airglow lines of one **reference sky** and **scales them group by group, grouped by physics**, to fit the airglow lines of the target spectrum (the continuum is separated out beforehand). The instrument-independent standard tool for scaling a sky model.
+- **Law 2016 — MaNGA DRP**: ~92 sky fibers are combined into a **supersampled sky**, estimated on each fiber's own wavelength grid, scaled and subtracted (near the Poisson limit below 8500Å).
+- **Sánchez 2016 — CALIFA**: builds the sky from the mean of the faintest sky fibers and subtracts it.
+- **Glazebrook & Bland-Hawthorn 2001 — nod-and-shuffle**: nodding the telescope while shuffling charge on the CCD **measures the sky directly and along the same path** (~0.04%).
+- **Rodrigues 2010 / accurate-sky-continuum (1302.3620)**: spatial reconstruction of the sky from many fibers, and precise subtraction of the sky continuum on a fibre.
+
+### physical-model (physical and synthetic sky models, which generate a sky that can be subtracted)
+- **Noll 2012 — Cerro Paranal sky model**: builds the whole sky by radiative transfer (scattered moonlight and starlight, zodiacal light, airglow lines and continuum); what ESO SkyCalc runs on underneath.
+- **Jones 2013**: the scattered-moonlight component. **PALACE 2025 (Noll)**: a dedicated airglow model (26541 lines plus a climatology). **Patat 2008**: an empirical characterisation of how airglow varies.
+
+---
+
+## C. What all of this suggests for this project
+1. **Two templates for an ML or data-driven "predict the sky"**:
+   - **SMI** (deep learning, position by position, using every fiber, separating the shared from the unique emission lines with MI).
+   - **NMF** (low-rank, separating the flat sky from the peaked source in 2D, with no offset sky needed).
+2. **Both carry over to a MUSE IFU**: a whole field of IFU spaxels is much like a great many "fibers", so SMI's "estimate the sky position by position" and NMF's "separate in 2D" both apply naturally (which echoes the "the sky is uniform across the field and the source is local" that we verified).
+3. **The common thread**: all of them handle the **continuum (smooth, shared)** separately from the **emission lines (variable, position-dependent)**, and **the emission lines are the hard part**, where the residual is largest. That agrees with the professor's "make the sky model itself accurate": what matters is the airglow lines and how they change with position.

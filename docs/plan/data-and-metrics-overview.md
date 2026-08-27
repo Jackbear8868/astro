@@ -1,192 +1,192 @@
-# 扣天空 / 建天空:資料集、資料來源、評分指標(觀念整理)
+# Sky subtraction / sky reconstruction: datasets, data sources, evaluation metrics (a conceptual overview)
 
-> 純觀念參考。只解釋三件事:
-> 1. **資料來源**——天空樣本/標籤從哪來;
-> 2. **資料集**——train / val / test 各是什麼、哪種來源能擔任;
-> 3. **評分指標**——有/沒有真值時,用什麼尺去量好壞。
+> A conceptual reference, and nothing more. It explains three things:
+> 1. **Data sources** -- where the sky samples and the labels come from;
+> 2. **Datasets** -- what train / val / test each are, and which kind of source can serve as which;
+> 3. **Evaluation metrics** -- what yardstick measures how good a result is, with a ground truth and without one.
 >
-> 本檔不含任何「該怎麼做、排序、選型、待辦」的內容,只把概念與彼此關係講清楚。
+> This document holds nothing about what to do, in what order, which method to pick or what is still outstanding. It sets out the concepts and how they stand to one another.
 
 ---
 
-## 0. 共同前提:扣天空問題裡「真值」的本質
+## 0. The common premise: what a ground truth actually is in sky subtraction
 
-### 0.1 物理現實:沒有「天體底下的真天空」
-扣天空的根本困難是:**永遠量不到「某個天體正下方、那一刻的真天空」**,因為天體就擋在那條視線上。觀測到的只有「天體 + 天空 + 雜訊」的疊加,單一真實觀測**無法**拆出該位置的純天空。
+### 0.1 The physical reality: there is no true sky underneath a source
+The fundamental difficulty of sky subtraction is that **the true sky directly beneath a given source, at that moment, can never be measured**, because the source itself sits in the way along that line of sight. What is observed is the sum of source + sky + noise, and a single real observation **cannot** be taken apart into the pure sky at that position.
 
-### 0.2 真值(GT)的三種身分(別混為一談)
-| 身分 | 它是什麼 | 從哪來 |
+### 0.2 The three roles of a ground truth (GT), which are not to be confused with one another
+| Role | What it is | Where it comes from |
 |---|---|---|
-| **訓練用 GT** | 學參數時的監督訊號 | 多數方法(PCA / NMF / autoencoder)是 **unsupervised**,根本不需要 GT,只要「一堆只有天空的光譜」學基底;少數 supervised 的標籤也取自**只有天空的區域** |
-| **評估用 GT** | 比對「重建天空 vs 真天空」的參考 | 「只有天空的區域」(blank spaxel / sky fiber):那裡的觀測**就等於**天空 |
-| **「天體底下」GT** | 天體所在位置的真天空 | 真實資料給不出,**只能靠模擬 / 注入**(自己合成已知天空) |
+| **The training GT** | The supervision signal while the parameters are learned | Most methods (PCA / NMF / autoencoder) are **unsupervised** and need no GT at all -- a pile of sky-only spectra is enough to learn a basis from; the few supervised ones take their labels from **sky-only regions** as well |
+| **The evaluation GT** | The reference for comparing the reconstructed sky vs the true sky | Sky-only regions (a blank spaxel, a sky fibre): there the observation **is** the sky |
+| **The underneath-the-source GT** | The true sky at the position the source occupies | Real data cannot supply it; **only simulation or injection can** (a known sky synthesised for the purpose) |
 
-### 0.3 兩條正交的軸:材料 vs 尺
-- **軸一|資料從哪來(材料)= 來源 A / B / C**。這才是真正的「data 來源」。
-- **軸二|用什麼準則評分(尺)= 指標**。**指標是一組評分準則,不是資料。**
+### 0.3 Two orthogonal axes: the material vs the yardstick
+- **Axis one | where the data comes from (the material) = sources A / B / C**. This is what "data source" genuinely means.
+- **Axis two | what criterion the scoring goes by (the yardstick) = the metrics**. **A metric is a set of scoring criteria, not data.**
 
-> 同一把尺可以量任何材料:真實 blank、注入樣本、mock、甚至原始觀測,都能套同一組指標。所以「指標」不是 A/B/C 的並列選項,而是**疊在它們之上**。本檔第 1 節談材料,第 2 節談資料集角色,第 3 節談尺。
+> One yardstick measures any material: a real blank, an injected sample, a mock, even the raw observation -- the same set of metrics applies to all of them. Metrics are therefore not an option standing alongside A/B/C, but something laid **on top of** them. Section 1 of this document is about the material, section 2 about the roles within a dataset, and section 3 about the yardstick.
 
 ---
 
-## 1. 資料來源(材料:天空樣本/標籤從哪來)
+## 1. Data sources (the material: where the sky samples and labels come from)
 
-### 1.1 資料型態先決定「天空樣本」長什麼樣
-| 面向 | **IFU(datacube)** | 多光纖 | 長狹縫 |
+### 1.1 The kind of data decides, before anything else, what a sky sample looks like
+| Aspect | **IFU (datacube)** | Multi-fibre | Long slit |
 |---|---|---|---|
-| 結構 | **(x, y, λ)** 完整 2D 空間 × 波長 | N 條**離散** 1D 譜,散布在視場 | 2D 影像 = **沿縫 1D 空間** × λ |
-| 「天空樣本」 | blank spaxel,**成片相連、數量大** | 專用 sky fiber,**稀疏**(數條~數十條) | 縫上沒有天體的那幾列 |
-| 空間關係 | 相鄰 spaxel 高度相關 → 可空間內插 | 點位稀疏、不連續 | 沿縫天空≈緩變 |
-| 「一筆資料」 | 一個 cube = 一次曝光,內含上萬 spaxel | 一塊板含上千光纖,可跨很多塊板 | 一次曝光對一個天體 |
-| 常見額外資產 | 逐 voxel 變異(variance / STAT) | 每纖 throughput 需歸一 | — |
+| Structure | **(x, y, λ)**, a complete 2D spatial field × wavelength | N **discrete** 1D spectra, scattered over the field | A 2D image = **1D space along the slit** × λ |
+| The sky sample | Blank spaxels, **contiguous and numerous** | Dedicated sky fibres, **sparse** (a few, to a few tens) | The rows of the slit that hold no source |
+| Spatial relation | Neighbouring spaxels are highly correlated → the sky can be interpolated spatially | The positions are sparse and discontinuous | The sky along the slit varies ≈ slowly |
+| One datum | One cube = one exposure, holding tens of thousands of spaxels | One plate holds thousands of fibres, and there can be many plates | One exposure on one source |
+| Common extra asset | The per-voxel variance (variance / STAT) | Each fibre's throughput has to be normalised | — |
 
-> 重點不是「誰比較好」,而是:**資料型態決定了天空樣本的數量、密度與空間連續性**,進而影響能不能做「把天空從周圍內插到別處」這件事。
+> The point is not which of them is better. It is that **the kind of data fixes how many sky samples there are, how dense they are, and how continuous they are in space** -- which in turn decides whether interpolating the sky from its surroundings to somewhere else is possible at all.
 
-### 1.2 來源 A|天空主導區「就是」天空(blank spaxel / sky fiber)
-- **做法**:把「只有天空」區域的觀測譜,直接當作天空樣本。
-- **性質**:免費、**真實**(真 LSF / 真 OH 線 / 真雜訊)、數量大。
-- **限制**:只在「沒有天體」的位置成立 → **對「天體底下」給不出任何參考**;且樣本是「帶雜訊的天空」,不是乾淨天空。
-- **能否驗天體底下**:✗。
-- **相對工作量**:低(資料現成)。
+### 1.2 Source A | a sky-dominated region is the sky (a blank spaxel, a sky fibre)
+- **How it works**: the observed spectrum of a sky-only region is taken directly as a sky sample.
+- **What it gives**: it is free, it is **real** (a real LSF, real OH lines, real noise), and there is a great deal of it.
+- **Limits**: it holds only where there is no source → **it gives no reference whatsoever for underneath a source**; and the sample is sky with noise on it, not clean sky.
+- **Can it test underneath a source**: ✗.
+- **Relative effort**: low, since the data is already there.
 
-### 1.3 來源 B|注入 / 半合成(真天空 + 真乾淨天體)
-- **做法**:把一條**已知真天空**(取自 blank)疊加到一塊**已知的乾淨天體區域**上,得到「答案已知」的樣本。
-- **性質**:有**已知答案**,又用**真實天空**(比全模擬真實);可把天空注入到「有天體」的位置 → **能探到天體底下**。
-- **限制**:當底的「乾淨天體」本身不完美(可能帶殘餘);疊加會**重複計入一次雜訊**;若注入的天空不隨位置變,就測不出空間梯度能力。
-- **能否驗天體底下**:✓。
-- **相對工作量**:中。
+### 1.3 Source B | injection, or semi-synthetic data (a real sky on a real clean source)
+- **How it works**: a **known true sky**, taken from a blank, is laid on top of a **known clean source region**, giving a sample whose answer is known.
+- **What it gives**: it has a **known answer** and it uses a **real sky**, which is more realistic than a full simulation; and the sky can be injected at a position that does hold a source → **it reaches underneath the source**.
+- **Limits**: the clean source underneath it is not itself perfect and may carry residual; the addition **counts the noise once over**; and if the injected sky does not vary with position, nothing is measured about the ability to follow a spatial gradient.
+- **Can it test underneath a source**: ✓.
+- **Relative effort**: medium.
 
-### 1.4 來源 C|全模擬 mock(從頭合成,含「天體底下」)
-- **做法**:合成 cube = 已知天體 + 已知天空(物理天空模型 + 儀器 LSF)+ 真實雜訊。**每個 spaxel(含天體底下)都有已知真天空**。
-- **性質**:**唯一能對「天體底下」逐點給真值**;完全可控(可任意設定月光 / 梯度 / OH 強度)。
-- **限制**:工作量最大;有「擬真落差」(模擬天空若太簡單,結果說服力打折);需建出該儀器的前向模型(LSF、throughput、相關雜訊)。
-- **能否驗天體底下**:✓。
-- **相對工作量**:高。
+### 1.4 Source C | a full mock (synthesised from scratch, underneath the source included)
+- **How it works**: a synthetic cube = a known source + a known sky (a physical sky model plus the instrument's LSF) + realistic noise. **Every spaxel, the ones underneath the source included, has a known true sky.**
+- **What it gives**: it is **the only thing that supplies a point-by-point truth underneath a source**, and it is entirely under control -- the moonlight, the gradient and the OH strength can all be set at will.
+- **Limits**: it costs the most work; it has a realism gap, in that too simple a simulated sky makes the result less convincing; and it needs a forward model of the instrument (the LSF, the throughput, the correlated noise).
+- **Can it test underneath a source**: ✓.
+- **Relative effort**: high.
 
-### 1.5 三來源速覽
-| 來源 | 真實度 | 有已知答案? | 能驗天體底下? | 相對工作量 |
+### 1.5 The three sources at a glance
+| Source | Realism | A known answer? | Tests underneath a source? | Relative effort |
 |---|---|---|---|---|
-| **A** 天空區=天空 | 最真實 | 否(只是觀測) | ✗ | 低 |
-| **B** 注入/半合成 | 高(真天空) | ✓ | ✓ | 中 |
-| **C** 全模擬 mock | 視模型而定 | ✓(逐點) | ✓ | 高 |
+| **A** sky region = sky | The most real | No, it is only an observation | ✗ | Low |
+| **B** injection / semi-synthetic | High, since the sky is real | ✓ | ✓ | Medium |
+| **C** a full mock | It depends on the model | ✓, point by point | ✓ | High |
 
 ---
 
-## 2. 資料集(train / val / test 的角色)
+## 2. Datasets (the roles of train, validation and test)
 
-### 2.1 三種角色的定義
-- **train**:用來學參數(基底、網路權重)。
-- **validation**:用來調超參數 / 決定停止點(例如保留幾個成分、early stop),不參與最終回報。
-- **test**:完全 held-out,用來做最終、無偏的成績回報。
+### 2.1 What the three roles are
+- **train**: used to learn the parameters, the basis and the network weights.
+- **validation**: used to tune the hyper-parameters and to decide where to stop -- how many components to keep, when to stop early -- and it takes no part in the final report.
+- **test**: entirely held out, and used for the final, unbiased report of the score.
 
-### 2.2 各來源能擔任哪些角色
-| 來源 | train | validation | test | 能驗「天體底下」? |
+### 2.2 Which roles each source can fill
+| Source | train | validation | test | Tests underneath a source? |
 |---|---|---|---|---|
-| **A** 真實 blank | ✓(學基底/網路) | ✓(held-out blank) | ✓(另一塊 blank → 真重建誤差) | ✗ |
-| **B** 注入/半合成 | 可選(較少當 train) | ✓ | ✓(可控探針) | ✓ |
-| **C** mock | ✓(唯一能給「天體底下」標籤) | ✓ | ✓(逐點真值) | ✓ |
+| **A** a real blank | ✓, learning the basis or the network | ✓, a held-out blank | ✓, another blank → a genuine reconstruction error | ✗ |
+| **B** injection / semi-synthetic | Optional, and rarely used as train | ✓ | ✓, a controlled probe | ✓ |
+| **C** a mock | ✓, the only one that gives a label underneath a source | ✓ | ✓, a point-by-point truth | ✓ |
 
-- **A**:三個角色都能當,但**範圍只限 blank 區**。
-- **B**:實務上多半當 test/val(可控探針),較少當 train(底不夠乾淨)。
-- **C**:三個角色都能當,且是**唯一能涵蓋「天體底下」的 train/val/test**。
+- **A** can fill all three roles, but **only over the blank region**.
+- **B** is in practice mostly test or validation, as a controlled probe, and rarely train, because what lies underneath it is not clean enough.
+- **C** can fill all three roles, and it is **the only train/val/test that covers underneath the source**.
 
-### 2.3 為什麼「天體底下」只有 B / C 能評
-要評天體底下,需要一個「**同時有天體、又有已知天空**」的位置。真實資料給不出(blank 依定義就沒有天體)。只有:
-- **B**:把已知天空疊到真天體上,人工造出這種位置;
-- **C**:連天體底下都有合成的已知天空。
+### 2.3 Why only B and C can evaluate underneath a source
+Evaluating underneath a source needs a position that **holds a source and a known sky at the same time**. Real data cannot supply one, since a blank has no source in it by definition. Only two things can:
+- **B**, by laying a known sky onto a real source and so manufacturing such a position;
+- **C**, where even underneath the source there is a synthesised, known sky.
 
-所以 **A 在任何資料型態上都驗不到天體底下**。這也是方法最容易出現「過扣 / 欠扣」、且文獻最少被量化的地方。
+So **A cannot test underneath a source on any kind of data**. This is also where a method is most liable to over-subtract or under-subtract, and the place the literature quantifies least.
 
-### 2.4 一個資料性質上的注意:空間相關性
-IFU 的相鄰 spaxel 雜訊高度相關。若把 spaxel **隨機**分到 train/test,test 樣本的鄰居可能就在 train 裡,造成資訊洩漏、誤差被低估。因此切分時這個相關性是必須意識到的資料性質(常見處理是「按空間分塊」而非逐點隨機)。
+### 2.4 One property of the data to watch: spatial correlation
+The noise of neighbouring IFU spaxels is highly correlated. Splitting the spaxels into train and test **at random** can leave a test sample's neighbour sitting in the train set, which leaks information and makes the error look smaller than it is. This correlation is therefore a property of the data that has to be borne in mind when the split is made; the usual treatment is to split into spatial blocks rather than point by point.
 
 ---
 
-## 3. 評分指標(尺:用什麼量好壞)
+## 3. Evaluation metrics (the yardstick: what measures how good a result is)
 
-指標獨立於資料來源——**同一組指標可以套在 A / B / C 或原始觀測上**。指標也可兼作 unsupervised 的訓練 loss(例如「blank 殘餘最小 + 不動天體流量」本身就是天然 loss)。依「需不需要真值」分三層:
+The metrics are independent of the data source -- **one set of metrics applies to A, B, C or the raw observation alike**. A metric can also serve as an unsupervised training loss: "the smallest blank residual with the source flux left alone" is a natural loss in itself. They fall into three layers, according to whether a ground truth is needed:
 
-### 3.1 (a) Truth-free 指標(不需 GT,真實資料即可算)
-| 指標 | 量什麼 | 越好 | 典型呈現 |
+### 3.1 (a) Truth-free metrics (no GT needed; they can be computed on real data)
+| Metric | What it measures | Better is | How it is usually shown |
 |---|---|---|---|
-| **blank 殘餘 std(λ)** | 扣完後 blank 區是否平坦 | 低 | std vs λ 線圖(多方法疊圖) |
-| **天光線殘餘** | 5577 / 6300 / OH 8400 等位置的殘餘 | 低 | 放大線圖 / 表 |
-| **天體流量保真** | 發射線(Hα/[OIII])扣前後是否不變 | 重疊 | before/after 疊圖 |
-| **殘餘分布** | 殘餘是否集中於 0 | mean≈0、變異小 | 直方圖 |
-| **噪音底比值** | 殘餘 std vs 理論噪音底(Poisson / variance) | 接近 1 | 比值 vs λ 線圖 |
-| **殘餘 2D 影像** | 殘餘有沒有空間結構 | 無相關結構 | 某天光線的殘餘影像 |
+| **The blank residual std(λ)** | Whether the blank region is flat once the sky is subtracted | Low | A line plot of std vs λ, with several methods overlaid |
+| **The sky-line residual** | The residual at 5577, at 6300, at OH 8400 and the like | Low | A zoomed line plot, or a table |
+| **Source flux fidelity** | Whether the emission lines (Hα, [OIII]) are unchanged before and after | They overlap | A before/after overlay |
+| **The distribution of the residual** | Whether the residual is concentrated on 0 | mean≈0, with little scatter | A histogram |
+| **The ratio to the noise floor** | The residual std vs the theoretical noise floor (Poisson / variance) | Close to 1 | A line plot of the ratio vs λ |
+| **A 2D image of the residual** | Whether the residual has spatial structure in it | No coherent structure | The residual image at one sky line |
 
-> 特性:永遠可用、零真值成本、用真實資料;但**只量「殘餘乾不乾淨」,不直接量「有沒有還原真天空」**,且可能被「過扣把殘餘壓平/過擬合吃掉天體流量」誤導。
+> What they are like: always available, at no cost in ground truth, and computed on real data. But **they measure only how clean the residual is, and not directly whether the true sky was recovered**, and they can be misled by over-subtraction flattening the residual, or by over-fitting eating the source flux.
 >
-> ⚠️ **噪音底的取法**:MUSE 的逐像素 variance(STAT)因資料縮減造成的相鄰像素相關雜訊,會系統性**低估真實雜訊約 1.8×**(實測:blank 區 DATA 標準差 ÷ √STAT ≈ 1.8)。因此「殘餘/噪音底」比值若直接用裸 √STAT 當分母會失真,需改用**實測 blank 散布**或對 √STAT 乘經驗修正因子。
+> ⚠️ **How the noise floor is to be taken -- an open question, not a settled correction.** The standard deviation of DATA over a blank region divided by √STAT was measured at about 1.8, which would say that MUSE's per-pixel variance underestimates the true noise by that factor because the data reduction correlates the noise of neighbouring pixels. Other work on the same instrument puts the factor at about 1.5. **Neither figure is confirmed for this data, and the project takes STAT at face value, with an ideal chi of 1.** A ratio that puts bare √STAT in the denominator therefore has whatever distortion that correlation causes still in it; using the measured blank scatter instead avoids the question entirely, and is the safer of the two when the choice is available. Applying a correction factor is a scientific decision that has not been made, not a step to be taken silently.
 
-### 3.2 (b) GT-based 指標(需 held-out blank(A) 或 B / C)
-| 指標 | 量什麼 | 越好 | 典型呈現 |
+### 3.2 (b) GT-based metrics (they need a held-out blank (A), or B or C)
+| Metric | What it measures | Better is | How it is usually shown |
 |---|---|---|---|
-| **重建 RMSE / MAE** | 預測天空 vs 真天空 | 低 | 對照表 / 線圖 |
-| **天體底下重建誤差** | 天體位置的重建誤差(需 B / C) | 低 | 對照表 |
-| **bias(系統偏差)** | mean(pred − true),即平均過扣/欠扣 | ≈0 | 表(分 blank / 天體位置) |
-| **線 vs 連續譜分別誤差** | 誤差來自天光線還是連續譜 | 低 | 表 / 線圖 |
+| **The reconstruction RMSE / MAE** | The predicted sky vs the true sky | Low | A comparison table, or a line plot |
+| **The reconstruction error underneath a source** | The reconstruction error at the source's position (it needs B or C) | Low | A comparison table |
+| **bias (a systematic offset)** | mean(pred − true), which is the average over- or under-subtraction | ≈0 | A table, split by blank and by source position |
+| **The error in the lines vs the continuum, separately** | Whether the error comes from the sky lines or from the continuum | Low | A table, or a line plot |
 
-### 3.3 (c) Downstream / 科學指標(終極驗收)
-| 指標 | 量什麼 | 越好 | 典型呈現 |
+### 3.3 (c) Downstream, or scientific, metrics (the ultimate acceptance test)
+| Metric | What it measures | Better is | How it is usually shown |
 |---|---|---|---|
-| **回收的天體量** | 扣完後的 Hα flux / kinematics 是否正確 | 接近真值/參考 | flux map、kinematics 圖 |
-| **S/N 改善** | 相對 baseline 的提升 | 高 | 表 / 線圖 |
+| **The recovered source quantity** | Whether the Hα flux and the kinematics are right once the sky is subtracted | Close to the truth, or to the reference | A flux map, a kinematics figure |
+| **The improvement in S/N** | The gain relative to the baseline | High | A table, or a line plot |
 
 ---
 
-## 4. 對照:前人研究如何落在這個框架
+## 4. A comparison: where earlier work falls within this framework
 
-### 4.1 資料型態 × 來源/指標 交叉表
-| | A(天空區=天空) | B(注入) | C(mock) | 指標(殘餘尺) |
+### 4.1 Kind of data × source / metric, cross-tabulated
+| | A (sky region = sky) | B (injection) | C (mock) | Metrics (the residual yardstick) |
 |---|---|---|---|---|
-| **IFU** | Rhea(背景 spaxel,held-out) | — | — | Rhea(差異圖,定性) |
-| **多光纖** | SMI(sky fiber→偽標籤)、W&H(sky fiber 應為零) | — | Zhang16(LAMOST 模擬器) | W&H、Zhang16、SMI |
-| **長狹縫** | (縫上天空列) | Kurtz&Mink(注入天空→還原紅移) | — | Kolganov(目視) |
+| **IFU** | Rhea (background spaxels, held out) | — | — | Rhea (difference images, qualitative) |
+| **Multi-fibre** | SMI (a sky fibre → a pseudo-label), W&H (a sky fibre ought to be zero) | — | Zhang16 (the LAMOST simulator) | W&H, Zhang16, SMI |
+| **Long slit** | (the sky rows on the slit) | Kurtz&Mink (inject a sky → recover the redshift) | — | Kolganov (by eye) |
 
-讀出的規律:
-- **A** 是最普遍的訓練資料來源(凡能切出「只有天空」區域者皆用)。
-- **B** 出現在需要「答案已知」測試的研究(Kurtz&Mink 的紅移還原)。
-- **C** 出現在剛好有現成模擬器的研究(Zhang16 的 LAMOST 模擬器)。
-- **指標** 幾乎人人用來報結果。
+The pattern that comes out of it:
+- **A** is the most widespread source of training data; anyone who can cut out a sky-only region uses it.
+- **B** turns up in work that needs a test with a known answer, as in Kurtz&Mink's redshift recovery.
+- **C** turns up where a simulator happened to be at hand already, as with Zhang16's LAMOST simulator.
+- **Metrics** are what almost everyone reports a result with.
 
-### 4.2 資料型態會不會「限制」能用哪個來源/指標
-原則上 A / B / C 與各指標在三種資料型態上都能實作,不被硬性封死。資料型態改變的是「**資料量**」與「**難度/價值**」:
-- **A**:三種都能,IFU 樣本最多最密,光纖最稀疏(差在量)。
-- **B**:三種都能(光纖已有先例,IFU 同樣可行)。
-- **C**:三種都能,前提是建得出該儀器前向模型;IFU 較難建,但能給「2D 天體底下」逐點真值。
-- **指標**:三種都能,永遠可用。
+### 4.2 Whether the kind of data restricts which source or metric can be used
+In principle A / B / C and each of the metrics can be implemented on all three kinds of data, and nothing is shut off outright. What the kind of data changes is **how much data there is** and **how hard it is, and how much it is worth**:
+- **A**: all three can do it. The IFU has the most samples and the densest, the fibres the sparsest; the difference is one of quantity.
+- **B**: all three can do it. The fibres already have a precedent for it, and it is just as feasible on an IFU.
+- **C**: all three can do it, provided the instrument's forward model can be built. It is harder to build for an IFU, but it gives a point-by-point truth underneath a source in 2D.
+- **Metrics**: all three can do it, and they are always available.
 
-唯一真正被資料型態決定的,不是來源本身,而是:**「天體底下」只有 B / C 能評**;以及 **IFU 因有完整 2D 連續空間,才談得上「把天空從周圍內插到天體底下」**(離散光纖做不到)。
+The one thing the kind of data genuinely decides is not the source itself. It is that **underneath a source can be evaluated only by B or C**; and that **only an IFU, having a complete and continuous 2D space, makes it meaningful to speak of interpolating the sky from its surroundings to underneath the source** -- discrete fibres cannot do it.
 
-### 4.3 各篇實際呈現的 metric(來自原文細讀)
-| 論文 | 資料 | 呈現的 metric | 量化程度 | 需 GT? |
+### 4.3 The metric each paper actually presents (from a close reading of the originals)
+| Paper | Data | The metric presented | How quantitative | Needs a GT? |
 |---|---|---|---|---|
-| **Soto 2016 (ZAP)** | MUSE IFU | before/after 譜疊圖、變異數 vs 成分數曲線(選 neval)、天光線殘餘 + 源保真 | 多為定性 | 否 |
-| **Husemann 2022 (CubePCA)** | MUSE IFU | 單張 before/after 共加譜疊圖(Fig 3);殘餘波段在下游以遮罩排除 | **純定性,無數字** | 否 |
-| **Rhea 2024** | SITELLE IFU | 差異圖、流量還原互比、重建背景雜訊「較低」、scree plot 選成分 | **純定性;99/1 held-out 未被用來報重建誤差** | 否 |
-| **Wild & Hewett 2005** | SDSS 光纖 | blank 殘餘 std(λ,67% 穩健)、**noise-weighted 殘餘→Poisson 底**、成分數停在 sky/non-sky 比 = 1、源 EW 保真(表)、偵測 χ²(−27%)、S/N 改善(~20%) | **量化充足** | 部分(EW 比較式) |
-| **Sharp & Parkinson 2010** | 光纖 | **local error(% 天空)vs Poisson 底**、殘餘直方圖、**殘餘隨 N 下降率(√N test)**、紅移還原率(85% vs 25%) | **量化充足** | 紅移那項需 |
-| **Kurtz & Mink 2000** | 光纖 | **注入測試 → 紅移還原率**、vs Poisson 極限(差 0.7 mag ≈ 2 倍)、cross-correlation r 值 | 量化(以紅移為主) | **是(注入)** |
-| **Zhang 2025 (SMI)** | LAMOST 光纖 | **MAE / RMSE**、殘餘集中於 0、離群少、藍端改善 | **量化** | 對天空樣本 |
-| **Kolganov 2023 (NMF)** | 長狹縫 | ~200 天空譜 → 20 成分;以可行性示範為主 | 多為定性 | 否 |
+| **Soto 2016 (ZAP)** | MUSE IFU | A before/after spectrum overlay, a variance vs component-count curve (to choose neval), the sky-line residual plus source fidelity | Mostly qualitative | No |
+| **Husemann 2022 (CubePCA)** | MUSE IFU | A single before/after overlay of the co-added spectrum (Fig 3); the residual bands are masked out downstream | **Purely qualitative, with no numbers** | No |
+| **Rhea 2024** | SITELLE IFU | Difference images, flux recovery compared between methods, a reconstructed background noise said to be "lower", a scree plot to choose the components | **Purely qualitative; the 99/1 held-out split is never used to report a reconstruction error** | No |
+| **Wild & Hewett 2005** | SDSS fibres | The blank residual std(λ), robust at 67%, the **noise-weighted residual → the Poisson floor**, a component count stopped where the sky/non-sky ratio = 1, source EW fidelity (a table), the detection χ² (−27%), the improvement in S/N (~20%) | **Amply quantitative** | In part, since the EW is a comparison |
+| **Sharp & Parkinson 2010** | Fibres | The **local error (as a % of the sky) vs the Poisson floor**, a histogram of the residual, **the rate at which the residual falls with N (the √N test)**, the redshift recovery rate (85% vs 25%) | **Amply quantitative** | The redshift one does |
+| **Kurtz & Mink 2000** | Fibres | **An injection test → the redshift recovery rate**, vs the Poisson limit (0.7 mag short, a factor of ≈ 2), the cross-correlation r value | Quantitative, mostly on redshift | **Yes, by injection** |
+| **Zhang 2025 (SMI)** | LAMOST fibres | **MAE / RMSE**, a residual concentrated on 0, few outliers, an improvement at the blue end | **Quantitative** | For the sky samples |
+| **Kolganov 2023 (NMF)** | Long slit | ~200 sky spectra → 20 components; mostly a demonstration of feasibility | Mostly qualitative | No |
 
-讀出的規律:**IFU 三篇(ZAP / CubePCA / Rhea)的評估偏定性**(以 before/after 疊圖、差異圖為主);**光纖巡天(W&H / Sharp&P / Kurtz&Mink / SMI)量化最足**,並反覆使用兩個共同基準——**Poisson 噪音底**與**注入測試的紅移還原率**。
+The pattern that comes out of it: **the three IFU papers (ZAP / CubePCA / Rhea) evaluate qualitatively**, mostly with before/after overlays and difference images, while **the fibre surveys (W&H / Sharp&P / Kurtz&Mink / SMI) are the most quantitative**, and they return again and again to two shared benchmarks -- **the Poisson noise floor** and **the redshift recovery rate of an injection test**.
 
 ---
 
-## 5. 策略 × metric 適用矩陣(哪些 metric 只能算在某些策略上)
+## 5. Strategy × metric, and which applies to which (the metrics that can only be computed on some strategies)
 
-| Metric 類型 | A(blank) | B(注入) | C(mock) | 備註 |
+| Kind of metric | A (blank) | B (injection) | C (mock) | Note |
 |---|---|---|---|---|
-| Truth-free 殘餘類(std / 線殘 / 直方圖 / 2D 影像 / 噪音底比值) | ✅ | ✅ | ✅ | 疊在任何資料上都能算,但**只反映殘餘乾不乾淨,對「天體底下」全盲** |
-| 重建 RMSE / MAE(vs 真天空) | ✅(blank) | ✅ | ✅ | 需已知真天空;A 只能在 blank 算 |
-| 天體流量 / EW 保真 | ✅(需參考) | ✅ | ✅ | 比較式,有源 + 參考即可 |
-| **天體底下重建誤差 / bias** | ❌ **物理上不可能** | ✅ | ✅ | **唯一被策略硬性決定的一類**:A 的 blank 依定義沒有源 |
-| 下游科學還原(flux / 紅移 / kinematics) | ❌(沒源) | ✅ | ✅ | 需已知科學答案 |
-| 殘餘隨 N 下降率(√N test) | ✅(blank) | △ | ✅ | 與策略無關,但需資料量(多曝光 / binning) |
+| Truth-free residual metrics (std / line residual / histogram / 2D image / the ratio to the noise floor) | ✅ | ✅ | ✅ | They can be computed on any data, but **they say only how clean the residual is, and are entirely blind to underneath the source** |
+| The reconstruction RMSE / MAE (vs the true sky) | ✅ (on a blank) | ✅ | ✅ | It needs a known true sky; on A it can only be computed over the blank |
+| Source flux / EW fidelity | ✅ (a reference is needed) | ✅ | ✅ | A comparison; a source and a reference are all it takes |
+| **The reconstruction error and bias underneath a source** | ❌ **physically impossible** | ✅ | ✅ | **The one kind the strategy decides outright**: A's blank has no source in it by definition |
+| Downstream scientific recovery (flux / redshift / kinematics) | ❌ (no source) | ✅ | ✅ | It needs a known scientific answer |
+| The rate at which the residual falls with N (the √N test) | ✅ (on a blank) | △ | ✅ | Independent of the strategy, but it needs the data volume: many exposures, or binning |
 
-兩個結論:
-1. **truth-free 殘餘 metric 在 A / B / C 上都能算**,但它們看不到「天體底下」——扣得「乾淨」不等於扣得「對」(過扣也會讓 blank 變平)。
-2. **只有 B / C 能算「天體底下重建誤差」與「下游科學還原」**;這正是文獻(尤其 IFU 三篇)最少量化、最空缺的一類。
+Two conclusions follow:
+1. **Truth-free residual metrics can be computed on A, B and C alike**, but they cannot see underneath the source -- subtracting cleanly is not the same as subtracting correctly, since over-subtraction flattens a blank as well.
+2. **Only B and C can compute the reconstruction error underneath a source and the downstream scientific recovery**, and that is exactly the kind the literature -- the three IFU papers above all -- quantifies least and leaves emptiest.
