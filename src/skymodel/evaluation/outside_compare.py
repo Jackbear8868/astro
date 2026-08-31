@@ -1,24 +1,18 @@
 """Outside the source boundary: what our sky subtraction leaves, and what ESO's does.
 
-The rings just outside the segmentation are where the two pipelines can be told apart.
-They are blank by the mask's own definition, so a sky model that worked leaves nothing
-there; but they are also where Haro 11's extended light still is, so a sky model that
-over-subtracted takes that light with it. Both readings are in the same panel, which
-is the point -- residual size alone cannot separate "clean" from "the galaxy was
-eaten", because both make the line flatter.
-
-The zones are halo_spectra's, imported rather than redefined: the same distance rings
-from the same main source group, other sources excluded. A comparison drawn over a
-second definition of "outside" would differ from the layer figure for reasons that
-have nothing to do with the pipelines.
+The rings just outside the segmentation are blank by the mask's own definition, so a
+sky model that worked leaves nothing there and one that over-subtracted takes source
+light with it. Residual size alone cannot separate the two, because both flatten the
+line, so both readings land in the same panel. The zones are halo_spectra's, imported
+rather than redefined -- a second definition of "outside" would differ from the layer
+figure for reasons unrelated to the pipelines.
 
     ours   this pointing's step06/sky_subtracted.fits
     ESO    data/nosky/DATACUBE_FINAL_ESOSKY_N.fits
 
-Both are averaged over identical spaxels, with no clipping and nothing resampled.
+averaged over identical spaxels, with no clipping and nothing resampled.
 
-    conda run -n astro python src/skymodel/evaluation/outside_compare.py --work results/skymodel/p01
-    conda run -n astro python src/skymodel/evaluation/outside_compare.py --work results/skymodel/p07 \\
+    conda run -n astro python src/skymodel/evaluation/outside_compare.py --work results/skymodel/p01 \\
         --rings 0 10 25 50 100 --xlim 6500 6900
 """
 import argparse
@@ -44,22 +38,18 @@ from products import spectrum_stats  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 
 C_OURS, C_ESO, C_ZERO = "#1f77b4", "#e8710a", "0.55"
-# Transparency for the reference curve only. It is the lower of the two, so fading it
-# lets our curve read cleanly where they overlap. Putting alpha on the upper curve
-# instead would blend it with whatever is behind -- our blue would turn muddy exactly
-# on top of ESO's spikes, which is where it most needs to be legible.
+# Transparency for the reference curve only, so our curve reads cleanly where the two
+# overlap. Fading the upper curve instead would muddy it exactly over ESO's spikes.
 A_ESO = 0.75
 
 
 def despiked_range(y):
     """The range a curve occupies, with single-channel excursions left out.
 
-    Our residual carries dead or hot channels -- one channel near 4790 A reaches -122
-    where its neighbours are near -2 -- and a 3-channel median removes those while
-    keeping a spectrally resolved emission line, which is several channels wide.
-
-    The range is then extended back to any raw value within one full span of it, so the
-    tip of a real line is not cut off by a rule aimed at single channels.
+    A dead or hot channel sits orders of magnitude from its neighbours, and a 3-channel
+    median removes it while keeping a spectrally resolved emission line, which is
+    several channels wide. The range is then extended back to any raw value within one
+    full span of it, so a real line tip is not cut by a rule aimed at single channels.
     """
     m = medfilt(y, 3)
     lo, hi = float(np.nanmin(m)), float(np.nanmax(m))
@@ -99,6 +89,19 @@ def main():
                     help="glob naming the run under step05 that holds sky_subtracted.fits")
     ap.add_argument("--nosky", default=None,
                     help="ESO cube; by default derived from the wsky name in step03/meta.json")
+    # The comparison cube is whatever --nosky names, and it is not always ESO's, so a
+    # fixed label would name the wrong thing.
+    ap.add_argument("--label-ours", default="ours",
+                    help="name for the --work curve, in the legend and the table")
+    ap.add_argument("--label-other", default="pipeline",
+                    help="name for the --nosky curve, in the legend and the table")
+    # Outside the segmentation boundary is not outside the galaxy's line emission, so
+    # those channels enter every statistic and make the residual columns favour whichever
+    # run keeps less source light. A second set of columns leaves them out.
+    ap.add_argument("--exclude-source-lines", type=float, nargs="?", const=12.0,
+                    default=None, metavar="HW",
+                    help="also report the statistics with Haro 11's own lines removed, "
+                         "+-HW Angstrom around each line the figure marks (default 12)")
     ap.add_argument("--layers", type=int, default=4,
                     help="passed to the zone construction so the rings match the layer "
                          "figure exactly; the layers themselves are not drawn here")
@@ -161,7 +164,8 @@ def main():
         raise SystemExit("the ring edges produced no zone outside the boundary")
 
     wl = np.load(W / "step03/wavelength.npy")
-    print(f"{name}:  ours {run.relative_to(ROOT)}   ESO {nosky.name}")
+    print(f"{name}:  {args.label_ours} {run.relative_to(ROOT)}   "
+          f"{args.label_other} {nosky.name}")
     print(f"  main group {len(ids)} ids, {int(main_.sum()):,} px")
     for k, nm in zip(keys, keep):
         print(f"    {nm:<20}{int((zones == k).sum()):>9,} spaxels")
@@ -169,12 +173,32 @@ def main():
     ours = zone_means(run / "sky_subtracted.fits", zones, keys, wl.size)
     eso = zone_means(nosky, zones, keys, wl.size)
 
-    print(f"\n    {'':<20}{'':<6}{'mean':>10}{'sigma':>10}{'rms_from_zero':>16}")
+    # The same lines the figure marks, so the dropped channels are exactly what a
+    # reader sees marked. All False unless --exclude-source-lines was given.
+    src = np.zeros(wl.size, bool)
+    if args.exclude_source_lines:
+        for _lab, lam in LINES:
+            src |= np.abs(wl - lam * (1 + Z_HARO)) <= args.exclude_source_lines
+        print(f"\n  source lines removed from the second set of columns: "
+              f"+-{args.exclude_source_lines:g} A around {len(LINES)} lines at "
+              f"z={Z_HARO:g}, {int(src.sum())} of {wl.size} channels "
+              f"({100 * src.mean():.1f}%)")
+
+    wid = max(6, len(args.label_ours) + 2, len(args.label_other) + 2)
+    head = f"\n    {'':<20}{'':<{wid}}{'mean':>10}{'sigma':>10}{'rms_from_zero':>16}"
+    if src.any():
+        head += f"{'mean':>12}{'sigma':>10}{'rms_from_zero':>16}    source lines out"
+    print(head)
     for j, nm in enumerate(keep):
-        for lab, y in (("ours", ours[j]), ("ESO", eso[j])):
+        for lab, y in ((args.label_ours, ours[j]), (args.label_other, eso[j])):
             st = spectrum_stats(y)
-            print(f"    {nm if lab == 'ours' else '':<20}{lab:<6}"
-                  f"{st['mean']:>10.4f}{st['sigma']:>10.4f}{st['rms_from_zero']:>16.4f}")
+            row = (f"    {nm if lab == args.label_ours else '':<20}{lab:<{wid}}"
+                   f"{st['mean']:>10.4f}{st['sigma']:>10.4f}{st['rms_from_zero']:>16.4f}")
+            if src.any():
+                sk = spectrum_stats(y[~src])
+                row += (f"{sk['mean']:>12.4f}{sk['sigma']:>10.4f}"
+                        f"{sk['rms_from_zero']:>16.4f}")
+            print(row)
 
     if args.smooth > 1:
         kk = np.ones(args.smooth) / args.smooth
@@ -183,9 +207,8 @@ def main():
 
     n = len(keys)
     if args.separate:
-        # A ring per file. Each gets the full canvas height instead of a third of it,
-        # which is what makes the small residuals readable; the price is that the three
-        # cannot be compared at a glance, and their y ranges are independent.
+        # A ring per file. The full canvas height is what makes small residuals
+        # readable; the price is independent y ranges, so rings cannot be compared.
         figs = [plt.subplots(figsize=(args.width, args.panel_height * 2.2))
                 for _ in keys]
         axes = [a for _, a in figs]
@@ -205,25 +228,16 @@ def main():
                     ax.axvline(lam * (1 + Z_HARO), lw=0.8, color=C_LINE,
                                alpha=0.45, zorder=0)
         ax.axhline(0, lw=0.8, color=C_ZERO)
-        # ESO underneath and thicker, ours on top and thinner. Whichever is drawn last
-        # wins where they overlap, and our curve is the one being examined -- putting
-        # ESO on top of it hides exactly what the figure is for. The widths still
-        # differ so that "the two agree here" (an orange rim around the blue) cannot be
-        # confused with "only one line was drawn".
-        # The legend names the ESO curve "pipeline" -- the label is what a reader outside
-        # this repo calls it; the console table below keeps "ESO", which names the file.
-        ax.plot(wl, eso[j], lw=1.3, color=C_ESO, label="pipeline", zorder=2,
+        # ESO underneath and thicker, ours on top and thinner: the last drawn wins
+        # where they overlap, and ours is the curve being examined. Differing widths
+        # keep an orange rim around the blue readable as agreement, not one line.
+        ax.plot(wl, eso[j], lw=1.3, color=C_ESO, label=args.label_other, zorder=2,
                 alpha=args.alpha)
-        ax.plot(wl, ours[j], lw=0.7, color=C_OURS, label="ours", zorder=4)
-        # One y range for both curves. Given their own, the larger residual would be
-        # squeezed to look like the smaller one.
-        #
-        # Which range is not a cosmetic choice. The two pipelines can differ by two
-        # orders of magnitude in a panel, so a rule that keeps every channel of both
-        # visible spends the whole height on one of them and draws the other as a flat
-        # line -- which is a statement about the axis, not about the data. Our curve is
-        # the one being examined, so it is the one that is never allowed off the panel;
-        # ESO is shown to a percentile and its tail is reported instead of drawn.
+        ax.plot(wl, ours[j], lw=0.7, color=C_OURS, label=args.label_ours, zorder=4)
+        # One y range for both, or the larger residual is squeezed to look like the
+        # smaller. The two can differ by orders of magnitude, so keeping every channel
+        # of both spends the height on one and draws the other flat. Ours is never
+        # allowed off the panel; ESO is shown to a percentile and its tail reported.
         if args.ylim_rule == "medfilt":
             lo, hi = panel_ylim(np.concatenate([ours[j], eso[j]]))
         else:
@@ -233,23 +247,21 @@ def main():
             m = 0.08 * max(hi - lo, 1e-9)
             lo, hi = lo - m, hi + m
         ax.set_ylim(lo, hi)
-        for lab, y in (("ours", ours[j]), ("ESO", eso[j])):
+        for lab, y in ((args.label_ours, ours[j]), (args.label_other, eso[j])):
             off = np.flatnonzero((y < lo) | (y > hi))
             if off.size:
                 worst = off[np.argmax(np.abs(y[off]))]
-                clipped.append(f"    {nm:<18}{lab:<5}{off.size:>4} channel(s) off the "
+                clipped.append(f"    {nm:<18}{lab:<{wid}}{off.size:>4} channel(s) off the "
                                f"panel; the largest is {y[worst]:.1f} at "
                                f"{wl[worst]:.1f} A")
         ax.set_ylabel("flux", fontsize=9)
         if not args.separate:
             # Stacked, the corner text is the only thing telling the panels apart. One
-            # ring per file names itself in the filename, so the text is dropped there
-            # rather than sitting on top of the curve.
+            # ring per file names itself in the filename, so the text is dropped there.
             ax.text(0.004, 0.93, nm, transform=ax.transAxes, fontsize=10, va="top",
                     ha="left", bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.6))
-        # The legend is left in drawing order -- ESO, then ours. The order the two
-        # are drawn in is the thing that decides which one is legible, so having
-        # the legend read the same way means the figure says out loud what it did.
+        # The legend is left in drawing order -- ESO, then ours -- because that order
+        # is what decides which curve is legible.
         if args.separate:
             # Above the axes, so it never lands on a residual the panel exists to show.
             ax.legend(fontsize=11, loc="lower left", frameon=False, ncol=2,
@@ -262,23 +274,26 @@ def main():
     if not args.separate:
         axes[-1].set_xlabel("wavelength [$\\AA$]")
     if clipped:
-        # Named, not silently cropped. A channel drawn off the panel is a measurement
-        # about the cube that the reader cannot recover from the figure.
+        # Named, not silently cropped: a channel off the panel is a measurement the
+        # reader cannot recover from the figure.
         print(f"\n  drawn off the panel (rule {args.ylim_rule}"
               + (f", eso-pct {args.eso_pct:g}" if args.ylim_rule != "medfilt" else "") + "):")
         print("\n".join(clipped))
 
     span = f"_{args.xlim[0]:.0f}-{args.xlim[1]:.0f}" if args.xlim else ""
     d = Path(args.out) if args.out else pointing_dir(name, "halo")
+    # The comparison is named in the filename, so a directory holding several says
+    # which cube each one was against. "eso" is the name for the default.
+    vs = "eso" if args.label_other == "pipeline" else slug(args.label_other)
     if args.separate:
         for (f, _), nm in zip(figs, keep):
-            o = d / f"outside_vs_eso_{slug(nm)}{span}.png"
+            o = d / f"outside_vs_{vs}_{slug(nm)}{span}.png"
             o.parent.mkdir(parents=True, exist_ok=True)
             f.savefig(o, dpi=args.dpi, bbox_inches="tight")
             plt.close(f)
             print(f"saved -> {o}")
     else:
-        o = d if d.suffix == ".png" else d / f"outside_vs_eso{span}.png"
+        o = d if d.suffix == ".png" else d / f"outside_vs_{vs}{span}.png"
         o.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(o, dpi=args.dpi, bbox_inches="tight")
         plt.close(fig)
