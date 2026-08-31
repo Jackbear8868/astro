@@ -17,12 +17,11 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL
-from products import Run, id_map
+from common import EVAL, map_name, seg_and_background
+from products import id_map
 
 FIGURES = EVAL / "masking"
 
@@ -46,13 +45,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    STEP01 = Run(args.work).work / "step01"
-    white = fits.getdata(Path(args.white) if args.white
-                         else STEP01 / "whitelight_nosky.fits")
-    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
-    seg   = fits.getdata(seg_path)
-    if seg.shape != white.shape:
-        raise SystemExit(f"seg {seg.shape} and whitelight {white.shape} have different dimensions")
+    seg, white, seg_path = seg_and_background(args.work, args.seg, args.white)
 
     ids, cnt = np.unique(seg[seg > 0], return_counts=True)
     rows = []
@@ -65,10 +58,7 @@ def main():
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 
-    # The filename carries the working directory and the seg's own directory: every
-    # pointing's seg has the same basename, and so do two segmentations of one
-    # pointing, so either part alone lets one figure silently overwrite another.
-    name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
+    name = map_name(args.work, seg_path)
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     id_map(seg, white, rows, out, by_group=False)

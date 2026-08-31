@@ -33,7 +33,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import SEG_COLOR, asinh_bar, collapse  # noqa: E402
+from common import (asinh_bar, band_tag, collapse, seg_outline,  # noqa: E402
+                    sigma_image)
 from config import resolve_path  # noqa: E402
 from products import Run  # noqa: E402
 
@@ -70,19 +71,14 @@ def main():
           f"   peak {np.nanmax(img):.0f} = {np.nanmax(img)/sky:.1f}x sky")
 
     fig, ax = plt.subplots(figsize=(9.5, 9))
-    im = ax.imshow(np.arcsinh(z), origin="lower", cmap="magma",
-                   vmin=np.arcsinh(args.vmin_sigma),
-                   vmax=np.arcsinh(np.nanmax(z)))
-    ax.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.6, alpha=.8)
-    ax.set_xticks([]); ax.set_yticks([])
+    im = sigma_image(ax, z, args.vmin_sigma, np.nanmax(z))
+    seg_outline(ax, seg, lw=0.6, alpha=.8)
     asinh_bar(fig, im, ax, "signal above sky   [$\\sigma$ of blank]",
               args.vmin_sigma, float(np.nanmax(z)))
     ax.set_title(f"{run.name}   {cube.name} (with sky)   "
                  f"{args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=13)
     fig.tight_layout()
-    band = ("" if tuple(args.band) == (4600.0, 9350.0)
-            else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
-    o = run.figdir("whitelight") / f"wsky{band}.png"
+    o = run.figdir("whitelight") / f"wsky{band_tag(args.band)}.png"
     fig.savefig(o, dpi=150, bbox_inches="tight")
     print(f"saved -> {o}")
 

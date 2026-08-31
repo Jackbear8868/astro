@@ -32,7 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import S_CMAP, diverging_range  # noqa: E402
+from common import diverging_range, s_panel  # noqa: E402
 from products import Run  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
@@ -85,10 +85,7 @@ def main():
     written = []
     for arr, name in ((per_spaxel, f"s_free{tag}.png"), (field, f"s_hat{tag}.png")):
         fig, a = plt.subplots(figsize=(8.5, 7.6))
-        a.imshow(arr, origin="lower", cmap=S_CMAP, vmin=lo, vmax=hi)
-        a.contour(seg > 0, levels=[0.5], colors="k", linewidths=0.4, alpha=.45)
-        a.contour(main,    levels=[0.5], colors="k", linewidths=1.6)
-        a.set_axis_off()
+        s_panel(a, arr, seg, lo, hi, color="k", width=0.4, alpha=.45, main=main)
         o = out / name
         fig.savefig(o, dpi=150, bbox_inches="tight")
         plt.close(fig)

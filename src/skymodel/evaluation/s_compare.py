@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, S_CMAP  # noqa: E402
+from common import EVAL, ROOT, s_panel  # noqa: E402
 from products import Run, latest_run  # noqa: E402
 
 FIGURES = EVAL / "sfield"
@@ -40,22 +40,6 @@ FIGURES = EVAL / "sfield"
 # --which's two kinds -> the file step5 writes for each.
 S_FILE = {"hat":  "sky_continuum_amplitude_field.npy",
           "free": "sky_continuum_amplitude_per_spaxel.npy"}
-
-
-def draw(ax, a, seg, vmin, vmax, color, width, halo):
-    """One panel. Returns the image, so a colour bar can be attached to it."""
-    im = ax.imshow(a, origin="lower", cmap=S_CMAP, vmin=vmin, vmax=vmax)
-    if width > 0:
-        # RdBu_r runs dark blue -> white -> dark red, so no single colour is legible
-        # against all of it: black weakens in the saturated corners, white weakens near
-        # s = 1. A wider line of the opposite tone underneath removes that dependence
-        # at the cost of a heavier line, so it is off unless a field saturates.
-        if halo:
-            ax.contour(seg > 0, levels=[0.5], colors=halo, linewidths=width * 3.0,
-                       alpha=0.9)
-        ax.contour(seg > 0, levels=[0.5], colors=color, linewidths=width)
-    ax.set_axis_off()
-    return im
 
 
 def main():
@@ -181,8 +165,8 @@ def main():
         for k in kinds:
             for name, a, seg, run, m in sets[k]:
                 fig, ax = plt.subplots(figsize=(args.panel * 2.2, args.panel * 2.2))
-                bar(fig, draw(ax, a, seg, vmin, vmax, args.seg_color, args.seg_width,
-                              halo), ax, k)
+                bar(fig, s_panel(ax, a, seg, vmin, vmax, args.seg_color,
+                                 args.seg_width, halo=halo), ax, k)
                 if not args.colorbar:
                     # Nothing outside the axes is left to make room for.
                     fig.subplots_adjust(0, 0, 1, 1)
@@ -207,7 +191,8 @@ def main():
         for ax in axes[len(sets[k]):]:
             ax.set_axis_off()
         for ax, (name, a, seg, _, m) in zip(axes, sets[k]):
-            im = draw(ax, a, seg, vmin, vmax, args.seg_color, args.seg_width, halo)
+            im = s_panel(ax, a, seg, vmin, vmax, args.seg_color, args.seg_width,
+                         halo=halo)
             t = name if not label_run else (f"{name}   {str(m.get('git_commit'))[:7]}"
                                             f"  s_fix={m.get('s_fix')}")
             ax.set_title(t, fontsize=10 if label_run else 11, pad=3)

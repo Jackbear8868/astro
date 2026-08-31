@@ -101,6 +101,93 @@ def diverging_range(a, centre=None, pct=2.0):
 
 
 from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
+from products import Run  # noqa: E402
+
+
+def seg_and_background(work, seg=None, white=None):
+    """A segmentation and the image to draw it over -- the run's own by default.
+
+    Both maps of a field take the same three arguments and have to read them the same
+    way. A background from one pointing under another's segmentation looks like a
+    misalignment rather than a mistake, so the shape check belongs here too.
+
+    Returns (seg, background, the segmentation's path), the path being what the figure
+    is named after.
+    """
+    step01 = Run(work).work / "step01"
+    bg = fits.getdata(Path(white) if white else step01 / "whitelight_nosky.fits")
+    seg_path = Path(seg) if seg else step01 / "segmentation_input.fits"
+    s = fits.getdata(seg_path)
+    if s.shape != bg.shape:
+        raise SystemExit(f"seg {s.shape} and whitelight {bg.shape} "
+                         "have different dimensions")
+    return s, bg, seg_path
+
+
+def map_name(work, seg_path):
+    """What a figure of this segmentation is called.
+
+    The pointing and the seg's own directory both go in: every pointing's seg has the
+    same basename, and so do two segmentations of one pointing, so either part alone
+    lets one figure silently overwrite another.
+    """
+    return f"{Path(work).name}_{seg_path.parent.name}_{seg_path.stem}"
+
+
+def band_tag(band, default=(4600.0, 9350.0)):
+    """The wavelength band as a filename suffix, empty for the default one.
+
+    A non-default band is a different figure and must not overwrite the usual one; the
+    default carries no suffix so the everyday filename stays short.
+    """
+    return "" if tuple(band) == tuple(default) else f"_{band[0]:.0f}-{band[1]:.0f}"
+
+
+def sigma_image(ax, z, lo, hi):
+    """A field in units of the blank spread, asinh-stretched -- the project's one
+    stretch for such an image, so two figures of one field cannot differ for a reason
+    that is about the drawing.
+
+    `z` is already in sigma; lo and hi are the range of z to show, and are passed
+    through arcsinh here rather than by the caller. Give `hi` as it was computed and
+    not through float(): arcsinh of a float32 differs from arcsinh of the same number
+    widened to float64, and the colour scale is set from it.
+    """
+    return ax.imshow(np.arcsinh(z), origin="lower", cmap="magma",
+                     vmin=np.arcsinh(lo), vmax=np.arcsinh(hi))
+
+
+def seg_outline(ax, seg, lw=0.6, alpha=0.8):
+    """Outline the sources and take the axes off.
+
+    The two go together: these images are read as pictures of the field, where a tick
+    label is noise, and the outline is what says which part is source.
+    """
+    ax.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=lw, alpha=alpha)
+    ax.set_xticks([]); ax.set_yticks([])
+
+
+def s_panel(ax, a, seg, vmin, vmax, color="black", width=1.2, alpha=1.0,
+            halo=None, main=None):
+    """One map of the sky continuum amplitude s, on the given scale.
+
+    RdBu_r runs dark blue -> white -> dark red, so no single outline colour is legible
+    against all of it: black weakens in the saturated corners, white weakens near
+    s = 1. `halo` draws a wider line of the opposite tone underneath, which removes
+    that dependence at the cost of a heavier line, so it is off unless a field
+    saturates. `main` outlines the main source group, for the figures that show where
+    the galaxy sits in the field.
+    """
+    im = ax.imshow(a, origin="lower", cmap=S_CMAP, vmin=vmin, vmax=vmax)
+    if width > 0:
+        if halo:
+            ax.contour(seg > 0, levels=[0.5], colors=halo, linewidths=width * 3.0,
+                       alpha=0.9)
+        ax.contour(seg > 0, levels=[0.5], colors=color, linewidths=width, alpha=alpha)
+    if main is not None:
+        ax.contour(main, levels=[0.5], colors=color, linewidths=1.6)
+    ax.set_axis_off()
+    return im
 
 
 def data_hdu(h):

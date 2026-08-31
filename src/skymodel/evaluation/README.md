@@ -133,7 +133,7 @@ run.meta(3)   run.figdir("halo")
 | `products.Run` | 一個 run 的產物在哪、怎麼讀 |
 | `zones.py` | 哪些 spaxel：`zone_labels()`（亮度層＋距離環）、`blank_mask()`（某次 run 的 blank）、`zone_means()`（每個 zone 的平均光譜） |
 | `spectra.py` | 光譜圖共用的字彙：`Z_HARO`、`LINES`、曲線顏色、`despiked_range()` / `panel_ylim()` / `robust_range()` |
-| `common.py` | 影像那一層：`EVAL`、`slug()`、`qualitative()`、`asinh_bar()`、`diverging_range()`、`collapse()`、`data_hdu()` |
+| `common.py` | 影像那一層：`EVAL`、`POSTER`、`slug()`、`qualitative()`、`asinh_bar()`、`diverging_range()`、`collapse()`、`data_hdu()`、`band_tag()`、`seg_and_background()`、`map_name()`、`sigma_image()`、`seg_outline()`、`s_panel()` |
 
 **畫圖的腳本不再被當成 library。** 以前 `blank_compare` 匯出 `our_cube`、`halo_spectra`
 匯出 `zone_labels`、`outside_compare` 匯出 `despiked_range`，別的腳本 import 它們只為了
@@ -143,6 +143,21 @@ run.meta(3)   run.figdir("halo")
 `despiked_range` 函式體一字不差（只差最後補的邊距）、`our_cube` 與 `s_dir` 是同一個
 形狀（現在是 `products.latest_run`）。
 
+### 成對的圖：共用畫法，但各自是一支程式
+
+有三對圖畫的是同一種東西：
+
+| 一對 | 差在哪 | 共用什麼 |
+|---|---|---|
+| `whitelight_wsky` / `whitelight_compare` | 一格 vs 兩格；含天空的要先扣掉底座 | `sigma_image()`、`seg_outline()`、`band_tag()` |
+| `seg_id_map` / `seg_slide_map` | 工作用的定位圖 vs 投影片版 | `seg_and_background()`、`map_name()` |
+| `s_shape_map` / `s_compare` | 一顆各自色階 vs 多顆同一色階 | `s_panel()` |
+
+它們**沒有**被合併成一支加模式旗標的程式。每一對問的是不同的問題、印的是不同的診斷
+數字（`whitelight_compare` 印零點與主源中位數，對單格圖沒有意義），合起來只會讓檔案更
+難讀。重複的是「怎麼畫」，抽掉的就是那一段 —— 這樣同一個欄位的兩張圖不可能因為 stretch
+或輪廓畫法不同而看起來像不同的資料，而每支程式仍然只回答它自己那一個問題。
+
 已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
 `zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`
 的逐方框光譜取代。`pNN/point/` 與 `pNN/zone/` 是它們留下來的舊輸出，現在沒有程式會寫。
@@ -150,3 +165,10 @@ run.meta(3)   run.figdir("halo")
 `ROOT` 與 `import utils`、`import products` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
 `experiments/` 在同一層，所以搬動不需要改路徑。`poster/` 在下一層，它的兩行
 `sys.path.insert` 用的是 `parents[1]` 與 `parents[2]`。
+
+`sigma_image()` 和 `seg_outline()` 是兩個小函式而不是一個「畫一格」的大函式，因為兩支
+白光程式的順序不同（`compare` 的 colorbar 在畫輪廓之前建立），而 colorbar 會從軸上挖走
+空間，順序一換版面就差幾個像素。拆成兩個，各自照自己的順序呼叫，圖才會逐位元一樣。
+
+`sigma_image()` 的 `hi` 要傳原本算出來的值，不要先 `float()`：`np.arcsinh(float32)` 和
+`np.arcsinh(float64)` 差在第 8 位，而色階上限就是從它來的。

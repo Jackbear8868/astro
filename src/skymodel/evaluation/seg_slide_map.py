@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -26,8 +25,7 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, qualitative  # noqa: E402
-from products import Run  # noqa: E402
+from common import EVAL, map_name, qualitative, seg_and_background  # noqa: E402
 from utils import arcsinh_stretch  # noqa: E402
 
 FIGURES = EVAL / "masking"
@@ -132,13 +130,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    STEP01 = Run(args.work).work / "step01"
-    white = fits.getdata(Path(args.white) if args.white
-                         else STEP01 / "whitelight_nosky.fits")
-    seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
-    seg = fits.getdata(seg_path)
-    if seg.shape != white.shape:
-        raise SystemExit(f"seg {seg.shape} and whitelight {white.shape} have different dimensions")
+    seg, white, seg_path = seg_and_background(args.work, args.seg, args.white)
 
     all_ids, cnt = np.unique(seg[seg > 0], return_counts=True)
     ids = []
@@ -149,9 +141,7 @@ def main():
             continue
         ids.append(int(i))
 
-    # The name carries the pointing and the seg's parent directory: two segmentations
-    # share a filename, so the stem alone collides and one overwrites the other.
-    name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
+    name = map_name(args.work, seg_path)
     out = Path(args.out) if args.out else FIGURES / f"slide_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     slide_map(seg, white, out, color=args.color, alpha=args.alpha,

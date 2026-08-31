@@ -29,7 +29,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import SEG_COLOR, asinh_bar, collapse  # noqa: E402
+from common import (asinh_bar, band_tag, collapse, seg_outline,  # noqa: E402
+                    sigma_image)
 from config import resolve_path  # noqa: E402
 from products import Run  # noqa: E402
 from utils import main_source_group, robust_spread  # noqa: E402
@@ -77,24 +78,19 @@ def main():
     sig = robust_spread(imgs["ours"][valid & (seg == 0)])
     zmax = np.arcsinh(np.nanmax(imgs["ours"][valid]) / sig)
     fig, ax = plt.subplots(1, 2, figsize=(14.5, 6.8))
+    zmax = np.nanmax(imgs["ours"][valid]) / sig
     for a, lab in zip(ax, ("ESO nosky", "ours")):
-        im = a.imshow(np.arcsinh(imgs[lab] / sig), origin="lower", cmap="magma",
-                      vmin=np.arcsinh(-3.0), vmax=zmax)
+        im = sigma_image(a, imgs[lab] / sig, -3.0, zmax)
         a.set_title(lab, fontsize=12)
-        asinh_bar(fig, im, a, "signal   [$\\sigma$ of blank]",
-                  -3.0, float(np.nanmax(imgs["ours"][valid]) / sig))
+        asinh_bar(fig, im, a, "signal   [$\\sigma$ of blank]", -3.0, float(zmax))
 
     for a in ax:
-        # Only the segmentation is drawn: the main group is a source in seg like any
+        # Only the segmentation is outlined: the main group is a source in seg like any
         # other, and a second outline would look like it meant something else.
-        a.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.5,
-                  alpha=.75)
-        a.set_xticks([]); a.set_yticks([])
+        seg_outline(a, seg, lw=0.5, alpha=.75)
     fig.suptitle(f"{run.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    band = ("" if tuple(args.band) == (4600.0, 9350.0)
-            else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
-    o = run.figdir("whitelight") / f"compare{band}.png"
+    o = run.figdir("whitelight") / f"compare{band_tag(args.band)}.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")
 
