@@ -245,9 +245,8 @@ is the same and `meta.json` is the only thing that says so:
     "windows": [ { "low": 5106.0, "high": 5118.0, "n_channel": 10 } ] } }
 ```
 
-The windows are observed wavelengths and carry no redshift: whichever of the config's
-two forms named them, `config.load()` has already reduced it to bounds by the time
-step 3 records them. The per-window channel count is what the grid gave, so it moves
+The windows are observed wavelengths and carry no redshift; the config names them as
+bounds and step 3 records the same bounds. The per-window channel count is what the grid gave, so it moves
 by one between pointings whose grids are offset by less than a channel.
 
 The key is absent from a run that masked nothing, and the products beside it are

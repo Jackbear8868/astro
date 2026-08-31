@@ -127,13 +127,15 @@ def load(path):
     # Optional: writing it keeps the source's own emission lines out of the basis. The
     # windows are excluded from step3's decomposition and from nothing else -- the
     # continuum, the mean spectrum and the sky-line masks still see every channel. It is
-    # written either as a list of [low, high] observed windows or as a mapping of rest
-    # wavelengths and a half width, normalised here to keep the redshift out of step3.
+    # written as a list of [low, high] observed windows, so no redshift reaches step3.
     ml = b.get("mask_source_lines")
-    if isinstance(ml, list):
-        if not ml:
-            _fail("sky_line_basis.mask_source_lines: the window list is empty; write "
-                  "null, or leave the key out, to exclude nothing")
+    if ml is not None:
+        if not isinstance(ml, list) or not ml:
+            _fail("sky_line_basis.mask_source_lines must be a non-empty list of "
+                  "[low, high] observed windows in Angstrom, or null, got "
+                  f"{ml!r}. A mapping of rest wavelengths, a redshift and a half "
+                  "width is no longer accepted -- multiply them out and write the "
+                  "windows.")
         windows = []
         for w in ml:
             if not (isinstance(w, (list, tuple)) and len(w) == 2):
@@ -148,31 +150,6 @@ def load(path):
                       f"[{lo}, {hi}] is not low < high")
             windows.append([float(lo), float(hi)])
         b["mask_source_lines"] = windows
-    elif ml is not None:
-        if not isinstance(ml, dict):
-            _fail("sky_line_basis.mask_source_lines must be a list of [low, high] "
-                  "observed windows, or a mapping with redshift, rest_wavelengths and "
-                  f"half_width, or null, got {ml!r}")
-        unknown = sorted(set(ml) - {"redshift", "rest_wavelengths", "half_width"})
-        if unknown:
-            _fail(f"sky_line_basis.mask_source_lines: unknown key(s) {unknown}")
-        for k in ("redshift", "rest_wavelengths", "half_width"):
-            if k not in ml:
-                _fail(f"sky_line_basis.mask_source_lines.{k} is missing")
-        # A redshift, so > -1; how far away the source is, is not decided here.
-        _number(ml["redshift"], "sky_line_basis.mask_source_lines.redshift", gt=-1)
-        # Half a window in Angstrom, so positive: zero width would exclude nothing.
-        _number(ml["half_width"], "sky_line_basis.mask_source_lines.half_width", gt=0)
-        rest = ml.get("rest_wavelengths")
-        if not isinstance(rest, list) or not rest:
-            _fail("sky_line_basis.mask_source_lines.rest_wavelengths must be a "
-                  f"non-empty list of rest wavelengths in Angstrom, got {rest!r}")
-        for w in rest:
-            _number(w, "sky_line_basis.mask_source_lines.rest_wavelengths", gt=0)
-        z = float(ml["redshift"])
-        hw = float(ml["half_width"])
-        b["mask_source_lines"] = [[float(w) * (1 + z) - hw, float(w) * (1 + z) + hw]
-                                  for w in rest]
     # Optional: writing it picks the spaxels the sky is learned from by flux rather than
     # by the segmentation alone -- the ESO pipeline's own rule, which ranks the field,
     # discards the faintest `ignore` and learns from the next `fraction`. Absent = all.

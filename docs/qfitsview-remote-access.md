@@ -39,7 +39,7 @@ X11. Take option 3 (VNC) only when you specifically need something QFitsView doe
 | The astro conda environment | `astropy 8.0.0`, Python `3.12.13`, **`jdaviz 5.0.2` (already installed)**, `solara 1.57.6`, `jupyter_server 2.20.0`; **`jupyterlab`/`notebook`/`voila` are not installed** | `conda run -n astro …` |
 | Other viewers | **No** `ds9`/`js9`/`pyds9` | `which ds9 js9` |
 | sshd | `X11Forwarding yes` (the server does permit X11 forwarding) | `grep -i x11 /etc/ssh/sshd_config` |
-| MUSE data | In `/local/feather/workspace/astro/data/`: `Haro11_wsky.fits` 7.6 GB, `Haro11_nosky.fits` 7.6 GB, `Haro11_WFM_MUSE_archive.fits` 7.0 GB, among others | `find … -iname '*.fits'` |
+| MUSE data | In `/local/feather/workspace/sky-subtraction/data/`: `Haro11_wsky.fits` 7.6 GB, `Haro11_nosky.fits` 7.6 GB, `Haro11_WFM_MUSE_archive.fits` 7.0 GB, among others | `find … -iname '*.fits'` |
 
 **Two conclusions that matter:**
 1. This machine is **headless**: your SSH session has no X server available to it at all, and that
@@ -159,7 +159,7 @@ the server, you view it in **your own browser**, and all the computation stays o
 **Step 1 | Start it from VSCode's integrated terminal (i.e. on the server):**
 ```bash
 conda run -n astro jdaviz --layout cubeviz \
-  -fp /local/feather/workspace/astro/data/Haro11_nosky.fits \
+  -fp /local/feather/workspace/sky-subtraction/data/Haro11_nosky.fits \
   --host 127.0.0.1 --port 8765
 ```
 - Once started, the terminal prints a URL (for example `http://127.0.0.1:8765`). On a headless
@@ -185,7 +185,7 @@ cut out a wavelength sub-cube or a spatial sub-region to look at:
 ```python
 # conda run -n astro python
 from astropy.io import fits
-h = fits.open('/local/feather/workspace/astro/data/Haro11_nosky.fits')
+h = fits.open('/local/feather/workspace/sky-subtraction/data/Haro11_nosky.fits')
 # for example, take just the wavelength layers near Halpha, write out a small cube, and hand that to jdaviz
 ```
 

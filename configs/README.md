@@ -111,20 +111,12 @@ ends. Nothing here is redshifted: a window is a stretch of the grid, and the red
 that put the line there has already been applied by whoever wrote the numbers. The
 same four windows serve every pointing because it is the same galaxy in all fourteen.
 
-A mapping is accepted as well, and gives the same thing by a different route -- rest
-wavelengths and one symmetric half width:
-
-    sky_line_basis:
-      mask_source_lines:
-        redshift: 0.0206
-        rest_wavelengths: [4861.33, 4958.91, 5006.84, 6548.05, 6562.80, 6583.45]
-        half_width: 5.0                 # A, observed frame, each side of the line
-
-`config.load()` turns it into the same list of observed `[low, high]` pairs before
-step 3 sees it, so the redshift stops there and the decomposition only ever handles
-wavelengths. Use the mapping when the lines are a list and one width fits them all;
-use the list when the windows differ from line to line or are not centred on it,
-which is what the four above are -- each reaches further to the red than to the blue.
+This is the only form. A mapping of rest wavelengths, a redshift and one half width
+was accepted before and is now refused, with a message saying to multiply it out: it
+could only describe windows centred on the line and all of the same width, which the
+four above are not -- each reaches further to the red than to the blue. Writing the
+windows out also means the config says which channels were excluded without anyone
+redoing the arithmetic.
 
 **Only the basis is affected.** The mean blank spectrum, the continuum and the line
 masks in `continuum_iterations.npz` are all built before the exclusion and see every

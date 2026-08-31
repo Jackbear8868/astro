@@ -34,12 +34,20 @@ sky_line_basis:
   max_iter: 5                           # iterations of the continuum / line-mask loop
   clip_sigma: 30                        # sigma clip applied to the mean sky spectrum
   min_unmasked_frac: 0.16               # stop if the line mask would cover more than 1 - this
-  # Haro 11's own emission lines, kept out of the decomposition input only. This
-  # pointing's field is filled by the halo, so every blank spaxel carries them.
+  # Haro 11's own emission lines, kept out of the decomposition input only: the basis
+  # is 0 at these channels, so step6 cannot put flux there. Observed wavelengths,
+  # [low, high], closed at both ends; no redshift is applied here.
+  #
+  # This run was made from six rest wavelengths at z = 0.0206 with a half width of
+  # 5 A. The windows below are what that came to, written out so the config says which
+  # channels were excluded without anyone having to redo the arithmetic.
   mask_source_lines:
-    redshift: 0.0206                    # Haro 11
-    rest_wavelengths: [4861.33, 4958.91, 5006.84, 6548.05, 6562.80, 6583.45]  # Hb, [OIII] x2, [NII], Ha, [NII]
-    half_width: 5.0                     # A, observed frame, each side of the line
+    - [4956.4734, 4966.4734]    # A, H-beta
+    - [5056.0635, 5066.0635]    # A, [O III] 4959
+    - [5104.9809, 5114.9809]    # A, [O III] 5007
+    - [6677.9398, 6687.9398]    # A, [N II] 6548
+    - [6692.9937, 6702.9937]    # A, H-alpha
+    - [6714.0691, 6724.0691]    # A, [N II] 6583
 
 # Fitting a template to every detected source, which gives it a class and a
 # redshift.
