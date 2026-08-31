@@ -49,6 +49,35 @@ results/skymodel/evaluation/
 的全部，不是在幾百個檔名裡挑出帶 `pNN` 的那些。路徑一律用 `common.pointing_dir()`
 組出來，不要在各支腳本裡各拼各的。
 
+## 怎麼用
+
+**平常只需要這一行。**
+
+```bash
+python src/skymodel/evaluation/run.py --work results/skymodel/p01          # 這一顆的全部
+python src/skymodel/evaluation/run.py --work results/skymodel/p01 --all    # 再加上跨 pointing 的
+python src/skymodel/evaluation/run.py --work results/skymodel/p01 --only sky
+python src/skymodel/evaluation/run.py --work results/skymodel/p01 --list
+```
+
+`run.py` 裡有一張表，一列一組圖：叫什麼、屬於哪一組、哪支程式畫、寫到哪裡。要多一張
+圖就多一列，不必改邏輯；要知道「這個專案到底量了什麼」，讀那張表就好，不必讀 22 支
+程式。
+
+| 選項 | 做什麼 |
+|---|---|
+| `--only sky` | 只跑一組（`masking` / `sky` / `subtraction` / `fit`），或直接點名 `--only halo outside` |
+| `--all` | 連跨 pointing 的那幾張一起（沒給 `--work` 時本來就只有這些） |
+| `--everything` | 連「不隨這顆 run 改變」的也跑：教授的 seg、step4 的模板庫、投影片版。它們重跑會得到同一個檔，所以預設不跑 |
+| `--list` | 什麼都不畫，只報告哪些畫過、哪些**比它所描述的產物還舊** |
+| `--dry-run` | 印出指令而不執行，要單獨手跑某一支時用 |
+
+`--list` 是重點。一張比產物舊的圖，從外觀看不出任何問題 —— 它只是一張「已經不存在的
+那次 run」的照片。這個專案裡已經抓到過兩次（`s_hat.png`、`outside_raw_vs_signal`），
+而一顆 pointing 有一百多個檔，手動比日期沒有人做得到。
+
+底下的表是同一份資料的說明版；每支程式仍然可以單獨執行，`run.py` 只是把它們排好。
+
 ## 檔案
 
 分成四組，照「問的是 pipeline 的哪一段」排。
