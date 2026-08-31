@@ -25,13 +25,28 @@ taking the galaxy's lines along with the sky.
 
 ---
 
+## Repository
+
+```
+src/skymodel/              the pipeline
+  standalone/              the same six steps as separate scripts, one runnable
+                           alone (see its README)
+  evaluation/              figures and numbers from the products (see its README)
+  evaluation/poster/       the same figures, laid out for print
+  experiments/             one-off "should we do it differently" tests
+src/zap/                   a second method run on the same cubes (see its README)
+configs/                   one file per pointing
+scripts/                   checking a change did what it says (see its README)
+docs/                      method notes, parameter references, what was rejected
+```
+
 ## Install
 
-Python 3.12 or newer, on Linux, macOS or Windows. Pick either tool; both install
-the same package from the same `pyproject.toml`.
+Python 3.12 or newer. Pick either tool; both install the same package from the
+same `pyproject.toml`.
 
 ```bash
-git clone <url> sky-subtraction
+git clone git@github.com:Jackbear8868/sky-subtraction.git
 cd sky-subtraction
 ```
 
@@ -46,7 +61,7 @@ conda activate astro
 
 ```bash
 uv venv --python 3.12
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 uv pip install -e .
 ```
 
@@ -64,19 +79,6 @@ python -c "from skymodel import run_pointing, load_config; print('ok')"
 
 That imports the pipeline without touching any data, so it fails on a broken
 install and not on a missing cube.
-
-### On Windows
-
-Run under UTF-8:
-
-```
-set PYTHONUTF8=1
-```
-
-The pipeline writes its logs as UTF-8 and its messages contain non-ASCII
-characters. Without this, redirecting the output to a file on a system whose
-locale is not UTF-8 fails on the first such message. Python 3.15 makes UTF-8 mode
-the default and the setting stops being necessary.
 
 ## Input
 
@@ -118,8 +120,15 @@ Everything a pointing needs is in one config file; nothing else is passed on the
 command line.
 
 ```bash
+skymodel configs/p01.yaml
+skymodel configs/*.yaml                                  # all 14
+```
+
+The installed command and the file are the same entry point, so a checkout that was
+never installed runs it the same way:
+
+```bash
 conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
-conda run -n astro python src/skymodel/pipeline.py configs/*.yaml   # all 14
 ```
 
 A pointing takes about a minute and holds one cube in memory while it works. Nearly
@@ -186,29 +195,6 @@ python scripts/verify.py p05 p14
 re-runs those pointings and compares every product against the stored ones, which
 is how a change meant to leave the answer alone is held to it. `scripts/README.md`
 covers that and two faster checks beside it.
-
-## Repository
-
-```
-src/skymodel/              the pipeline
-  standalone/              the same six steps as separate scripts, one runnable
-                           alone (see its README)
-  evaluation/              figures and numbers from the products (see its README)
-  evaluation/poster/       the same figures, laid out for print
-  experiments/             one-off "should we do it differently" tests
-src/zap/                   the ZAP comparison arm -- a different method, same data
-configs/                   one file per pointing
-scripts/                   checking a change did what it says (see its README)
-docs/                      method notes, parameter references, what was rejected
-```
-
-## The ZAP comparison
-
-`src/zap/` runs [ZAP](https://github.com/ktsoto/zap) on the same cubes as an
-independent check. Its own README has the commands. One result worth carrying over:
-the source mask decides everything. Haro 11's ionised gas reaches over a large part of
-the field, and a mask that misses it lets ZAP learn Hα as if it were sky and remove
-most of the source. `docs/zap-conclusions.md` has the measurements behind that.
 
 ## Credit and license
 
