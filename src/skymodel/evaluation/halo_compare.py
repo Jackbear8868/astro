@@ -5,7 +5,7 @@ of the field of view, so "is the extended light the same thing in all of them" i
 question only a figure like this can answer.
 
 The halo is the faintest fraction of the main source group by white-light surface
-brightness -- an isophotal zone, the same construction halo_spectra uses for its
+brightness -- an isophotal zone, the same construction zone_spectra uses for its
 outermost layer. Not a box at a fixed position, since the galaxy sits somewhere
 different in every pointing; not a ring of fixed radius either, since a merger is
 neither round nor centred and a ring would cross knots and outskirts at one radius.

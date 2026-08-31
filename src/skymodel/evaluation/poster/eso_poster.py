@@ -4,7 +4,7 @@ Same treatment as halo_poster.py -- doubled line widths, 30 pt axis text, axis n
 just outside the row of numbers, legend written separately -- applied to the comparison
 against the ESO cube instead of against the raw one.
 
-The y range follows outside_compare.py's default rule so the panel keeps saying what
+The y range follows zone_spectra.py's first-pct rule so the panel keeps saying what
 that figure said; only the tick spacing is chosen here, to land on round numbers.
 """
 import argparse
@@ -72,7 +72,7 @@ fig, ax = plt.subplots(figsize=tuple(args.figsize))
 for _, lam in LINES:
     ax.axvline(lam * (1 + Z_HARO), ymin=0.92, ymax=1.0, lw=2.8, color=C_LINE, zorder=3)
 ax.axhline(0, lw=1.6, color="0.55")
-# The pair of widths is outside_compare's: the reference curve underneath and thicker,
+# The pair of widths is zone_spectra's: the reference curve underneath and thicker,
 # ours on top and thinner, both doubled from the screen version.
 ax.plot(wl, eso[j], lw=2.6, color=C_ESO, alpha=A_ESO, zorder=2)
 ax.plot(wl, ours[j], lw=1.4, color=C_OURS, zorder=4)

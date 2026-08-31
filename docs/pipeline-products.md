@@ -530,7 +530,8 @@ step 6 solved.
 
 ```bash
 conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p14
-conda run -n astro python src/skymodel/evaluation/outside_compare.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/zone_spectra.py --work results/skymodel/p14 \
+    --zones outside --cubes ours eso
 conda run -n astro python src/skymodel/evaluation/whitelight_compare.py --work results/skymodel/p14
 ```
 

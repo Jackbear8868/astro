@@ -116,13 +116,29 @@ python src/skymodel/evaluation/run.py --work results/skymodel/p01 --list
 | `box_spectra.py` | 方框裡的平均光譜，和 ESO nosky 並排 | `pNN/box/` |
 | `blank_compare.py` | blank 區扣完之後剩下什麼，我們對 ESO | `pNN/sky/` |
 | `blank_noise_floor.py` | 那些殘留是雜訊還是錯誤 —— 逐通道，兩個 pipeline 都算 | `pNN/sky/` |
-| `halo_spectra.py` | Haro 11 延展光的光譜，一層一層往外 | `pNN/halo/` |
+| `zone_spectra.py` | 每個 zone 的平均光譜：星系的亮度層、源外的環，一個 cube 或好幾個並排 | `pNN/halo/` |
 | `halo_compare.py` | 同樣的分層，14 顆疊在一起 | `halo/` |
-| `outside_compare.py` | 源邊界外的環，我們扣完剩什麼、ESO 扣完剩什麼 | `pNN/halo/` |
 
-`halo_spectra.py` 定義了分層與環（主源分組、等量白光亮度層、往外的距離環），
-`halo_compare.py` 和 `outside_compare.py` 直接 import 它而不是各自重寫一份：第二套
-「outside」的定義會讓兩張圖對不起來，而原因跟 pipeline 無關。
+`zone_spectra.py` 是 `halo_spectra.py` 與 `outside_compare.py` 合併來的 —— 它們本來
+就是同一支程式：同一個 zone 構造、同一種面板、同樣的譜線標記、同樣「哪些通道跑出面板」
+的回報。一個畫全部 zone 各一條曲線，另一個畫外圈 zone 各兩條。合併之後就是兩個開關：
+
+```bash
+zone_spectra.py --work results/skymodel/p01                                  # 全部 zone，我們的 cube
+zone_spectra.py --work results/skymodel/p01 --zones outside --cubes ours eso # 源外的環，我們 vs ESO
+zone_spectra.py --work results/skymodel/p01 --zones galaxy  --cubes ours eso # 星系分層，我們 vs ESO
+```
+
+最後那一張是舊的兩支都畫不出來的:`halo_spectra` 不能比較兩個 cube，`outside_compare`
+只能畫源外的環。`--cubes` 認得 `ours`（step06）、`eso`、`wsky`（輸入）、`model`（扣掉的
+天空）、`run:GLOB`，或直接給路徑。
+
+**顏色永遠承載「變動的那個維度」。** 只有一個 cube 時，面板之間差的是 zone，所以顏色由
+內而外走 viridis，zone 地圖也用同一組顏色；有好幾個 cube 時，顏色代表 cube 且每一格都
+一樣 —— 要讀的是它們之間的差別，那個差別必須在每一格都是同一個意思。
+
+zone 的定義在 `zones.py`，`halo_compare.py` 和 `poster/` 都 import 它：第二套「outside」
+的定義會讓兩張圖對不起來，而原因跟 pipeline 無關。
 
 ### 四 源的擬合：step4 用什麼模板、擬得如何
 
@@ -165,7 +181,8 @@ run.meta(3)   run.figdir("halo")
 | `common.py` | 影像那一層：`EVAL`、`POSTER`、`slug()`、`qualitative()`、`asinh_bar()`、`diverging_range()`、`collapse()`、`data_hdu()`、`band_tag()`、`seg_and_background()`、`map_name()`、`sigma_image()`、`seg_outline()`、`s_panel()` |
 
 **畫圖的腳本不再被當成 library。** 以前 `blank_compare` 匯出 `our_cube`、`halo_spectra`
-匯出 `zone_labels`、`outside_compare` 匯出 `despiked_range`，別的腳本 import 它們只為了
+匯出 `zone_labels`、`outside_compare` 匯出 `despiked_range`（後兩支現已合併為
+`zone_spectra.py`），別的腳本 import 它們只為了
 拿一個函式，卻連帶執行整個模組層。現在這些定義都在上面四個模組裡，腳本之間互不 import。
 
 被合掉的重複：`Z_HARO` 原本定義在三個檔、`zone_means` 有三份、`panel_ylim` 與
