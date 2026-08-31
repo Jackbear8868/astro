@@ -52,7 +52,8 @@ import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
+from common import ROOT, slug  # noqa: E402
+from products import Run  # noqa: E402
 from products import fit_dirs, spectrum_stats  # noqa: E402
 from utils import main_source_group, robust_spread  # noqa: E402
 
@@ -325,14 +326,15 @@ def main():
                          "box names")
     args = ap.parse_args()
 
-    W    = ROOT / args.work
-    # Derived from the working directory: a hard-coded default would silently take
-    # another pointing's cube as the reference, on a figure that looks normal.
+    pointing = Run(args.work, args.run)
+    W    = pointing.work
+    # From the run's own config: a hard-coded default would silently take another
+    # pointing's cube as the reference, on a figure that looks normal.
     if args.eso is None:
-        args.eso = f"data/nosky/DATACUBE_FINAL_ESOSKY_{int(W.name[1:])}.fits"
-    seg, white, _ = load_field(W)
-    s_dir, run = fit_dirs(W, args.run)
-    wl    = np.load(W / "step03/wavelength.npy")
+        args.eso = str(pointing.nosky)
+    seg, white = pointing.seg, pointing.white
+    s_dir, run = pointing.fit_dir, pointing.cube_dir
+    wl    = pointing.wl
     s_file = s_dir / "sky_continuum_amplitude_field.npy"
     amplitude_field = np.load(s_file) if s_file.exists() else None
 
@@ -359,7 +361,7 @@ def main():
             print(f"loaded {kind}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
         out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
-               else pointing_dir(W, "box") / "box_raw_model_resid.pdf")
+               else pointing.figdir("box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, notes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
         draw_map(white, seg, amplitude_field, boxes, out.with_suffix(".map.png"),
@@ -368,7 +370,7 @@ def main():
 
     srcs = {}
     if args.eso.lower() != "none":
-        srcs["ESO nosky"] = ROOT / args.eso
+        srcs["ESO nosky"] = Path(args.eso) if Path(args.eso).is_absolute() else ROOT / args.eso
     if args.ref_run.lower() != "none":
         srcs[args.ref_label] = fit_dirs(W, args.ref_run)[1] / "sky_subtracted.fits"
     srcs[args.run_label] = run / "sky_subtracted.fits"
@@ -385,7 +387,7 @@ def main():
     # half=0 is a single spaxel, a different kind of sampling, and both write the same
     # filenames -- mixed in one directory the later run would overwrite the earlier.
     kind = "box" if args.half else "point"
-    outdir = Path(args.out) if args.out else pointing_dir(W, kind)
+    outdir = Path(args.out) if args.out else pointing.figdir(kind)
     outdir.mkdir(parents=True, exist_ok=True)
     # The label is the key itself: "rms" alone is unambiguous only while sigma is next
     # to it, and a number quoted out of the figure loses that.

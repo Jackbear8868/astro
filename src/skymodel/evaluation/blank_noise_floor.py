@@ -20,7 +20,6 @@ scatters together, so how much of the separation below is systematic can be judg
         --n-floor 3 --ylim -0.4 0.4
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -32,7 +31,9 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, pointing_dir  # noqa: E402
+from common import ROOT  # noqa: E402
+from config import resolve_path  # noqa: E402
+from products import Run  # noqa: E402
 from blank_compare import blank_mask, data_hdu, our_cube, robust_range  # noqa: E402
 
 C_OURS, C_ESO, C_BAND, C_ZERO = "#1f77b4", "#e8710a", "0.72", "0.45"
@@ -76,23 +77,21 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    name = Path(args.work).name
-    meta = json.loads((W / "step03/meta.json").read_text())
+    pointing = Run(args.work)
+    W = pointing.work
+    name = pointing.name
+    meta = pointing.meta(3)
     run = our_cube(W, args.run)
     if run is None:
         raise SystemExit(f"no sky_subtracted.fits under {W}/step05 or {W}/step06")
-    if args.nosky:
-        nosky = Path(args.nosky)
-        nosky = nosky if nosky.is_absolute() else ROOT / nosky
-    else:
-        num = Path(meta["cube"]).stem.split("_")[-1]
-        nosky = ROOT / "data/nosky" / f"DATACUBE_FINAL_ESOSKY_{num}.fits"
+    # ESO's cube as the run's config names it. Deriving it from the wsky filename,
+    # which is what this did, only ever finds data kept inside the repository.
+    nosky = resolve_path(args.nosky) if args.nosky else pointing.nosky
     if not nosky.exists():
         raise SystemExit(f"{nosky} does not exist")
 
     m, n_all, _ = blank_mask(W, meta)
-    wl = np.load(W / "step03/wavelength.npy")
+    wl = pointing.wl
     nz = wl.size
     print(f"{name}:  ours {run.relative_to(ROOT)}   ESO {nosky.name}")
 
@@ -153,7 +152,7 @@ def main():
     ax[2].set_xlim(wl.min(), wl.max())
 
     out = (Path(args.out) if args.out
-           else pointing_dir(W, "sky") / f"blank_noise_floor_{run.name}.png")
+           else pointing.figdir("sky") / f"blank_noise_floor_{run.name}.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

@@ -37,7 +37,8 @@ import matplotlib.patches as mpatches
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
+from common import ROOT, arcsinh_stretch  # noqa: E402
+from products import Run  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 
 # Haro 11's redshift, and the lines bright enough to mark; the markers are guides for
@@ -169,21 +170,21 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    name = Path(args.work).name
-    seg, white, valid = load_field(W)
+    run = Run(args.work)
+    name = run.name
+    seg, white, valid = run.seg, run.white, run.valid
     main_, ids, peak = main_source_group(seg, np.where(valid, white, np.nan),
                                          Path(args.step04) if args.step04 else None,
                                          args.dz_max)
 
-    cube = Path(args.cube) if args.cube else W / "step06/sky_subtracted.fits"
+    cube = Path(args.cube) if args.cube else run.cube
     if not cube.is_absolute():
         cube = ROOT / cube
     if not cube.exists():
         raise SystemExit(f"{cube} does not exist -- this pointing has no step06 yet. "
                          f"Pass --cube data/nosky/DATACUBE_FINAL_ESOSKY_N.fits to use "
                          f"ESO's sky subtraction instead.")
-    wl = np.load(W / "step03/wavelength.npy")
+    wl = run.wl
 
     zones, names = zone_labels(seg, white, valid, main_, args.layers, args.rings)
     n = len(names)
@@ -256,7 +257,7 @@ def main():
     # A cube given on the command line goes into the filename, or this pointing's own
     # sky subtraction and ESO's would write the same figure name.
     stem = "halo_spectra" if args.cube is None else f"halo_spectra_{cube.stem}"
-    out = Path(args.out) if args.out else pointing_dir(W, "halo") / f"{stem}.png"
+    out = Path(args.out) if args.out else run.figdir("halo") / f"{stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

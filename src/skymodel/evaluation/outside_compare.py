@@ -16,8 +16,6 @@ averaged over identical spaxels, with no clipping and nothing resampled.
         --rings 0 10 25 50 100 --xlim 6500 6900
 """
 import argparse
-import json
-import re
 import sys
 from pathlib import Path
 
@@ -30,7 +28,9 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, pointing_dir, slug  # noqa: E402
+from common import ROOT, slug  # noqa: E402
+from config import resolve_path  # noqa: E402
+from products import Run  # noqa: E402
 from blank_compare import data_hdu, our_cube  # noqa: E402
 from halo_spectra import (C_LINE, CHUNK, LINES, Z_HARO, panel_ylim,  # noqa: E402
                           zone_labels)
@@ -135,24 +135,19 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    name = Path(args.work).name
-    meta = json.loads((W / "step03/meta.json").read_text())
+    pointing = Run(args.work)
+    W = pointing.work
+    name = pointing.name
     run = our_cube(W, args.run)
     if run is None:
         raise SystemExit(f"no sky_subtracted.fits under {W}/step05 or {W}/step06")
-    if args.nosky:
-        nosky = Path(args.nosky)
-        nosky = nosky if nosky.is_absolute() else ROOT / nosky
-    else:
-        mo = re.fullmatch(r"DATACUBE_FINAL_(\d+)\.fits", Path(meta["cube"]).name)
-        if not mo:
-            raise SystemExit(f"cannot derive the ESO cube from {meta['cube']}; pass --nosky")
-        nosky = ROOT / "data/nosky" / f"DATACUBE_FINAL_ESOSKY_{mo.group(1)}.fits"
+    # ESO's cube as the run's config names it. Deriving it from the wsky filename,
+    # which is what this did, only ever finds data kept inside the repository.
+    nosky = resolve_path(args.nosky) if args.nosky else pointing.nosky
     if not nosky.exists():
         raise SystemExit(f"{nosky} does not exist")
 
-    seg, white, valid = load_field(W)
+    seg, white, valid = pointing.seg, pointing.white, pointing.valid
     main_, ids, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                       W / "step04" if args.step04 else None, DZ_MAX)
     zones, names = zone_labels(seg, white, valid, main_, args.layers, args.rings)
@@ -163,7 +158,7 @@ def main():
     if not keys:
         raise SystemExit("the ring edges produced no zone outside the boundary")
 
-    wl = np.load(W / "step03/wavelength.npy")
+    wl = pointing.wl
     print(f"{name}:  {args.label_ours} {run.relative_to(ROOT)}   "
           f"{args.label_other} {nosky.name}")
     print(f"  main group {len(ids)} ids, {int(main_.sum()):,} px")
@@ -281,7 +276,7 @@ def main():
         print("\n".join(clipped))
 
     span = f"_{args.xlim[0]:.0f}-{args.xlim[1]:.0f}" if args.xlim else ""
-    d = Path(args.out) if args.out else pointing_dir(W, "halo")
+    d = Path(args.out) if args.out else pointing.figdir("halo")
     # The comparison is named in the filename, so a directory holding several says
     # which cube each one was against. "eso" is the name for the default.
     vs = "eso" if args.label_other == "pipeline" else slug(args.label_other)

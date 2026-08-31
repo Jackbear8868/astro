@@ -31,7 +31,6 @@ that leaves is printed, because the two do not carry NaN in the same places.
 """
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -43,7 +42,9 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, pointing_dir  # noqa: E402
+from common import ROOT  # noqa: E402
+from config import resolve_path  # noqa: E402
+from products import Run  # noqa: E402
 from products import spectrum_stats  # noqa: E402
 
 C_OURS, C_ESO, C_RESID, C_ZERO = "#1f77b4", "#e8710a", "#b30000", "0.55"
@@ -183,23 +184,14 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    name = Path(args.work).name
-    meta = json.loads((W / "step03/meta.json").read_text())
-    wsky = Path(meta["cube"])
-    if not wsky.is_absolute():
-        wsky = ROOT / wsky
-    if args.nosky:
-        nosky = Path(args.nosky)
-        if not nosky.is_absolute():
-            nosky = ROOT / nosky
-    else:
-        # DATACUBE_FINAL_7.fits -> DATACUBE_FINAL_ESOSKY_7.fits, derived from the name
-        # rather than the pointing number, which is not always the same thing.
-        mo = re.fullmatch(r"DATACUBE_FINAL_(\d+)\.fits", wsky.name)
-        if not mo:
-            raise SystemExit(f"cannot derive the ESO cube from {wsky.name}; pass --nosky")
-        nosky = ROOT / "data/nosky" / f"DATACUBE_FINAL_ESOSKY_{mo.group(1)}.fits"
+    pointing = Run(args.work)
+    W = pointing.work
+    name = pointing.name
+    meta = pointing.meta(3)
+    wsky = pointing.wsky
+    # ESO's cube as the run's config names it. Deriving it from the wsky filename,
+    # which is what this did, only ever finds data kept inside the repository.
+    nosky = resolve_path(args.nosky) if args.nosky else pointing.nosky
     if not nosky.exists():
         raise SystemExit(f"{nosky} does not exist")
 
@@ -224,7 +216,7 @@ def main():
 
     m, n_all, seg_p = blank_mask(W, meta)
     clip = float(meta.get("clip_sigma", 30.0))
-    wl = np.load(W / "step03/wavelength.npy")
+    wl = pointing.wl
     nz = wl.size
     print(f"{name}:  mode {args.mode}   ours {src}   ESO {nosky.name}")
     print(f"  seg {seg_p.name}   blank {n_all:,} -> {int(m.sum()):,} used "
@@ -358,7 +350,7 @@ def main():
     stem = (f"blank_{args.mode}_{args.statistic}_vs_eso"
             + (f"_{run.name}" if run is not None else "")
             + ("_diff" if args.diff else ""))
-    out = Path(args.out) if args.out else pointing_dir(W, "sky") / f"{stem}.png"
+    out = Path(args.out) if args.out else pointing.figdir("sky") / f"{stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

@@ -22,7 +22,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT  # noqa: E402
+from common import EVAL  # noqa: E402
+from products import Run  # noqa: E402
 
 FIGURES = EVAL / "sky_basis"
 
@@ -43,12 +44,12 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    d = ROOT / args.work / "step03"
-    wl = np.load(d / "wavelength.npy")
-    ms = np.load(d / "blank_mean_spectrum.npy")
-    C  = np.load(d / "sky_continuum.npy")
+    run = Run(args.work)
+    wl = run.wl
+    ms = run.mean_sky
+    C  = run.continuum
     # The threshold is stored per iteration; the last row is what step3 finished with.
-    sg = np.load(d / "continuum_iterations.npz")["threshold"][-1]
+    sg = run.iterations["threshold"][-1]
     res = ms - C
 
     print(f"{args.work}: {wl.size} channels {wl.min():.1f}-{wl.max():.1f} A")

@@ -31,7 +31,8 @@ matplotlib.use("Agg")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field, pointing_dir, step04_dir  # noqa: E402
+from common import ROOT  # noqa: E402
+from products import Run  # noqa: E402
 from utils import DZ_MAX, main_source_group, plot_main_group  # noqa: E402
 
 
@@ -52,16 +53,15 @@ def main():
 
     for n in args.n:
         name = f"p{n:02d}"
-        W = ROOT / "results/skymodel" / name
-        seg, white, valid = load_field(W)
+        run = Run(ROOT / "results/skymodel" / name, args.run, args.step04)
+        seg, white, valid = run.seg, run.white, run.valid
         wn = np.where(valid, white, np.nan)
-        step04 = (Path(args.step04) if args.step04
-                  else step04_dir(W, args.run) or W / "step04")
+        step04 = run.step04
         mg, ids, pk = main_source_group(seg, wn, step04, args.dz_max)
         # without a redshift only adjacency applies, which is the left panel
         all_ids = main_source_group(seg, wn)[1]
 
-        out = pointing_dir(W) / f"main_group{args.out_suffix}.png"
+        out = run.figdir() / f"main_group{args.out_suffix}.png"
         plot_main_group(seg, white, mg, ids, all_ids, pk, out, title=name)
 
         f = {int(i): float(np.nansum(np.where(seg == i, white, 0)))

@@ -24,15 +24,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
-                    pointing_dir)  # noqa: E402
-from products import fit_dirs  # noqa: E402
+from common import SEG_COLOR, asinh_bar, collapse  # noqa: E402
+from config import resolve_path  # noqa: E402
+from products import Run  # noqa: E402
 from utils import main_source_group, robust_spread  # noqa: E402
 
 
@@ -46,19 +45,17 @@ def main():
     ap.add_argument("--band", type=float, nargs=2, default=(4600, 9350))
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    _, run = fit_dirs(W, args.run)
-    n = int(W.name[1:])
-    eso = ROOT / (args.eso or f"data/nosky/DATACUBE_FINAL_ESOSKY_{n}.fits")
+    run = Run(args.work, args.run)
+    # ESO's cube out of the run's own config, so a run reading data from outside the
+    # checkout compares against the file it was actually given.
+    eso = resolve_path(args.eso) if args.eso else run.nosky
 
-    seg, white, valid = load_field(W)
-    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan),
-                                     W / "step04")
-    wl = np.load(W / "step03/wavelength.npy")
+    seg, white, valid = run.seg, run.white, run.valid
+    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), run.step04)
 
     imgs = {}
-    for lab, p in (("ESO nosky", eso), ("ours", run / "sky_subtracted.fits")):
-        img, nbad, ntot = collapse(p, args.band, wl, seg)
+    for lab, p in (("ESO nosky", eso), ("ours", run.cube)):
+        img, nbad, ntot = collapse(p, args.band, run.wl, seg)
         imgs[lab] = np.where(valid, img, np.nan)
         print(f"  {lab:>10}  rejected bad voxels {nbad:,}/{ntot:,} ({100*nbad/ntot:.3f}%)")
 
@@ -93,11 +90,11 @@ def main():
         a.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.5,
                   alpha=.75)
         a.set_xticks([]); a.set_yticks([])
-    fig.suptitle(f"{W.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
+    fig.suptitle(f"{run.name}    {args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=14)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     band = ("" if tuple(args.band) == (4600.0, 9350.0)
             else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
-    o = pointing_dir(W, "whitelight") / f"compare{band}.png"
+    o = run.figdir("whitelight") / f"compare{band}.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")
 

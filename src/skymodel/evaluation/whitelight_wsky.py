@@ -33,8 +33,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (ROOT, SEG_COLOR, asinh_bar, collapse, load_field,
-                    pointing_dir)  # noqa: E402
+from common import SEG_COLOR, asinh_bar, collapse  # noqa: E402
+from config import resolve_path  # noqa: E402
+from products import Run  # noqa: E402
 
 
 def main():
@@ -47,13 +48,13 @@ def main():
                     help="colour scale lower bound, in units of blank sigma")
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    n = int(W.name[1:])
-    cube = ROOT / (args.cube or f"data/wsky/DATACUBE_FINAL_{n}.fits")
+    run = Run(args.work)
+    # The cube the run was actually given, out of its own config -- not the pointing
+    # number and a path rebuilt from it, which only finds data kept inside the repo.
+    cube = resolve_path(args.cube) if args.cube else run.wsky
 
-    seg, _, _ = load_field(W)
-    wl = np.load(W / "step03/wavelength.npy")
-    img, nbad, ntot = collapse(cube, args.band, wl, seg)
+    seg = run.seg
+    img, nbad, ntot = collapse(cube, args.band, run.wl, seg)
     valid = np.isfinite(img) & (img != 0)
     img = np.where(valid, img, np.nan)
 
@@ -76,12 +77,12 @@ def main():
     ax.set_xticks([]); ax.set_yticks([])
     asinh_bar(fig, im, ax, "signal above sky   [$\\sigma$ of blank]",
               args.vmin_sigma, float(np.nanmax(z)))
-    ax.set_title(f"{W.name}   {cube.name} (with sky)   "
+    ax.set_title(f"{run.name}   {cube.name} (with sky)   "
                  f"{args.band[0]:.0f}-{args.band[1]:.0f} A", fontsize=13)
     fig.tight_layout()
     band = ("" if tuple(args.band) == (4600.0, 9350.0)
             else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
-    o = pointing_dir(W, "whitelight") / f"wsky{band}.png"
+    o = run.figdir("whitelight") / f"wsky{band}.png"
     fig.savefig(o, dpi=150, bbox_inches="tight")
     print(f"saved -> {o}")
 

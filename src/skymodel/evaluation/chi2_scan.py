@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, pointing_dir  # noqa: E402
+from products import Run  # noqa: E402
 from utils import load_scan  # noqa: E402
 # Imported rather than repeated: the stellar library is drawn in two places, and the
 # order and colours have to agree or one template gets two colours.
@@ -107,9 +107,9 @@ def main():
     ap.add_argument("--out-dir", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
+    run = Run(args.work)
     name = Path(args.work).name
-    step04 = Path(args.step04) if args.step04 else W / "step04"
+    step04 = Path(args.step04) if args.step04 else run.work / "step04"
     fit_file = step04 / "source_fits.npz"
     if not fit_file.exists():
         raise SystemExit(f"no source_fits.npz under {step04}")
@@ -124,7 +124,7 @@ def main():
     print(f"{name}: {fit_file}")
 
     ids = source_fits["id"].tolist() if args.id == "all" else [int(args.id)]
-    out_dir = Path(args.out_dir) if args.out_dir else pointing_dir(W, "template_fit")
+    out_dir = Path(args.out_dir) if args.out_dir else run.figdir("template_fit")
     out_dir.mkdir(parents=True, exist_ok=True)
     tab10 = plt.get_cmap("tab10").colors
 

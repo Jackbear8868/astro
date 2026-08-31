@@ -32,9 +32,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (ROOT, S_CMAP, diverging_range, load_field,  # noqa: E402
-                    pointing_dir, step04_dir)
-from products import fit_dirs  # noqa: E402
+from common import S_CMAP, diverging_range  # noqa: E402
+from products import Run  # noqa: E402
 from utils import main_source_group  # noqa: E402
 
 
@@ -57,16 +56,13 @@ def main():
                          "shared ruler")
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    run, _ = fit_dirs(W, args.run)
+    run = Run(args.work, args.run, args.step04)
 
-    seg, white, valid = load_field(W)
-    step04 = (Path(args.step04) if args.step04
-              else step04_dir(W, args.run) or W / "step04")
-    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), step04)
+    seg, white, valid = run.seg, run.white, run.valid
+    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), run.step04)
 
-    per_spaxel = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
-    field      = np.load(run / "sky_continuum_amplitude_field.npy").astype(float)
+    per_spaxel = run.s_per_spaxel
+    field      = run.s_field
     for a in (per_spaxel, field):
         a[~valid] = np.nan
 
@@ -81,7 +77,7 @@ def main():
     # in s is a small fraction of its level, so half the width does not resolve it.
     # The shared colour scale is what makes them comparable. The run goes into the
     # filename because every step05 run writes the same two amplitude files.
-    out = pointing_dir(W)
+    out = run.figdir()
     tag = "" if args.run in (None, "default") else f"_{args.run}"
     # --half-width changes the colour scale, so it belongs in the name too.
     if args.half_width is not None:
@@ -101,7 +97,7 @@ def main():
     d = (per_spaxel - field)[np.isfinite(per_spaxel) & np.isfinite(field)]
     # No colour bar on the figures, so without this line they cannot be read
     # quantitatively.
-    print(f"{W.name}  colour scale {lo:.4f} to {hi:.4f} (centre {c:.4f})")
+    print(f"{run.name}  colour scale {lo:.4f} to {hi:.4f} (centre {c:.4f})")
     print(f"  s_hat median {np.nanmedian(field[valid]):.4f}   "
           f"s_free-s_hat median {np.median(d):+.4f}  spread {np.std(d):.4f}")
     for o in written:

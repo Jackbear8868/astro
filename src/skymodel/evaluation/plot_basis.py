@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 # common imports utils, which lives one level up -- without this the script only
 # runs when PYTHONPATH already points at src/skymodel.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, pointing_dir  # noqa: E402
+from products import Run  # noqa: E402
 
 # Amplitude scale for every basis figure. A percentile rather than the maximum --
 # see the comment where span is computed.
@@ -68,12 +68,11 @@ def main():
     ap.add_argument("--dpi", type=int, default=140)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    STEP03 = W / "step03"
-    wl = np.load(STEP03 / "wavelength.npy")
-    B  = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
-    # The mask is stored per iteration; the last row is the one step3 finished with.
-    lm = np.load(STEP03 / "continuum_iterations.npz")["line_mask"][-1]
+    run = Run(args.work)
+    wl = run.wl
+    B  = run.basis(args.basis, args.K)
+    # The mask is stored per iteration; run.line_mask is the one step3 finished with.
+    lm = run.line_mask
     K  = B.shape[0]          # not hard-coded to 10 -- step3's -K can change the count
 
     # --- diagnostic: energy concentration exposes vectors wasted on bad pixels ---
@@ -92,8 +91,8 @@ def main():
     print("\n90% energy in only a few channels = that basis vector is dominated by a single bad pixel, not a sky line.")
 
     # ------- figures: one per basis vector, all into the same folder -------
-    ms  = np.load(STEP03 / "blank_mean_spectrum.npy")
-    out = pointing_dir(W, "basis")
+    ms  = run.mean_sky
+    out = run.figdir("basis")
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):

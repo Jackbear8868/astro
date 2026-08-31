@@ -33,7 +33,8 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, arcsinh_stretch, load_field, pointing_dir, qualitative  # noqa: E402
+from common import EVAL, arcsinh_stretch, qualitative  # noqa: E402
+from products import Run  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 
 FIGURES = EVAL / "masking"
@@ -82,8 +83,8 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    seg, white, valid = load_field(W)
+    run = Run(args.work)
+    seg, white, valid = run.seg, run.white, run.valid
     wn = np.where(valid, white, np.nan)
     step04 = Path(args.step04) if args.step04 else None
     mg, ids, pk = main_source_group(seg, wn, step04, args.dz_max)
@@ -95,7 +96,7 @@ def main():
     x0, x1 = int(np.clip(xs.min() - args.margin, 0, Xw)), int(np.clip(xs.max() + 1 + args.margin, 0, Xw))
     sub = np.s_[y0:y1, x0:x1]
 
-    print(f"{Path(args.work).name}: field {H}x{Xw}, main group {len(ids)} ids {ids}, "
+    print(f"{run.name}: field {H}x{Xw}, main group {len(ids)} ids {ids}, "
           f"{int(mg.sum()):,} px")
     print(f"  bbox y {ys.min()}-{ys.max()}  x {xs.min()}-{xs.max()}")
     # Room actually available on each side. Less than --margin means the crop is cut
@@ -161,7 +162,7 @@ def main():
     fig.subplots_adjust(0, 0, 1, 1)
 
     name = Path(args.work).name
-    out = Path(args.out) if args.out else pointing_dir(W, "masking") / "halo_sources.png"
+    out = Path(args.out) if args.out else run.figdir("masking") / "halo_sources.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, facecolor="black")
     plt.close(fig)
