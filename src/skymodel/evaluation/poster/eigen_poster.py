@@ -1,10 +1,10 @@
 """Poster version of the template panel figures.
 
 Same treatment as the spectrum figures -- doubled line width, enlarged axis text, axis
-names just outside the row of numbers -- for plot_eigen.py's --mode panels layout. The
+names just outside the row of numbers -- for source_fit.py's --mode panels layout. The
 corner label naming each curve is kept.
 
---figsize is the size of the whole figure here, not the per-panel size plot_eigen.py
+--figsize is the size of the whole figure here, not the per-panel size source_fit.py
 takes, so the aspect ratio asked for is the aspect ratio produced.
 
     conda run -n astro python eigen_poster.py --kind galaxy --figsize 8 6
@@ -24,7 +24,7 @@ from matplotlib.ticker import FixedLocator, MaxNLocator
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from common import POSTER
-from plot_eigen import LABEL_TOP, MUSE_RANGE, N_SAMPLE, Z_HARO, load_curves
+from source_fit import LABEL_TOP, MUSE_RANGE, N_SAMPLE, Z_HARO, load_curves
 
 FIGURES = POSTER / "templates"
 
@@ -85,7 +85,7 @@ for j, ax in enumerate(axes):
     ax.plot(lam, y, lw=args.lw, color=colours[j], zorder=2)
     ax.set_xlim(x0, x1)
     # Room for the corner label, made by stretching the top until the curve's own
-    # right-hand end clears LABEL_TOP -- plot_eigen.py's rule, kept so the panels
+    # right-hand end clears LABEL_TOP -- source_fit.py's rule, kept so the panels
     # scale the same way they did before.
     y0, y1 = ax.get_ylim()
     e = max(1, F.shape[0] // 5)

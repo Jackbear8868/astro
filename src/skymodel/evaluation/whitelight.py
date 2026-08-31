@@ -85,13 +85,7 @@ def main():
     args = ap.parse_args()
 
     run = Run(args.work)
-    labels = args.labels or args.cubes
-    if len(labels) != len(args.cubes):
-        raise SystemExit(f"{len(args.cubes)} cubes but {len(labels)} labels")
-    paths = [run.named_cube(c) for c in args.cubes]
-    for p in paths:
-        if not p.exists():
-            raise SystemExit(f"{p} does not exist")
+    paths, labels = run.named_cubes(args.cubes, args.labels)
     n = len(paths)
     wid = max(6, max(len(l) for l in labels) + 2)
 

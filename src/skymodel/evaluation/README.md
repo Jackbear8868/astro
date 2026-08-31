@@ -135,14 +135,13 @@ zone 的定義在 `zones.py`，`pointing_curves.py` 和 `poster/` 都 import 它
 
 | 檔案 | 回答什麼 | 寫到 |
 |---|---|---|
-| `plot_eigen.py` | step4 擬合用的源模板長什麼樣（星系 / QSO eigenspectra、恆星庫） | `templates/` |
-| `chi2_scan.py` | 單一源的紅移掃描：reduced χ² 對 z，恆星與星系分開 | `pNN/template_fit/` |
+| `source_fit.py` | step4 的擬合。`--which templates` 擬合用的源模板長什麼樣（星系 / QSO eigenspectra、恆星庫）、`--which scan` 單一源的紅移掃描 | `templates/`、`pNN/template_fit/` |
 
-`plot_eigen.py` 是用擬合時同一組 spline 求值畫出來的，不是重讀檔案，而且只畫每條
+`--which templates` 是用擬合時同一組 spline 求值畫出來的，不是重讀檔案，而且只畫每條
 spline 自己的定義域 —— 所以畫出來的就是擬合看得到的，兩端補的常數與檔案裡填零的空
 隙都不會出現在圖上。
 
-`chi2_scan.py` 是唯一需要完整掃描曲線的一支，它讀 `pNN/step04/scans/`。那個目錄只有
+`--which scan` 是唯一需要完整掃描曲線的，它讀 `pNN/step04/scans/`。那個目錄只有
 在 `configs/pNN.yaml` 的 `source_fit.keep_scans` 打開時才會寫出來，預設是 `false`；
 要畫這張圖，就把那顆的 `keep_scans` 改成 `true` 再跑一次。其餘的程式都只讀
 `step04/source_fits.npz` 與 `classification.npz`，掃描檔在不在都一樣。
@@ -202,7 +201,7 @@ run.meta(3)   run.figdir("halo")
 
 沒有合併的:`sky_region_map`(畫的是兩個階段各自用了哪些 spaxel,從 meta 重建,內容不同)、
 `box_spectra`(任意矩形,不是欄位的自然分區,而且有 raw/model/resid 三聯 PDF 模式)、
-`plot_eigen` 與 `chi2_scan`(模板曲線 vs 掃描曲線)。
+`plot_eigen` 與 `chi2_scan` 已合併為 `source_fit.py`。
 
 判準的反面同樣重要:**不合併只是「同一個主題」的程式。** 一支加了十個旗標才能表達兩件
 不同的事,比兩支各自清楚的程式難讀。上面每一組合併,差異都只用一到兩個開關就講完了。

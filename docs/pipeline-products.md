@@ -356,7 +356,7 @@ so both are stored once and indexed; `load_scan` gives the name back, so a reade
 does not see the compaction.
 
 The scans are the search, not the result, and `source_fit.keep_scans` turns them
-off. Two scripts need the whole curve -- `evaluation/chi2_scan.py` and
+off. Two scripts need the whole curve -- `evaluation/source_fit.py --which scan` and
 `evaluation/main_group.py --table` -- and both say so when the files are absent.
 
 ### Where the settings are
@@ -370,7 +370,7 @@ already treats alternative runs.
 **Drawing it**
 
 ```bash
-conda run -n astro python src/skymodel/evaluation/chi2_scan.py --work results/skymodel/p14 --id all
+conda run -n astro python src/skymodel/evaluation/source_fit.py --which scan --work results/skymodel/p14 --id all
 conda run -n astro python src/skymodel/evaluation/main_group.py -n 14 --table --no-figure
 ```
 

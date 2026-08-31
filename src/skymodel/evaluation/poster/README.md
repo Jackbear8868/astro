@@ -18,7 +18,7 @@
 
 ## 共通約定
 
-- **`--figsize W H` 是整張圖的尺寸**,不是每個面板的。`plot_eigen.py` 的同名參數是每個
+- **`--figsize W H` 是整張圖的尺寸**,不是每個面板的。`source_fit.py --which templates` 的同名參數是每個
   面板的高度基準(會再乘面板數),在這裡不是 —— 你給的比例就是印出來的比例。
 - **`--suffix` 另存**,試不同尺寸不會蓋掉已經放進海報的那張。
 - **dpi 一律 300**,PNG 檔頭也寫 300,匯進排版軟體會直接按實體尺寸放置。
@@ -45,7 +45,7 @@ results/skymodel/evaluation/poster_cache/{halo,eso}_pNN.npz
 ```
 eso_poster.py        p NN/halo/outside_vs_eso_outside_0_10_px.png   ← zone_spectrae.py --separate
 continuum_poster.py  sky_basis/continuum_compare.png                ← pointing_curvesinuum_compare.py
-eigen_poster.py      templates/eigen_{kind}_panels_muse*.png        ← plot_eigen.py --mode panels
+eigen_poster.py      templates/eigen_{kind}_panels_muse*.png        ← source_fit.py --mode panels
 basis_poster.py      pNN/basis/top5.png                             ← sky_basis.py
 ```
 

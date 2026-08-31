@@ -317,6 +317,23 @@ class Run:
             return d / "sky_subtracted.fits"
         return resolve_path(name)
 
+    def named_cubes(self, names, labels=None):
+        """Several `--cubes` words as files, with the names to call each curve.
+
+        Returns (paths, labels). Every figure that draws more than one cube parses the
+        option the same way, and the two checks have to happen somewhere: a figure with
+        three curves and two names in its legend is worse than an error, and a cube
+        that is not there is better said now than three minutes into reading one.
+        """
+        labels = list(labels) if labels else list(names)
+        if len(labels) != len(names):
+            raise SystemExit(f"{len(names)} cubes but {len(labels)} labels")
+        paths = [self.named_cube(n) for n in names]
+        for path in paths:
+            if not path.exists():
+                raise SystemExit(f"{path} does not exist")
+        return paths, labels
+
     def meta(self, step):
         """One step's meta.json: what it was given, and what it did.
 

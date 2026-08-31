@@ -229,7 +229,7 @@ A scan is the surface the winner was picked out of -- the reduced chi2 of that
 branch at every redshift of the grid, so it is as long as the grid is. Steps 5
 and 6 take what they need from the columns of `source_fits.npz`, the galaxy
 branch's redshift included, and the one program left that opens a scan is
-`src/skymodel/evaluation/chi2_scan.py`, which draws the curve for a single
+`src/skymodel/evaluation/source_fit.py --which scan`, which draws the curve for a single
 source.
 
 Hence the default of false. The galaxy branch's scans alone are about 96% of the
