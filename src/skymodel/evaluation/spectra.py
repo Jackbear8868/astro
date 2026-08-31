@@ -8,9 +8,16 @@ constants and small rules about display, so they belong in neither.
 import numpy as np
 from scipy.signal import medfilt
 
-# Haro 11's systemic redshift. Every figure that marks the source's lines needs it, and
-# a copy per script is a number that can drift between two figures of the same galaxy.
-Z_HARO = 0.0204
+# Haro 11's systemic redshift, measured from the data rather than assumed: the
+# flux-weighted centroid of Hb, [O III] 4959 and 5007, Ha and [S II] 6716 over the
+# brightest 1% of p05's galaxy spaxels, in ESO's cube so that our own subtraction
+# cannot be what sets it. The five agree to +-0.00003, which is a tenth of a channel.
+#
+# It marks lines on figures and picks the channels --exclude-source-lines drops; the
+# pipeline itself never sees it, taking its mask windows as observed wavelengths. One
+# definition because a copy per script is a number that can drift between two figures
+# of the same galaxy.
+Z_HARO = 0.02064
 # Rest wavelengths in air. Both halves of the [O III] doublet are marked because they
 # share an upper level, so the transition probabilities alone fix the ratio at
 # 5007/4959 = 2.98 -- a zone where it is not about 3 has a problem in the subtraction

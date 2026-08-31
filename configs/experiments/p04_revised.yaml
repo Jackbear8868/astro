@@ -1,0 +1,76 @@
+# Haro 11 sky reconstruction -- pointing 4, the professor's revised windows.
+# An experiment: configs/p04.yaml keeps the current official windows.
+# One config per pointing; paths are relative to the repository root.
+
+pointing: 4
+
+input:
+  cube:  data/wsky/DATACUBE_FINAL_4.fits           # sky included: the sky is learned and subtracted here
+  nosky: data/nosky/DATACUBE_FINAL_ESOSKY_4.fits   # ESO-subtracted: white light and the spectra used for classification
+  seg:   data/wsky_seg/DATACUBE_FINAL_4_seg.fits   # which spaxels hold a source; the pipeline does not detect them
+
+output: results/skymodel/experiments/p04_revised
+
+# The part of the field the sky is learned from, written as one box in pixel
+# coordinates. Ranges are half-open, lo <= i < hi, and null means no bound on
+# that side. include: true keeps only what is inside the box, false keeps only
+# what is outside it. apply_to names the steps the box restricts:
+#   basis          step3, which spaxels the sky basis is learned from
+#   sky_amplitude  step5, which spaxels train the spatial field of s
+sky_region:
+  x: [null, null]
+  y: [170, null]
+  include: true
+  apply_to: [basis]
+
+# The sky model: one continuum shape plus K line-basis vectors, learned from
+# the blank spaxels of the wsky cube.
+sky_line_basis:
+  method: svd                           # svd or pca
+  K: 30                     # number of line-basis vectors
+  seed: 0                               # random seed; both PCA and TruncatedSVD are randomized
+  continuum_window: 300                 # running-median window for the continuum (channels)
+  line_thresholds: [1, 2]   # line detection, (positive, negative) sigma
+  max_iter: 5                           # iterations of the continuum / line-mask loop
+  clip_sigma: 30                        # sigma clip applied to the mean sky spectrum
+  min_unmasked_frac: 0.16               # stop if the line mask would cover more than 1 - this
+  # Revised by the professor: the [O III] windows are unchanged, and the two hydrogen
+  # windows are pulled in. H-beta keeps its blue edge and moves its red edge from 4968
+  # to 4964, which stops just short of the airglow line peaking at 4967 -- the window's
+  # airglow falls from 37.2 to 8.5 while it still covers 80% of the line. H-alpha is
+  # narrowed to a single channel at 6694.6, which is 4.3 A blueward of the measured
+  # line centre at 6698.3 and covers 6% of the line.
+  mask_source_lines:
+    - [4959.5, 4964]        # A, H-beta
+    - [5057,   5069]        # A, [O III] 4959
+    - [5106,   5118]        # A, [O III] 5007
+    - [6694,   6695.5]      # A, H-alpha
+
+# Fitting a template to every detected source, which gives it a class and a
+# redshift.
+source_fit:
+  fit_window: [4600, 8000]  # A, air; the same window for stellar templates and galaxy eigenspectra
+  line_mask_iter: [1]                   # which sky-line mask iteration is excluded from the fit
+  fix_s_at: 0.0                         # sky continuum amplitude held at this value while classifying
+  z_min: 0.0                            # redshift grid
+  z_max: 1.5
+  z_step: 0.0001
+  star_dz: 0.005                        # half-width of the redshift scan for stars
+  num_workers: 0                        # 0 = one third of the visible CPUs, a conservative
+                                        # default for a machine shared with other people;
+                                        # on a machine of your own, raise it
+  keep_scans: true                      # keep every source's whole redshift scan (step04/scans_*.npz)
+
+# The spatial field the sky continuum amplitude s is forced onto, fitted to the
+# freely solved blank spaxels.
+sky_amplitude:
+  min_source_distance: 15               # a training spaxel must be at least this far (px) from any source
+  min_main_source_distance: 50          # extra exclusion radius around the main source; 0 disables it
+  train_clip_sigma: 8                   # reject training points beyond this x the robust scatter
+  main_source_dz: 0.005                 # largest redshift difference still counted as the same source
+  n_iter: 100                           # median-polish iterations for the spatial field
+
+# Applying the model to every spaxel.
+spaxel_fit:
+  blank_channels: all                   # all or line1: which channels solve the blank coefficients
+  min_channel_coverage: 0.9             # fraction of channels with data required before a spaxel is fitted
