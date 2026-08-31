@@ -69,42 +69,50 @@ class Fig(NamedTuple):
 
 FIGURES = [
     # --- where the sources are, and which of them is the galaxy ----------------
-    Fig("prof_seg",     "masking", "prof_seg_maps.py",  "all",      ("-n", "{ns}"),
+    Fig("prof_seg",     "masking", "seg_map.py", "all", ("--professor", "-n", "{ns}"),
         "eval", "masking/prof_seg/*.png", everyday=False),
-    Fig("seg_id",       "masking", "seg_id_map.py",     "pointing", ("--work", "{work}"),
+    Fig("seg_id",       "masking", "seg_map.py", "pointing", ("--work", "{work}"),
         "eval", "masking/id_map_{name}_*.png"),
-    Fig("seg_slide",    "masking", "seg_slide_map.py",  "pointing", ("--work", "{work}"),
+    Fig("seg_slide",    "masking", "seg_map.py", "pointing",
+        ("--work", "{work}", "--style", "slide"),
         "eval", "masking/slide_{name}_*.png", everyday=False),
-    Fig("main_group",   "masking", "main_group_map.py", "pointing", ("-n", "{n}"),
+    Fig("main_group",   "masking", "main_group.py", "pointing", ("-n", "{n}"),
         "run", "main_group*.png"),
-    Fig("main_group_spec", "masking", "main_group_spec.py", "all",  ("-n", "{ns}"), everyday=False),
-    Fig("halo_sources", "masking", "halo_sources.py",   "pointing", ("--work", "{work}"),
+    Fig("main_group_spec", "masking", "main_group.py", "all",
+        ("-n", "{ns}", "--table", "--no-figure"), everyday=False),
+    Fig("halo_sources", "masking", "seg_map.py", "pointing",
+        ("--work", "{work}", "--crop", "main"),
         "run", "masking/halo_sources.png"),
 
     # --- what steps 3 and 5 learned the sky to be ------------------------------
-    Fig("basis",        "sky", "plot_basis.py",         "pointing", ("--work", "{work}"),
+    Fig("basis",        "sky", "sky_basis.py", "pointing", ("--work", "{work}"),
         "run", "basis/*.png"),
-    Fig("line_residual","sky", "sky_line_residual.py",  "pointing", ("--work", "{work}"),
+    Fig("line_residual","sky", "sky_basis.py", "pointing",
+        ("--work", "{work}", "--which", "residual"),
         "eval", "sky_basis/line_residual_{name}.png"),
-    Fig("continuum",    "sky", "continuum_compare.py",  "all", ("--pointings", "{pointings}"),
+    Fig("continuum",    "sky", "pointing_curves.py", "all", ("--pointings", "{pointings}"),
         "eval", "sky_basis/continuum_compare.png"),
-    Fig("s_shape",      "sky", "s_shape_map.py",        "pointing", ("--work", "{work}"),
+    Fig("s_shape",      "sky", "s_map.py", "pointing", ("--work", "{work}"),
         "run", "s_*.png"),
-    Fig("s_compare",    "sky", "s_compare.py",          "all", ("--pointings", "{pointings}"),
+    Fig("s_compare",    "sky", "s_map.py", "all",
+        ("--pointings", "{pointings}", "--scale", "shared", "--which", "hat"),
         "eval", "sfield/*.png"),
     Fig("sky_region",   "sky", "sky_region_map.py",     "pointing", ("--work", "{work}"),
         "run", "sky_region*.png"),
 
     # --- was the sky removed cleanly, and did the source survive ---------------
-    Fig("whitelight_in","subtraction", "whitelight_wsky.py",    "pointing", ("--work", "{work}"),
+    Fig("whitelight_in","subtraction", "whitelight.py", "pointing",
+        ("--work", "{work}", "--cubes", "wsky"),
         "run", "whitelight/wsky*.png"),
-    Fig("whitelight",   "subtraction", "whitelight_compare.py", "pointing", ("--work", "{work}"),
-        "run", "whitelight/compare*.png"),
+    Fig("whitelight",   "subtraction", "whitelight.py", "pointing",
+        ("--work", "{work}", "--cubes", "ours", "eso"),
+        "run", "whitelight/ours_vs_eso*.png"),
     Fig("box",          "subtraction", "box_spectra.py",        "pointing", ("--work", "{work}"),
         "run", "box/*.png"),
-    Fig("blank",        "subtraction", "blank_compare.py",      "pointing", ("--work", "{work}"),
+    Fig("blank",        "subtraction", "blank.py", "pointing", ("--work", "{work}"),
         "run", "sky/blank_residual*.png"),
-    Fig("blank_noise",  "subtraction", "blank_noise_floor.py",  "pointing", ("--work", "{work}"),
+    Fig("blank_noise",  "subtraction", "blank.py", "pointing",
+        ("--work", "{work}", "--view", "floor"),
         "run", "sky/blank_noise_floor*.png"),
     Fig("zones",        "subtraction", "zone_spectra.py", "pointing",
         ("--work", "{work}", "--zones", "all", "--cubes", "ours"),
@@ -112,8 +120,9 @@ FIGURES = [
     Fig("outside",      "subtraction", "zone_spectra.py", "pointing",
         ("--work", "{work}", "--zones", "outside", "--cubes", "ours", "eso"),
         "run", "halo/outside_ours_vs_eso*.png"),
-    Fig("halo_all",     "subtraction", "halo_compare.py",       "all", ("--pointings", "{pointings}"),
-        "eval", "halo/*.png"),
+    Fig("halo_all",     "subtraction", "pointing_curves.py", "all",
+        ("--curve", "halo", "--pointings", "{pointings}"),
+        "eval", "halo/halo_compare_*.png"),
 
     # --- what step 4 fitted the sources with, and how well ---------------------
     Fig("templates_galaxy", "fit", "plot_eigen.py", "all", ("--kind", "galaxy"),
@@ -208,6 +217,14 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="print the commands instead of running them")
     args = ap.parse_args()
+
+    # A row naming a program that is not there is a defect in this table, not a
+    # figure that happens to be missing. Left alone it surfaces as a subprocess
+    # failure per row, and --list would report the set as merely never drawn.
+    gone = sorted({f.script for f in FIGURES if not (HERE / f.script).exists()})
+    if gone:
+        raise SystemExit("★ the table names programs that do not exist: "
+                         + ", ".join(gone))
 
     want = set(args.only) if args.only else None
     cross = args.all or args.work is None

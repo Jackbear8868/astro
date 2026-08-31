@@ -3,7 +3,7 @@
 Same treatment as the ring figures: doubled line width, 30 pt axis text, axis names
 just outside the row of numbers, legend written as its own transparent image.
 
-The wavelength grids differ between pointings, so as in continuum_compare.py each
+The wavelength grids differ between pointings, so as in pointing_curves.py each
 curve is drawn against its own axis and nothing is resampled.
 """
 import argparse
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from common import EVAL, ROOT
 from common import POSTER
-from continuum_compare import load
+from pointing_curves import load
 
 FIGURES = POSTER / "sky_basis"
 

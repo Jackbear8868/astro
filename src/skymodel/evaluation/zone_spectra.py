@@ -38,8 +38,7 @@ import matplotlib.patches as mpatches
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, slug  # noqa: E402
-from config import resolve_path  # noqa: E402
-from products import Run, latest_run, spectrum_stats  # noqa: E402
+from products import Run, spectrum_stats  # noqa: E402
 from spectra import (A_LINE, C_ESO, C_LINE, C_OURS, C_ZERO, LINES,  # noqa: E402
                      Z_HARO, despiked_range, panel_ylim)
 from utils import DZ_MAX, main_source_group  # noqa: E402
@@ -51,26 +50,6 @@ from zones import zone_labels, zone_means  # noqa: E402
 A_REF = 0.75
 # Colours after the first two. Reached only by --cubes with three or more entries.
 C_MORE = ["#2ca02c", "#9467bd", "#8c564b"]
-
-
-def cube_path(name, run):
-    """One entry of --cubes as a file.
-
-    The four words are the cubes a pointing has: what it was given, what ESO made of
-    it, what we made of it, and the sky we took out. Anything else is a path, so a run
-    kept beside the pipeline's own can be compared without a name for it here.
-    """
-    known = {"ours": run.cube, "eso": run.nosky, "wsky": run.wsky,
-             "model": run.sky_model}
-    if name in known:
-        return known[name]
-    if name.startswith("run:"):
-        d = latest_run(run.work, "sky_subtracted.fits", "step06", name[4:])
-        if d is None:
-            raise SystemExit(f"no sky_subtracted.fits under {run.work}/step05 "
-                             f"matching {name[4:]!r}")
-        return d / "sky_subtracted.fits"
-    return resolve_path(name)
 
 
 def select(names, which):
@@ -239,7 +218,7 @@ def main():
     labels = args.labels or args.cubes
     if len(labels) != len(args.cubes):
         raise SystemExit(f"{len(args.cubes)} cubes but {len(labels)} labels")
-    paths = [cube_path(c, run) for c in args.cubes]
+    paths = [run.named_cube(c) for c in args.cubes]
     for p in paths:
         if not p.exists():
             raise SystemExit(f"{p} does not exist")
@@ -370,16 +349,19 @@ def main():
     # The name says what is in the figure: which zones, and which cubes against which.
     span = f"_{args.xlim[0]:.0f}-{args.xlim[1]:.0f}" if args.xlim else ""
     stem = f"{args.zones}_" + "_vs_".join(slug(l) for l in labels)
+    # --out may name either a directory or the file itself, so the directory to make
+    # is not known until that is decided; each branch below makes its own.
     d = Path(args.out) if args.out else run.figdir("halo")
-    d.mkdir(parents=True, exist_ok=True)
     if args.separate:
         for (f, _), nm in zip(figs, names):
             o = d / f"{stem}_{slug(nm)}{span}.png"
+            o.parent.mkdir(parents=True, exist_ok=True)
             f.savefig(o, dpi=args.dpi, bbox_inches="tight")
             plt.close(f)
             print(f"saved -> {o}")
     else:
         o = d if d.suffix == ".png" else d / f"{stem}{span}.png"
+        o.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(o, dpi=args.dpi, bbox_inches="tight")
         plt.close(fig)
         print(f"\nsaved -> {o}")

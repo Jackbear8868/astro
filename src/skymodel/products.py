@@ -293,6 +293,30 @@ class Run:
 
     # ---- what a step recorded, and where the figures go ---------------------
 
+    def named_cube(self, name):
+        """One word of a `--cubes` option as a file.
+
+        The four words are the cubes a pointing has: what it was given, what ESO made
+        of it, what we made of it, and the sky we took out. `run:GLOB` reaches a run
+        kept beside the pipeline's own, and anything else is a path, so a cube with no
+        name here can still be compared against.
+
+        Every figure that draws more than one cube takes the same words, and a second
+        copy of this mapping is how two of them would come to disagree about what
+        "ours" means.
+        """
+        known = {"ours": self.cube, "eso": self.nosky, "wsky": self.wsky,
+                 "model": self.sky_model}
+        if name in known:
+            return known[name]
+        if name.startswith("run:"):
+            d = latest_run(self.work, "sky_subtracted.fits", "step06", name[4:])
+            if d is None:
+                raise SystemExit(f"no sky_subtracted.fits under {self.work}/step05 "
+                                 f"matching {name[4:]!r}")
+            return d / "sky_subtracted.fits"
+        return resolve_path(name)
+
     def meta(self, step):
         """One step's meta.json: what it was given, and what it did.
 

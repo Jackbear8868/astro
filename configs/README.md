@@ -48,7 +48,7 @@ The few figures that compare several pointings belong to no single run and go to
 `results/skymodel/evaluation` instead. `SKYMODEL_EVAL` moves those, which is what a
 read-only checkout needs:
 
-    SKYMODEL_EVAL=/mnt/runs/evaluation conda run -n astro python src/skymodel/evaluation/halo_compare.py
+    SKYMODEL_EVAL=/mnt/runs/evaluation conda run -n astro python src/skymodel/evaluation/pointing_curves.py --curve halo
 
 ## Two values that are easy to misread
 

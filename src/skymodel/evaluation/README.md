@@ -86,23 +86,17 @@ python src/skymodel/evaluation/run.py --work results/skymodel/p01 --list
 
 | 檔案 | 回答什麼 | 寫到 |
 |---|---|---|
-| `prof_seg_maps.py` | 教授的 14 份 segmentation 長什麼樣 | `pNN/` |
-| `seg_id_map.py` | 任一份 segmentation 的 source ID 對照圖 | `masking/` |
-| `seg_slide_map.py` | 同一張源圖，去掉周邊資訊，投影片用 | `masking/` |
-| `main_group_map.py` | 主源怎麼從被拆散的 seg ID 拼回來 | `pNN/` |
+| `seg_map.py` | 一份 segmentation 畫在一個背景上。`--style locator` 工作用的 ID 對照圖、`--style slide` 投影片版、`--crop main` 放大看主星系的延展光、`--professor` 教授那 14 份 | `masking/`、`pNN/masking/`、`pNN/` |
+| `main_group.py` | 主源怎麼從被拆散的 seg ID 拼回來。`--table` 另外印出每個成員的光譜證據 | `pNN/`、表格只印數字 |
 | ↑ | step5 每跑一顆就已經畫同一張到 `pNN/step05/main_source_group.png`(同一個 `utils.plot_main_group`,逐像素相同)。這支多的是：一次跑多顆、印出被剔除的 ID 與源流量佔比 | |
-| `main_group_spec.py` | 相鄰整團的每個成員，用光譜判斷是不是主星系的一部分 | 只印數字 |
-| `halo_sources.py` | 放大看主星系：延展光上與周圍偵測到了什麼 | `pNN/masking/` |
 
 ### 二 天空模型本身：step3 與 step5 學到了什麼
 
 | 檔案 | 回答什麼 | 寫到 |
 |---|---|---|
-| `plot_basis.py` | step3 學到的每一條天空 basis 長什麼樣 | `pNN/basis/` |
-| `sky_line_residual.py` | 天空線基底是從什麼學來的：平均天空減掉天空連續譜 | `sky_basis/` |
-| `continuum_compare.py` | 14 顆的天空連續譜疊在同一張，形狀差多少、水準差多少 | `sky_basis/` |
-| `s_shape_map.py` | 天空連續譜係數 s 的空間形狀 | `pNN/` |
-| `s_compare.py` | 14 顆的 s 場並排，用同一組色階 | `sfield/`、`pNN/sfield/` |
+| `sky_basis.py` | step3 的產物與它的學習輸入。預設畫每一條 basis、overview、topN；`--which residual` 畫平均天空減掉天空連續譜 | `pNN/basis/`、`sky_basis/` |
+| `pointing_curves.py` | 一顆一條曲線疊在同一張。`--curve continuum` 天空連續譜、`--curve halo` 延展光 | `sky_basis/`、`halo/` |
+| `s_map.py` | 天空連續譜係數 s 的空間形狀。`--work` 一顆各自色階、`--pointings ... --scale shared` 多顆同一色階 | `pNN/`、`sfield/`、`pNN/sfield/` |
 | `sky_region_map.py` | 天空是從哪些 spaxel 學的 —— 兩個階段各自用了哪些 | `pNN/` |
 
 ### 三 扣完之後：天空扣乾淨了嗎、源有沒有被扣掉
@@ -111,13 +105,10 @@ python src/skymodel/evaluation/run.py --work results/skymodel/p01 --list
 
 | 檔案 | 回答什麼 | 寫到 |
 |---|---|---|
-| `whitelight_wsky.py` | 輸入 cube（含天空）的白光影像 | `pNN/whitelight/` |
-| `whitelight_compare.py` | 扣完天空的白光影像，ESO 與我們並排 | `pNN/whitelight/` |
-| `box_spectra.py` | 方框裡的平均光譜，和 ESO nosky 並排 | `pNN/box/` |
-| `blank_compare.py` | blank 區扣完之後剩下什麼，我們對 ESO | `pNN/sky/` |
-| `blank_noise_floor.py` | 那些殘留是雜訊還是錯誤 —— 逐通道，兩個 pipeline 都算 | `pNN/sky/` |
+| `whitelight.py` | 白光影像，一個 cube 或好幾個並排。`--cubes wsky` 是輸入、`--cubes ours eso` 是扣完之後 | `pNN/whitelight/` |
 | `zone_spectra.py` | 每個 zone 的平均光譜：星系的亮度層、源外的環，一個 cube 或好幾個並排 | `pNN/halo/` |
-| `halo_compare.py` | 同樣的分層，14 顆疊在一起 | `halo/` |
+| `blank.py` | blank 區。`--view mean` 扣完剩下什麼（我們對 ESO）、`--view floor` 那些殘留是雜訊還是錯誤 | `pNN/sky/` |
+| `box_spectra.py` | 方框裡的平均光譜，和 ESO nosky 並排 | `pNN/box/` |
 
 `zone_spectra.py` 是 `halo_spectra.py` 與 `outside_compare.py` 合併來的 —— 它們本來
 就是同一支程式：同一個 zone 構造、同一種面板、同樣的譜線標記、同樣「哪些通道跑出面板」
@@ -137,7 +128,7 @@ zone_spectra.py --work results/skymodel/p01 --zones galaxy  --cubes ours eso # �
 內而外走 viridis，zone 地圖也用同一組顏色；有好幾個 cube 時，顏色代表 cube 且每一格都
 一樣 —— 要讀的是它們之間的差別，那個差別必須在每一格都是同一個意思。
 
-zone 的定義在 `zones.py`，`halo_compare.py` 和 `poster/` 都 import 它：第二套「outside」
+zone 的定義在 `zones.py`，`pointing_curves.py` 和 `poster/` 都 import 它：第二套「outside」
 的定義會讓兩張圖對不起來，而原因跟 pipeline 無關。
 
 ### 四 源的擬合：step4 用什麼模板、擬得如何
@@ -189,24 +180,36 @@ run.meta(3)   run.figdir("halo")
 `despiked_range` 函式體一字不差（只差最後補的邊距）、`our_cube` 與 `s_dir` 是同一個
 形狀（現在是 `products.latest_run`）。
 
-### 成對的圖：共用畫法，但各自是一支程式
+### 合併了什麼
 
-有三對圖畫的是同一種東西：
+22 支變成 12 支。合併的判準只有一個：**兩支畫的是同一種圖,只是變體**。
 
-| 一對 | 差在哪 | 共用什麼 |
+| 合併前 | 合併後 | 差異變成 |
 |---|---|---|
-| `whitelight_wsky` / `whitelight_compare` | 一格 vs 兩格；含天空的要先扣掉底座 | `sigma_image()`、`seg_outline()`、`band_tag()` |
-| `seg_id_map` / `seg_slide_map` | 工作用的定位圖 vs 投影片版 | `seg_and_background()`、`map_name()` |
-| `s_shape_map` / `s_compare` | 一顆各自色階 vs 多顆同一色階 | `s_panel()` |
+| `halo_spectra` + `outside_compare` | `zone_spectra.py` | `--zones` × `--cubes` |
+| `seg_id_map` + `seg_slide_map` + `halo_sources` + `prof_seg_maps` | `seg_map.py` | `--style` × `--crop` × `--professor` |
+| `plot_basis` + `sky_line_residual` | `sky_basis.py` | `--which` |
+| `continuum_compare` + `halo_compare` | `pointing_curves.py` | `--curve` |
+| `main_group_map` + `main_group_spec` | `main_group.py` | `--table` |
+| `s_shape_map` + `s_compare` | `s_map.py` | `--work` vs `--pointings` × `--scale` |
+| `whitelight_wsky` + `whitelight_compare` | `whitelight.py` | `--cubes` |
+| `blank_compare` + `blank_noise_floor` | `blank.py` | `--view` |
 
-它們**沒有**被合併成一支加模式旗標的程式。每一對問的是不同的問題、印的是不同的診斷
-數字（`whitelight_compare` 印零點與主源中位數，對單格圖沒有意義），合起來只會讓檔案更
-難讀。重複的是「怎麼畫」，抽掉的就是那一段 —— 這樣同一個欄位的兩張圖不可能因為 stretch
-或輪廓畫法不同而看起來像不同的資料，而每支程式仍然只回答它自己那一個問題。
+每一組合併都是**把畫圖的程式碼整段搬過去,不是重寫**,所以除了 `whitelight` 之外每一張
+圖都逐位元相同。`whitelight` 有三處刻意的改變:面板順序改成「第一個 cube 是主角」(σ
+從它算、差值以它為基準)、輪廓線寬統一成 `seg_outline()` 的預設、檔名 `compare.png` 改成
+`ours_vs_eso.png`。這三處各自把差異倒回去量過,加起來剛好是 100%,沒有殘留。
 
-已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
-`zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`
-的逐方框光譜取代。`pNN/point/` 與 `pNN/zone/` 是它們留下來的舊輸出，現在沒有程式會寫。
+沒有合併的:`sky_region_map`(畫的是兩個階段各自用了哪些 spaxel,從 meta 重建,內容不同)、
+`box_spectra`(任意矩形,不是欄位的自然分區,而且有 raw/model/resid 三聯 PDF 模式)、
+`plot_eigen` 與 `chi2_scan`(模板曲線 vs 掃描曲線)。
+
+判準的反面同樣重要:**不合併只是「同一個主題」的程式。** 一支加了十個旗標才能表達兩件
+不同的事,比兩支各自清楚的程式難讀。上面每一組合併,差異都只用一到兩個開關就講完了。
+
+更早刪除過的:`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）,以及一支同樣
+叫 `zone_spectra.py`、只比較單一環的舊程式 —— 現在這支 `zone_spectra.py` 是新寫的,名字
+剛好相同。
 
 `ROOT` 與 `import utils`、`import products` 都靠 `Path(__file__).resolve().parents[N]`，而這個目錄和
 `experiments/` 在同一層，所以搬動不需要改路徑。`poster/` 在下一層，它的兩行

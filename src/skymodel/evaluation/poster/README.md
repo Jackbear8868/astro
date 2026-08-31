@@ -9,10 +9,10 @@
 | 這裡 | 對應 | 畫的是 |
 |---|---|---|
 | `halo_poster.py` | (無,海報專用) | 源外環的 raw(wsky)對 signal(我們扣完天光的結果) |
-| `eso_poster.py` | `outside_compare.py` | 源外環的 ours 對 ESO pipeline |
-| `continuum_poster.py` | `continuum_compare.py` | 14 顆 pointing 的天光連續譜 |
+| `eso_poster.py` | `zone_spectra.py --zones outside --cubes ours eso` | 源外環的 ours 對 ESO pipeline |
+| `continuum_poster.py` | `pointing_curves.py --curve continuum` | 14 顆 pointing 的天光連續譜 |
 | `eigen_poster.py` | `plot_eigen.py --mode panels` | galaxy eigenspectra 與恆星模板 |
-| `basis_poster.py` | `plot_basis.py` 的 `top{N}.png` | step3 學到的前幾條天光線基底 |
+| `basis_poster.py` | `sky_basis.py` 的 `top{N}.png` | step3 學到的前幾條天光線基底 |
 
 ---
 
@@ -43,10 +43,10 @@ results/skymodel/evaluation/poster_cache/{halo,eso}_pNN.npz
 除了 `halo_poster.py` 之外,每一支寫出的檔名都和它對應的 `evaluation/` 程式**完全相同**:
 
 ```
-eso_poster.py        p NN/halo/outside_vs_eso_outside_0_10_px.png   ← outside_compare.py --separate
-continuum_poster.py  sky_basis/continuum_compare.png                ← continuum_compare.py
+eso_poster.py        p NN/halo/outside_vs_eso_outside_0_10_px.png   ← zone_spectrae.py --separate
+continuum_poster.py  sky_basis/continuum_compare.png                ← pointing_curvesinuum_compare.py
 eigen_poster.py      templates/eigen_{kind}_panels_muse*.png        ← plot_eigen.py --mode panels
-basis_poster.py      pNN/basis/top5.png                             ← plot_basis.py
+basis_poster.py      pNN/basis/top5.png                             ← sky_basis.py
 ```
 
 所以**重跑 `evaluation/` 那一支會把海報版蓋掉**,反之亦然。海報定稿之後要保險,就用

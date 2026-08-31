@@ -79,8 +79,8 @@ and the source can be replaced; the digest is what still identifies it then.
 **Drawing it**
 
 ```bash
-conda run -n astro python src/skymodel/evaluation/seg_id_map.py --work results/skymodel/p14
-conda run -n astro python src/skymodel/evaluation/whitelight_compare.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/seg_map.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/whitelight.py --work results/skymodel/p14 --cubes ours eso
 ```
 
 ## 2. step02 -- one spectrum per source
@@ -287,8 +287,8 @@ run could use. The key is absent from a run that selected nothing.
 
 ```bash
 conda run -n astro python src/skymodel/experiments/plot_linemask_iters.py --work results/skymodel/p14 --with-rejected
-conda run -n astro python src/skymodel/evaluation/plot_basis.py --work results/skymodel/p14 --basis svd -K 30
-conda run -n astro python src/skymodel/evaluation/continuum_compare.py
+conda run -n astro python src/skymodel/evaluation/sky_basis.py --work results/skymodel/p14 --basis svd -K 30
+conda run -n astro python src/skymodel/evaluation/pointing_curves.py --curve continuum
 ```
 
 ## 4. step04 -- the template fit
@@ -357,7 +357,7 @@ does not see the compaction.
 
 The scans are the search, not the result, and `source_fit.keep_scans` turns them
 off. Two scripts need the whole curve -- `evaluation/chi2_scan.py` and
-`evaluation/main_group_spec.py` -- and both say so when the files are absent.
+`evaluation/main_group.py --table` -- and both say so when the files are absent.
 
 ### Where the settings are
 
@@ -371,7 +371,7 @@ already treats alternative runs.
 
 ```bash
 conda run -n astro python src/skymodel/evaluation/chi2_scan.py --work results/skymodel/p14 --id all
-conda run -n astro python src/skymodel/evaluation/main_group_spec.py -n 14
+conda run -n astro python src/skymodel/evaluation/main_group.py -n 14 --table --no-figure
 ```
 
 ## 5. step05 -- the sky amplitude field
@@ -461,8 +461,8 @@ invisible in the numbers and has to be seen.
 **Drawing it**
 
 ```bash
-conda run -n astro python src/skymodel/evaluation/s_shape_map.py --work results/skymodel/p14
-conda run -n astro python src/skymodel/evaluation/s_compare.py --which both --separate
+conda run -n astro python src/skymodel/evaluation/s_map.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/s_map.py --scale shared --which both --separate
 conda run -n astro python src/skymodel/evaluation/sky_region_map.py --work results/skymodel/p14
 ```
 
@@ -529,10 +529,10 @@ step 6 solved.
 **Drawing it**
 
 ```bash
-conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/blank.py --work results/skymodel/p14
 conda run -n astro python src/skymodel/evaluation/zone_spectra.py --work results/skymodel/p14 \
     --zones outside --cubes ours eso
-conda run -n astro python src/skymodel/evaluation/whitelight_compare.py --work results/skymodel/p14
+conda run -n astro python src/skymodel/evaluation/whitelight.py --work results/skymodel/p14 --cubes ours eso
 ```
 
 ## 7. Reading the record

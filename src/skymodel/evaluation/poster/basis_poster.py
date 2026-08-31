@@ -1,7 +1,7 @@
-"""Poster version of plot_basis.py's stacked top-N figure.
+"""Poster version of sky_basis.py's stacked top-N figure.
 
 Thicker traces and larger axis text, at whatever aspect ratio is asked for. The lane
-construction is plot_basis.py's and is not changed: a constant offset taken from a
+construction is sky_basis.py's and is not changed: a constant offset taken from a
 percentile of the whole basis, traces clipped to half a lane, e0 on top.
 
     conda run -n astro python basis_poster.py --work results/skymodel/p01 --figsize 10 5
@@ -19,7 +19,7 @@ from matplotlib.ticker import FixedLocator
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from products import Run
-from plot_basis import SPAN_PCT, basis_colour
+from sky_basis import SPAN_PCT, basis_colour
 
 XTICKS = [5000, 6000, 7000, 8000, 9000]
 NAME_PAD = 6

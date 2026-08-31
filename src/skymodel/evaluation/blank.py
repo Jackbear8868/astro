@@ -7,6 +7,15 @@ what the sky model got wrong, and both pipelines are measured against that same 
     ours   the mean of our sky_subtracted cube over the blank spaxels
     ESO    the mean of the ESO nosky cube over the same spaxels
 
+That measurement answers two questions, and `--view` says which one is being asked:
+how big the residual is, and whether a residual that size is noise. The first needs
+nothing but the two curves; the second needs what a single spaxel looks like, which is
+the same spaxels read a second way.
+
+--view mean -- how big is it
+----------------------------
+The two mean spectra, drawn together and read against zero.
+
 --diff adds a lower panel with their difference. Both curves are the same data minus a
 sky, so it is (data - our sky) - (data - ESO sky) = ESO sky - our sky, the two sky
 models differenced with the data cancelled out. Off by default: read against zero, the
@@ -16,6 +25,24 @@ panel above already says how far each is.
 blank_mean_spectrum, the sky as observed) against wsky - nosky, the sky ESO chose to
 remove -- and its --diff panel is mean(nosky) in blank.
 
+--view floor -- is it noise, or is it wrong
+-------------------------------------------
+A mean over tens of thousands of blank spaxels looks flat whether the subtraction was
+good or bad, as long as the error is random: averaging N spaxels divides random scatter
+by sqrt(N) and leaves a systematic offset untouched. So each panel draws the mean
+residual against its own noise floor:
+
+    scatter   the spread across blank spaxels within one channel, (p84 - p16) / 2 --
+              what a single spaxel actually looks like.
+    floor     scatter / sqrt(N). Inside this band the channel's residual is
+              indistinguishable from the same spaxels averaged with no systematic
+              error; outside it, the same mistake was made in every spaxel.
+
+The band is what makes the two pipelines comparable: rms and mean both shrink with the
+number of spaxels averaged, so they say as much about the size of the blank region as
+about the sky model, while the ratio to the floor does not. The top panel draws the two
+scatters together, so how much of the separation below is systematic can be judged.
+
 Same spaxels, one procedure
 ---------------------------
 The blank mask is rebuilt from step03/meta.json, the same seg and the same --xlim /
@@ -23,11 +50,17 @@ The blank mask is rebuilt from step03/meta.json, the same seg and the same --xli
 identical sigma-clipping. A spaxel must be spectrally complete in both cubes; how many
 that leaves is printed, because the two do not carry NaN in the same places.
 
-    conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p01
-    conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p07 \\
+    conda run -n astro python src/skymodel/evaluation/blank.py --work results/skymodel/p01
+    conda run -n astro python src/skymodel/evaluation/blank.py --work results/skymodel/p07 \\
         --ylim -3 3
-    conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p01 \\
+    conda run -n astro python src/skymodel/evaluation/blank.py --work results/skymodel/p01 \\
         --mode sky
+    conda run -n astro python src/skymodel/evaluation/blank.py --work results/skymodel/p01 \\
+        --view floor --n-floor 3 --ylim -0.4 0.4
+
+This is what blank_compare.py and blank_noise_floor.py were: the same blank mask, the
+same two cubes, the same spaxels complete in both. One asked how far from zero the
+mean lands, the other whether that distance is more than averaging noise leaves behind.
 """
 import argparse
 import sys
@@ -41,15 +74,16 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT  # noqa: E402
+from common import ROOT, data_hdu  # noqa: E402
 from config import resolve_path  # noqa: E402
-from products import Run  # noqa: E402
-from products import latest_run, spectrum_stats  # noqa: E402
-from common import data_hdu  # noqa: E402
+from products import Run, latest_run, spectrum_stats  # noqa: E402
 from spectra import robust_range  # noqa: E402
 from zones import blank_mask  # noqa: E402
 
-C_OURS, C_ESO, C_RESID, C_ZERO = "#1f77b4", "#e8710a", "#b30000", "0.55"
+C_OURS, C_ESO, C_RESID = "#1f77b4", "#e8710a", "#b30000"
+# Zero, and the noise-floor band. Zero is drawn darker in the floor view because there
+# it lies on top of the band; at the mean view's grey the two greys would read as one.
+C_ZERO, C_ZERO_BAND, C_BAND = "0.55", "0.45", "0.72"
 
 # What products.spectrum_stats returns, in display order, with the figure's label.
 # rms_from_zero keeps its full name: "rms" alone is unambiguous only while sigma is
@@ -59,6 +93,18 @@ STATS = [("mean", "mean"), ("sigma", "sigma"), ("skewness", "skewness"),
          ("kurtosis", "kurtosis"), ("rms_from_zero", "rms_from_zero")]
 FMT = "{:.4f}"
 CHUNK = 200
+# The two views do not draw the same figure, so neither can hold the other's size: the
+# mean view has one panel, or two with --diff, and the floor view always has three.
+FIGSIZE = {"mean": (22, 9), "floor": (22, 11)}
+
+
+def eso_cube(pointing, given):
+    """ESO's cube as the run's config names it. Deriving it from the wsky filename,
+    which is what this did, only ever finds data kept inside the repository."""
+    nosky = resolve_path(given) if given else pointing.nosky
+    if not nosky.exists():
+        raise SystemExit(f"{nosky} does not exist")
+    return nosky
 
 
 def collapse(x, clip, statistic):
@@ -100,47 +146,31 @@ def check_against_step3(run, wl, ours):
           f"{int((d > 1).sum())} channels differ by more than 1")
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Blank-region mean sky: ours against the sky the ESO pipeline removed")
-    ap.add_argument("--work", required=True, help="pointing work directory, e.g. results/skymodel/p01")
-    ap.add_argument("--statistic", choices=["mean", "median"], default="mean",
-                    help="how the blank spaxels are collapsed into one spectrum per "
-                         "channel. mean is step3's sigma-clipped mean; median is the "
-                         "level half the spaxels are above")
-    ap.add_argument("--mode", choices=["residual", "sky"], default="residual",
-                    help="residual: what each pipeline leaves in blank (both should be "
-                         "zero). sky: what each thinks the sky is")
-    ap.add_argument("--run", default=None,
-                    help="glob naming the run directory under step05 that holds our "
-                         "sky_subtracted.fits; without it the newest run is used")
-    ap.add_argument("--nosky", default=None,
-                    help="ESO sky-subtracted cube; by default derived from the wsky "
-                         "filename recorded in step03/meta.json")
-    ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
-                    help="y range of the upper panel; default is a robust range in "
-                         "residual mode, autoscale in sky mode")
-    ap.add_argument("--alpha", type=float, default=0.75,
-                    help="opacity of the ESO curve; ours is always drawn solid")
-    ap.add_argument("--diff", action="store_true",
-                    help="add a lower panel with ours minus ESO")
-    ap.add_argument("--resid-ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
-                    help="y range of the --diff panel; default is a robust range of it")
-    ap.add_argument("--figsize", type=float, nargs=2, metavar=("W", "H"), default=(22, 9))
-    ap.add_argument("--dpi", type=int, default=180)
-    ap.add_argument("--out", default=None)
-    args = ap.parse_args()
+def channel_stats(hdu, mask, keep, nz):
+    """Per channel: the mean across the kept blank spaxels, and their robust scatter.
 
-    pointing = Run(args.work)
+    (p84 - p16) / 2 rather than the standard deviation: a handful of bad spaxels would
+    set the standard deviation, and a floor built from it would be so wide that nothing
+    could ever leave the band.
+    """
+    mean = np.empty(nz)
+    scat = np.empty(nz)
+    for j in range(0, nz, CHUNK):
+        x = np.asarray(hdu.data[j:j + CHUNK], np.float32)[:, mask][:, keep]
+        mean[j:j + x.shape[0]] = x.mean(axis=1, dtype=np.float64)
+        p16, p84 = np.percentile(x, [16, 84], axis=1)
+        scat[j:j + x.shape[0]] = (p84 - p16) / 2
+        print(f"    {min(j + CHUNK, nz)}/{nz}", end="\r", flush=True)
+    print(" " * 24, end="\r")
+    return mean, scat
+
+
+def view_mean(args, pointing, meta):
+    """The mean residual spectrum of each pipeline, drawn against zero."""
     W = pointing.work
     name = pointing.name
-    meta = pointing.meta(3)
     wsky = pointing.wsky
-    # ESO's cube as the run's config names it. Deriving it from the wsky filename,
-    # which is what this did, only ever finds data kept inside the repository.
-    nosky = resolve_path(args.nosky) if args.nosky else pointing.nosky
-    if not nosky.exists():
-        raise SystemExit(f"{nosky} does not exist")
+    nosky = eso_cube(pointing, args.nosky)
 
     # The two cubes to average, and what each curve is called. In sky mode the left one
     # is the raw cube and the ESO curve becomes a difference.
@@ -302,6 +332,137 @@ def main():
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)
     print(f"\nsaved -> {out}")
+
+
+def view_floor(args, pointing, meta):
+    """The same means, per channel, against the noise floor of their own spaxels."""
+    W = pointing.work
+    name = pointing.name
+    run = latest_run(W, "sky_subtracted.fits", "step06", args.run)
+    if run is None:
+        raise SystemExit(f"no sky_subtracted.fits under {W}/step05 or {W}/step06")
+    nosky = eso_cube(pointing, args.nosky)
+
+    m, n_all, _ = blank_mask(W, meta)
+    wl = pointing.wl
+    nz = wl.size
+    print(f"{name}:  ours {run.relative_to(ROOT)}   ESO {nosky.name}")
+
+    with fits.open(run / "sky_subtracted.fits", memmap=True) as ha, \
+         fits.open(nosky, memmap=True) as he:
+        da, de = data_hdu(ha), data_hdu(he)
+        ca = np.ones(int(m.sum()), bool)
+        ce = np.ones(int(m.sum()), bool)
+        for j in range(0, nz, CHUNK):
+            ca &= np.isfinite(np.asarray(da.data[j:j + CHUNK], np.float32)[:, m]).all(axis=0)
+            ce &= np.isfinite(np.asarray(de.data[j:j + CHUNK], np.float32)[:, m]).all(axis=0)
+            print(f"    coverage {min(j + CHUNK, nz)}/{nz}", end="\r", flush=True)
+        print(" " * 30, end="\r")
+        keep = ca & ce
+        N = int(keep.sum())
+        print(f"  blank {n_all:,} -> {int(m.sum()):,} in the step3 mask -> "
+              f"{N:,} complete in both cubes   sqrt(N) = {np.sqrt(N):.1f}")
+        mo, so = channel_stats(da, m, keep, nz)
+        me, se = channel_stats(de, m, keep, nz)
+
+    fo, fe = so / np.sqrt(N), se / np.sqrt(N)
+    print(f"\n    {'':<6}{'scatter':>10}{'floor':>10}{'|mean|/floor':>15}"
+          f"{'channels > ' + str(args.n_floor) + 'x':>18}")
+    for lab, mm, sc, fl in (("ours", mo, so, fo), ("ESO", me, se, fe)):
+        r = np.abs(mm) / fl
+        print(f"    {lab:<6}{np.median(sc):>10.3f}{np.median(fl):>10.4f}"
+              f"{np.median(r):>15.2f}"
+              f"{f'{int((r > args.n_floor).sum()):,} / {nz:,}':>18}"
+              f"  ({100 * (r > args.n_floor).mean():.1f}%)")
+
+    fig, ax = plt.subplots(3, 1, sharex=True, figsize=args.figsize,
+                           gridspec_kw={"height_ratios": [1, 1.3, 1.3], "hspace": 0.09})
+
+    ax[0].plot(wl, so, lw=0.6, color=C_OURS, label="ours")
+    ax[0].plot(wl, se, lw=0.6, color=C_ESO, label="ESO")
+    ax[0].set_ylabel("scatter across\nblank spaxels")
+    ax[0].legend(fontsize=11, loc="upper left", frameon=False)
+    ax[0].grid(alpha=0.2)
+    if args.scatter_ylim:
+        ax[0].set_ylim(*args.scatter_ylim)
+    else:
+        ax[0].set_ylim(0, np.percentile(np.concatenate([so, se]), 99.5) * 1.15)
+
+    # The two residual panels share a y range, or the larger residual is squeezed to
+    # look like the smaller one.
+    lim = args.ylim if args.ylim else robust_range(np.concatenate([mo, me]))
+    for a, (lab, mm, fl, c) in zip(ax[1:], (("ours", mo, fo, C_OURS),
+                                            ("ESO", me, fe, C_ESO))):
+        a.fill_between(wl, -args.n_floor * fl, args.n_floor * fl, color=C_BAND,
+                       lw=0, label=f"$\\pm${args.n_floor:g} $\\times$ noise floor")
+        a.axhline(0, lw=0.8, color=C_ZERO_BAND)
+        a.plot(wl, mm, lw=0.6, color=c, label=f"{lab}: mean over blank")
+        a.set_ylabel("flux")
+        a.set_ylim(*lim)
+        a.legend(fontsize=11, loc="upper left", frameon=False, ncol=2)
+        a.grid(alpha=0.2)
+    ax[2].set_xlabel("wavelength [$\\AA$]")
+    ax[2].set_xlim(wl.min(), wl.max())
+
+    out = (Path(args.out) if args.out
+           else pointing.figdir("sky") / f"blank_noise_floor_{run.name}.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\nsaved -> {out}")
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="What the blank region has left in it: how large it is, and "
+                    "whether it is more than noise -- ours against ESO's")
+    ap.add_argument("--work", required=True, help="pointing work directory, e.g. results/skymodel/p01")
+    ap.add_argument("--view", choices=["mean", "floor"], default="mean",
+                    help="mean: the mean spectrum over blank, ours against ESO's. "
+                         "floor: the same mean per channel against the noise floor of "
+                         "the spaxels it was taken over")
+    ap.add_argument("--run", default=None,
+                    help="glob naming the run directory under step05 that holds our "
+                         "sky_subtracted.fits; without it the newest run is used")
+    ap.add_argument("--nosky", default=None,
+                    help="ESO sky-subtracted cube; by default derived from the wsky "
+                         "filename recorded in step03/meta.json")
+    ap.add_argument("--ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
+                    help="mean view: y range of the upper panel, by default a robust "
+                         "range in residual mode and autoscale in sky mode. floor "
+                         "view: y range of the two residual panels, shared")
+    ap.add_argument("--statistic", choices=["mean", "median"], default="mean",
+                    help="mean view: how the blank spaxels are collapsed into one "
+                         "spectrum per channel. mean is step3's sigma-clipped mean; "
+                         "median is the level half the spaxels are above")
+    ap.add_argument("--mode", choices=["residual", "sky"], default="residual",
+                    help="mean view: residual: what each pipeline leaves in blank "
+                         "(both should be zero). sky: what each thinks the sky is")
+    ap.add_argument("--alpha", type=float, default=0.75,
+                    help="mean view: opacity of the ESO curve; ours is always drawn solid")
+    ap.add_argument("--diff", action="store_true",
+                    help="mean view: add a lower panel with ours minus ESO")
+    ap.add_argument("--resid-ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
+                    help="mean view: y range of the --diff panel; default is a robust "
+                         "range of it")
+    ap.add_argument("--n-floor", type=float, default=1.0,
+                    help="floor view: width of the drawn band in noise floors. 1 is "
+                         "'the mean of this many spaxels with no systematic error'")
+    ap.add_argument("--scatter-ylim", type=float, nargs=2, metavar=("LO", "HI"), default=None,
+                    help="floor view: y range of the scatter panel")
+    ap.add_argument("--figsize", type=float, nargs=2, metavar=("W", "H"), default=None,
+                    help=f"default {FIGSIZE['mean']} in the mean view, {FIGSIZE['floor']} "
+                         f"in the floor view: the mean view draws one panel, two with "
+                         f"--diff, and the floor view always three")
+    ap.add_argument("--dpi", type=int, default=180)
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+    if args.figsize is None:
+        args.figsize = FIGSIZE[args.view]
+
+    pointing = Run(args.work)
+    meta = pointing.meta(3)
+    (view_mean if args.view == "mean" else view_floor)(args, pointing, meta)
 
 
 if __name__ == "__main__":
