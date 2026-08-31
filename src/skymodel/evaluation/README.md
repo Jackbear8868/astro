@@ -109,8 +109,22 @@ spline 自己的定義域 —— 所以畫出來的就是擬合看得到的，�
 
 ## 其他
 
-`common.py` 放共用的東西：`ROOT`、`EVAL`、`pointing_dir()`、`load_field()`、`slug()`、
-`qualitative()`（相鄰源不會混淆的配色）、`asinh_bar()`。
+一個 run 的產物統一由 `products.Run` 讀。它問的是「產物在哪」，不是「誰跑的」——
+`pipeline.py` 和 `standalone/` 寫出來的是同一棵目錄樹（`standalone/check_mirror.py`
+就是在保證這件事），所以同一個物件兩邊都適用。每個欄位第一次被碰到才讀、讀完留著，
+cube 則只給路徑不給陣列，讓呼叫端自己 memmap。
+
+```python
+run = Run("results/skymodel/p01")
+run.wl        run.seg      run.white    run.valid
+run.continuum run.mean_sky run.line_mask run.basis("svd", 30)
+run.s_field   run.cube     run.nosky    run.step04
+run.meta(3)   run.figdir("halo")
+```
+
+`common.py` 放共用的東西：`ROOT`、`EVAL`、`slug()`、`qualitative()`（相鄰源不會混淆的
+配色）、`asinh_bar()`、`collapse()`。`pointing_dir()` 與 `load_field()` 現在只是
+`Run.figdir()` 與 `Run.seg/white/valid` 的舊名字，留給還沒改用 `Run` 的腳本。
 
 已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
 `zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`

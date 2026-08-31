@@ -70,7 +70,7 @@ def _number(v, name, ge=None, gt=None, le=None):
     return v
 
 
-def _path(v):
+def resolve_path(v):
     """A path from the config, as an absolute path.
 
     A relative one is taken against the repository root, so a config reads the same
@@ -102,8 +102,8 @@ def load(path):
     for k in ("cube", "nosky", "seg"):
         if k not in inp:
             _fail(f"input.{k} is missing")
-        inp[k] = _path(inp[k])
-    cfg["output"] = _path(cfg["output"])
+        inp[k] = resolve_path(inp[k])
+    cfg["output"] = resolve_path(cfg["output"])
 
     reg = cfg["sky_region"]
     reg["x"] = _axis(reg.get("x"), "x")
@@ -135,7 +135,7 @@ def load(path):
         if not isinstance(src, str):
             _fail("sky_line_basis.borrow_from must be the output directory of another "
                   f"run, or null, got {src!r}")
-        b["borrow_from"] = _path(src)
+        b["borrow_from"] = resolve_path(src)
     # Optional: writing it keeps the source's own emission lines out of the basis. The
     # windows are excluded from step3's decomposition and from nothing else -- the
     # continuum, the mean spectrum and the sky-line masks still see every channel. It is

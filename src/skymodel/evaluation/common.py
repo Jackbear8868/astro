@@ -38,21 +38,11 @@ S_CMAP = "RdBu_r"
 
 
 def pointing_dir(work, *sub):
-    """Where one pointing's figures go -- an evaluation directory beside the run.
+    """Where one pointing's figures go. `Run.figdir` under its old name.
 
-    `work` is the run's output directory, which is what the config's `output` names and
-    what every script takes as --work. The figures land in evaluation/<run>/[subdir...]
-    next to it, so results kept outside the checkout carry their figures with them
-    instead of writing back into the repository, and a run under experiments/ keeps its
-    figures there rather than among the real pointings.
-
-    One directory per run rather than one flat level, so reading a pointing is not a
-    filename filter over several hundred entries.
+    Kept so that the scripts which have not moved to Run yet read as they did.
     """
-    work = Path(work)
-    d = work.parent.joinpath("evaluation", work.name, *sub)
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return Run(work).figdir(*sub)
 
 
 # Contour colour over a magma background. magma runs black -> purple -> orange ->
@@ -112,19 +102,17 @@ def diverging_range(a, centre=None, pct=2.0):
 
 
 def load_field(work):
-    """One pointing's step01 products -- (seg, white light image, valid field of view).
+    """One pointing's step01 products -- (seg, white light image, valid field).
 
-    The white light image is cast to float so later percentiles and nanmean do not
-    depend on the original dtype. Outside the field of view it is 0, which is what
-    the valid mask tests.
+    Three attributes of a Run under their old name, for the reason `pointing_dir`
+    is kept.
     """
-    seg   = fits.getdata(work / "step01/segmentation_input.fits").astype(int)
-    white = np.asarray(fits.getdata(work / "step01/whitelight_nosky.fits"), float)
-    return seg, white, white != 0
+    r = Run(work)
+    return r.seg, r.white, r.valid
 
 
 from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
-from products import fit_dirs  # noqa: E402
+from products import Run, fit_dirs  # noqa: E402
 
 
 def step04_dir(W, run=None):
