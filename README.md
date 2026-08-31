@@ -17,6 +17,11 @@ absorb the galaxy.
 
 The target is Haro 11, a merging dwarf galaxy whose ionised gas reaches across a large
 fraction of the field, which is what makes "where is there no source" the hard part.
+It reaches far enough that the blank spaxels carry the galaxy's own emission lines, so
+`Lₖ` is held at zero over the wavelengths those lines land on, which every pointing's
+config names as `sky_line_basis.mask_source_lines`. A basis with no structure at a
+wavelength cannot subtract anything there, and that is what keeps the model from
+taking the galaxy's lines along with the sky.
 
 ---
 
@@ -26,8 +31,8 @@ Python 3.12 or newer, on Linux, macOS or Windows. Pick either tool; both install
 the same package from the same `pyproject.toml`.
 
 ```bash
-git clone <url> astro
-cd astro
+git clone <url> sky-subtraction
+cd sky-subtraction
 ```
 
 **conda**
@@ -93,6 +98,20 @@ and nothing runs without them: the four galaxy eigenspectra of Bolton et al. 201
 (`data/eigen_galaxy_Bolton2012.fits`) and seven stellar templates, O through M
 (`data/stellar_templates/`). The cubes and the segmentation are yours to supply.
 
+## Where the files live
+
+`input` and `output` in a config take a relative path, an absolute one, or one
+starting with `~`. Relative is taken against this directory, so a config reads the same
+wherever it is run from; absolute is what lets the cubes and the results sit outside
+the checkout entirely, which is the usual case once the data is on another disk. The
+pipeline reads nothing else from the repository, so such a run writes nothing back
+into it.
+
+Figures follow the run: every script under `evaluation/` takes `--work`, the run's
+output directory, and writes beside it into `evaluation/<run>/`. The few that compare
+several pointings belong to no single run and go to `results/skymodel/evaluation`,
+which `SKYMODEL_EVAL` moves.
+
 ## Run
 
 Everything a pointing needs is in one config file; nothing else is passed on the
@@ -103,7 +122,8 @@ conda run -n astro python src/skymodel/pipeline.py configs/p01.yaml
 conda run -n astro python src/skymodel/pipeline.py configs/*.yaml   # all 14
 ```
 
-About 80 seconds and 6 GB of memory per pointing, and about 8 GB of output.
+A pointing takes about a minute and holds one cube in memory while it works. Nearly
+all of the output is step 6's two cubes, which are the size of the input cube each.
 
 The products land under the config's `output` directory:
 
@@ -116,9 +136,12 @@ results/skymodel/p01/
   step04/  source_fits.npz and classification.npz: each source's class, redshift
            and amplitudes, scanned once against the stellar library and once
            against the galaxies, with meta.json saying how they were fitted; the
-           scans themselves go to scans/ and only with source_fit.keep_scans
+           scans themselves go to scans_star.npz and scans_galaxy.npz, one file
+           per branch, and only with source_fit.keep_scans
   step05/  s solved per blank spaxel, and the smooth field it is forced onto
-  step06/  sky_subtracted.fits, sky_model.fits, and the per-spaxel coefficients
+  step06/  sky_subtracted.fits, sky_model.fits, and source_template_amplitude_map.npy
+           -- the source templates' amplitudes. The sky coefficients are not written:
+           wherever the model was solved, s is step 5's field to the bit
   stepN.log  each step's full output, headed by the call that produced it
 ```
 
@@ -150,8 +173,9 @@ looked at after the run. `src/skymodel/README.md` says what each step reads and 
 
 Runs are bit-reproducible: the same config gives the same products, byte for byte. Each
 fitting step holds BLAS at one thread while it works, which is what makes it so -- the
-randomized SVD behind the sky-line basis follows the thread count, and at 24 threads
-the basis moves by about 1 part in 10⁴. Steps 1, 3, 4, 5 and 6 stamp the git commit
+randomized SVD behind the sky-line basis sums in an order that follows the thread
+count, so the same data on a machine of a different width would otherwise give a
+basis differing in its last digits. Steps 1, 3, 4, 5 and 6 stamp the git commit
 into their `meta.json`, each `stepN.log` opens with the call that produced the products
 beside it, and `{output}/config.json` records the config the run was given.
 
@@ -167,6 +191,8 @@ covers that and two faster checks beside it.
 
 ```
 src/skymodel/              the pipeline
+  standalone/              the same six steps as separate scripts, one runnable
+                           alone (see its README)
   evaluation/              figures and numbers from the products (see its README)
   evaluation/poster/       the same figures, laid out for print
   experiments/             one-off "should we do it differently" tests
@@ -180,9 +206,9 @@ docs/                      method notes, parameter references, what was rejected
 
 `src/zap/` runs [ZAP](https://github.com/ktsoto/zap) on the same cubes as an
 independent check. Its own README has the commands. One result worth carrying over:
-the source mask decides everything. Haro 11's ionised gas covers 30-44% of the field,
-and a mask that misses it lets ZAP learn Hα as if it were sky and remove most of the
-source.
+the source mask decides everything. Haro 11's ionised gas reaches over a large part of
+the field, and a mask that misses it lets ZAP learn Hα as if it were sky and remove
+most of the source. `docs/zap-conclusions.md` has the measurements behind that.
 
 ## Credit and license
 

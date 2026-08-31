@@ -22,7 +22,7 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 | — | `place_segmentation` | the segmentation it is given | `step01/segmentation_input.fits`, after checking the two share a pixel grid |
 | 2 | `source_spectra` | nosky cube, seg | `step02/source_spectra.npz` |
 | 3 | `sky_basis` | wsky cube, seg | `step03/sky_continuum.npy`, `continuum_iterations.npz`, `sky_line_basis_{method}_K{K}.npy` |
-| 4 | `classify_sources` | `step02/`, `step03/` | `step04/source_fits.npz`, `classification.npz`, `meta.json`, and `scans/{star,galaxy}_id*.npz` with `source_fit.keep_scans` |
+| 4 | `classify_sources` | `step02/`, `step03/` | `step04/source_fits.npz`, `classification.npz`, `meta.json`, and `scans_star.npz`, `scans_galaxy.npz` with `source_fit.keep_scans` |
 | 5 | `fit_sky_amplitude` | wsky cube, `step03/`, `step04/` | `step05/sky_continuum_amplitude_per_spaxel.npy`, `sky_continuum_amplitude_field.npy`, `main_source_group.png` |
 | 6 | `subtract_sky` | wsky cube, `step03/`–`step05/` | `step06/sky_subtracted.fits`, `sky_model.fits`, `source_template_amplitude_map.npy` |
 
@@ -58,7 +58,8 @@ One run, in files whose names say what they are rather than how they were fitted
                            and the galaxy branch's own best redshift beside the winner's
       classification.npz   what steps 5 and 6 read back
       meta.json            every setting the run was made with, machine-readable
-      scans/               star_id{N}.npz and galaxy_id{N}.npz, only with keep_scans
+      scans_star.npz       every star scan, one member per source, with keep_scans
+      scans_galaxy.npz     the same for the galaxy branch
 
 Every setting that decides a number in there -- the fit window, the redshift grid, the
 stellar library, which sky-line mask iteration was excluded -- is a key of `meta.json`,

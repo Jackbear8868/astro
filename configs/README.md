@@ -177,8 +177,8 @@ flux window instead of taking every blank spaxel:
         ignore: 0.05                    # fraction of the field thrown away, faintest first
         fraction: 0.10                  # fraction taken as sky, immediately above it
 
-This is the ESO pipeline's own rule, read off the cube headers: `skymethod =
-subtract-model`, `skymodel_ignore = 0.05`, `skymodel_fraction = 0.10`. ESO uses no
+This is the ESO pipeline's own rule, read off the cube headers:
+`skymethod = subtract-model`, `skymodel_ignore = 0.05`, `skymodel_fraction = 0.10`. ESO uses no
 segmentation at all -- it ranks the spaxels of the field by flux, throws away the
 faintest `ignore` of them (the dead and the half-covered, which are not sky), and
 learns the sky from the next `fraction`. What that also rejects, and a segmentation
@@ -220,10 +220,10 @@ is what makes the size of the cut readable.
 Step 4 scans a redshift grid for every source twice, once against the stellar
 library and once against the galaxy eigenspectra, and writes the winning row of
 each scan into `step04/source_fits.npz`. `keep_scans` decides whether the scans
-themselves are written too, one file per source and branch:
+themselves are written too, one file per branch with a member per source:
 
-    step04/scans/star_id7.npz
-    step04/scans/galaxy_id7.npz
+    step04/scans_star.npz        id7.npy, id7_templates.npy, ...
+    step04/scans_galaxy.npz
 
 A scan is the surface the winner was picked out of -- the reduced chi2 of that
 branch at every redshift of the grid, so it is as long as the grid is. Steps 5

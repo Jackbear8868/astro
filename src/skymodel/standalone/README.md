@@ -64,10 +64,10 @@ no second copy of them to maintain.
 
 ## Why there is no `__init__.py`
 
-The modules address each other by bare name (`from utils import ...`, `from step_io
-import ...`). That resolves because Python puts a script's own directory first on
-`sys.path` when the script is run, which is exactly what makes each step runnable on
-its own -- and it is the property this folder exists to keep.
+The modules address each other by bare name -- `from utils import ...`,
+`from step_io import ...`. That resolves because Python puts a script's own directory
+first on `sys.path` when the script is run, which is exactly what makes each step
+runnable on its own -- and it is the property this folder exists to keep.
 
 An `__init__.py` doing `sys.path.insert(0, <its own dir>)` would make the same bare
 names resolve when the folder is imported as a package, but that insert is global to
