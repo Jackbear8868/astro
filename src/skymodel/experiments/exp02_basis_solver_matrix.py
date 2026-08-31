@@ -1,36 +1,17 @@
 """ZAP 邏輯的參考版本:逐 spaxel 連續譜 + 兩種 basis x 四種解法的完整對照。
 
-範圍:只在 blank region 上做,完全不碰 source 區。
-所有 blank spaxel 都納入(不做訓練/評測切分),與 test.py 的做法一致。
+只在 blank region 上做,所有 blank spaxel 都納入,不做訓練/評測切分。全因子設計
+2 連續譜 x 2 basis x 4 解法 = 16 組,沒有特別待遇的基準線,一次只看一個變因。
 
-完整的全因子設計:2 種連續譜 x 2 種 basis x 4 種解法 = 16 組。
-沒有「特別待遇的基準線」—— 現行 test.py 的兩條路徑本身就是矩陣裡的兩格。
+  連續譜  shared 所有 spaxel 共用一條 mean sky 連續譜 / own 每條自己的(ZAP 做法)
+  basis   NMF 兩個矩陣都非負,負值必須 clip 成 0,會造成系統性正偏移 /
+          PCA 可正可負,免 clip(ZAP 用的)
+  解法    unw+nn / chi2+nn / unw+free / chi2+free,nn 是 NNLS 的非負約束,
+          chi2 是 1/STAT 加權;都對每條 spaxel 各自解
 
---- 2 種連續譜處理 ---
-  shared   所有 spaxel 共用一條 mean sky 連續譜   <- 現行 test.py 的做法
-  own      每條 spaxel 自己的連續譜                <- ZAP 的做法
-
---- 2 種 basis ---
-  NMF      兩個矩陣都非負,所以「必須」把負值 clip 成 0  <- clip 會造成系統性正偏移
-  PCA      都可正可負,不需要 clip                        <- ZAP 真正用的
-
---- 4 種解振幅的方式(都對每條 spaxel 各自解)---
-  unw+nn     無權重 + 非負 (NNLS)
-  chi2+nn    chi^2(1/STAT 加權) + 非負          <- 教授的加權 + 我們的非負
-  unw+free   無權重 + 無約束
-  chi2+free  chi^2(1/STAT 加權) + 無約束        <- 教授的方式(字面上)
-
---- 現行 test.py 的兩條路徑在矩陣裡的位置 ---
-  (shared, NMF,     unw+nn)    = test.py 的 NMF 路徑
-
-這樣可以一次只看一個變因:
-  shared vs own       -> 只看「逐 spaxel 連續譜」的效果
-  unw+* vs chi2+*     -> 只看「chi^2 加權」的效果
-  *+nn  vs *+free     -> 只看「非負」的效果
-
-記帳方式(所有方法一致,且是 source 區也能安全沿用的):
-最後減掉的是「共用天光連續譜 + 重建的天光線」;逐 spaxel 連續譜只當擬合工具,
-不永久扣除 —— 否則搬到 source 區會把 source 連續譜一起吃掉。
+記帳方式所有方法一致,source 區也能沿用:最後減掉的是共用天光連續譜 + 重建的天光
+線。逐 spaxel 連續譜只當擬合工具,不永久扣除,否則搬到 source 區會把 source 連續譜
+一起吃掉。
 """
 
 from pathlib import Path
@@ -106,9 +87,8 @@ def plot_compare(wl, spec, spec_compare, out_path, label="ours", label_compare="
 def per_spaxel_continuum(spectra, line_mask, window=WINDOW, chunk=CHUNK):
     """ZAP 的 continuum filter:每條 spaxel 沿波長取 running median(遮掉天光線通道)。
 
-    數值定義就是 utils.running_median;這裡改用 pandas 的 rolling median 做量產,
-    因為它算的是同一個東西但快很多(下方 verify_fast_median 會當場驗證)。
-    spectra: (nz, n) -> 回傳 (nz, n) float32
+    數值定義是 utils.running_median,改用 pandas rolling median 量產,快很多;
+    verify_fast_median 會當場驗證。spectra (nz, n) -> (nz, n) float32
     """
     nz, n = spectra.shape
     out = np.empty((nz, n), dtype=np.float32)
@@ -138,9 +118,8 @@ def verify_fast_median(spectra, line_mask, n_check=50, window=WINDOW):
 def fit_amplitudes(r, sigma, A, nonneg):
     """解一條 spaxel 的天光線振幅。
 
-    sigma=None  -> 無權重最小二乘   min ||r - A w||^2
-    sigma given -> chi^2 最小化     min sum (r - A w)^2 / sigma^2
-                   = || r/sigma - (A/sigma) w ||^2   (白化後就是普通最小二乘)
+    sigma=None  -> 無權重最小二乘  min ||r - A w||^2
+    sigma given -> chi^2 最小化    min sum (r - A w)^2 / sigma^2,白化後即普通最小二乘
     nonneg=True -> 用 NNLS 加上 w >= 0 的限制
     """
     good = np.isfinite(r)
@@ -171,10 +150,7 @@ def solve_all(r_fit, sigma_all, A, nonneg, weighted, tag):
 
 
 def evaluate(W, A, spectra, var_all, continuum_shared, chunk=CHUNK):
-    """統一的評測:blank region 平均殘差光譜 + 每條 spaxel 的 reduced chi^2。
-
-    殘差定義(五個方法一致):resid = s - 共用天光連續譜 - A @ w
-    """
+    """統一的評測:blank 平均殘差 (s - 共用連續譜 - A@w) 與每 spaxel reduced chi^2。"""
     nz, n = spectra.shape
     ssum = np.zeros(nz); scnt = np.zeros(nz)
     chi2 = np.zeros(n);  dof  = np.zeros(n)
@@ -222,8 +198,8 @@ blank_sigma = np.sqrt(blank_var)
 
 
 # ---------------------------------------------------------------- 1. 全域線遮罩(用 mean sky)
-# mean sky 只負責一件事:決定「哪些波長通道是天光線」。天光線在每條 spaxel 都落在
-# 同樣的波長,所以一份高 S/N 的全域遮罩就夠;不在單條吵雜的 spaxel 上重跑迭代線偵測。
+# 天光線在每條 spaxel 都落在同樣的波長,一份高 S/N 的全域遮罩就夠,不必在單條吵雜
+# 的 spaxel 上重跑迭代線偵測。
 t0 = time.time()
 mean_sky = np.nanmean(blank_spectra, axis=1)
 continuum_shared, sigma_shared, line_mask, _ = estimate_continuum(
@@ -243,8 +219,6 @@ r_shared = blank_spectra - continuum_shared[:, None]  # 共用連續譜 -> 給 A
 
 
 # ---------------------------------------------------------------- 3. 全因子:2 連續譜 x 2 basis
-# 沒有「特別待遇的基準線」—— 現行 test.py 的兩條路徑本來就是這個矩陣裡的兩格:
-#   (shared, NMF,     unw+nn)    = test.py 的 NMF 路徑
 CONTINUA = {"shared": r_shared,   # 所有 spaxel 共用一條 mean sky 連續譜(現行做法)
             "own":    r_own}      # 每條 spaxel 自己的連續譜(ZAP 做法)
 
@@ -330,7 +304,7 @@ for label, sl in [("全波長", slice(None)), ("只看天光線通道", line_mas
 
 
 # ---------------------------------------------------------------- 6. 圖
-# (a) 固定「連續譜 + 解法」,比三種 basis —— 直接看 clip / 分解方法的效果
+# (a) 固定連續譜與解法,比 basis —— 看 clip / 分解方法的效果
 for cname in CONTINUA:
     for sname, _, _ in SOLVERS:
         plt.figure(figsize=(13, 5))
@@ -344,7 +318,7 @@ for cname in CONTINUA:
         plt.legend(fontsize=8); plt.tight_layout()
         plt.savefig(OUT / f"cmp_basis_{cname}_{sname.replace('+','_')}.png", dpi=150); plt.close()
 
-# (b) 固定「連續譜 + basis」,比四種解法 —— 直接看 chi^2 加權與非負的效果
+# (b) 固定連續譜與 basis,比解法 —— 看 chi^2 加權與非負的效果
 for cname in CONTINUA:
     for kind in BASIS_KINDS:
         plt.figure(figsize=(13, 5))
@@ -373,7 +347,7 @@ plt.title("blank-region goodness of fit")
 plt.legend(fontsize=5); plt.tight_layout()
 plt.savefig(OUT / "reduced_chi2_hist.png", dpi=150); plt.close()
 
-# (d) basis 模板長相對照(同一個連續譜處理下,三種分解方法)
+# (d) 同一個連續譜處理下,各分解方法的 basis 模板長相對照
 for cname in CONTINUA:
     fig, axes = plt.subplots(K, 1, figsize=(13, 1.5 * K), sharex=True)
     for k in range(K):

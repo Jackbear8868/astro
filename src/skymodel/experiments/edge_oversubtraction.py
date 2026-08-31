@@ -1,21 +1,16 @@
 """源邊界的 over-subtraction —— 遮罩外面那一圈被扣掉多少?
 
-問題:SExtractor 的足跡抓得比源實際的延展緊。足跡外面那一圈其實還有源的光,
-但它被當成 blank 擬合。如果那些光被吸進天空模型,扣完之後那一圈會變成「甜甜圈」
-—— 比周圍還低。殘差指標看不到這件事(過度扣除讓殘差更平),只能直接去量那一圈。
+若 SExtractor 的足跡抓得比源實際的延展緊,足跡外那一圈仍帶著源的光卻被當成 blank
+擬合;那些光被吸進天空模型的話,扣完之後那一圈會比周圍低。殘差指標看不到這件事
+(過度扣除讓殘差更平),只能直接去量那一圈。
 
-四張圖:
+  01 環形殘差光譜:以足跡為界往外一圈一圈量平均殘差,和遠場比。負 = 被吃掉。
+  02 甜甜圈影像:某個波段的殘差沿波長壓成一張圖,疊上足跡輪廓。
+  03 徑向剖面:01 依波段收成「殘差 vs 離足跡距離」,多個 run 疊著比,判讀主圖。
+  04 同一個版面,畫的是天空模型自己的超出量。
 
-  01 環形殘差光譜。以足跡為界往外一圈一圈量平均殘差,和遠場比較。
-     負的 = 被吃掉,正的 = 源的光還留在那裡沒被吸走。
-  02 甜甜圈影像。把某個波段的殘差沿波長壓成一張圖,疊上足跡輪廓。
-     01 給數字,02 給「看得見的環」。
-  03 徑向剖面。把 01 依波段收成「殘差 vs 離足跡距離」,多個 run 疊在一起比。
-     這是判讀用的主圖 —— 甜甜圈在這裡會是一個先掉到負值再回到遠場的凹陷。
-
-環一定要「認標籤」。相鄰的源之間可能只隔幾個像素,普通的 binary dilation 一長
-就把它們黏成一塊。這裡用最近標籤(Voronoi)來長:每個 blank 像素只歸給離它最近的
-那一個源,兩個源之間自然在中線停住,永遠不會合併。
+環一定要認標籤:相鄰的源可能只隔幾個像素,普通 dilation 一長就把它們黏成一塊。
+這裡用最近標籤(Voronoi)長,每個 blank 像素只歸給最近的源,兩源停在中線。
 
     conda run -n astro python src/skymodel/experiments/edge_oversubtraction.py \\
         --work results/skymodel/p01
@@ -37,24 +32,21 @@ from products import fit_dirs                             # noqa: E402
 ROOT    = Path(__file__).resolve().parents[3]
 OUTDIR  = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
-# 環的分界(px)。內圈窄、外圈寬 —— 效應如果存在,一定集中在貼著足跡的頭幾個像素,
-# 外面只是拿來當「已經回到正常」的對照,不需要解析度。
+# 環的分界(px)。內圈窄、外圈寬:效應集中在貼著足跡的頭幾個像素,外圈只是對照。
 RINGS = [(0, 1), (1, 2), (2, 3), (3, 5), (5, 8), (8, 12), (12, 20), (20, 40)]
 
 # 報表用的波段。
 BANDS = [(4700, 5000), (5000, 6000), (6000, 7000), (7000, 8000), (8000, 9300)]
 
-# 原始 cube 裡有極端壞 voxel,數量極少,但一個就足以主宰一整格波段的平均。
-# 剔的是 voxel 不是通道 —— 壞的是那幾個 spaxel 在那個波長,不是整個通道。
+# 一個極端壞 voxel 就主宰一整格波段的平均。剔的是 voxel,不是整個通道。
 WILD = 1e3
 
 
 def rings_by_label(seg, max_dist):
     """回傳 (dist, owner):每個像素到最近源足跡的距離,以及那個源的 ID。
 
-    distance_transform_edt 算的是「到零元素的距離」,所以餵 seg == 0 會得到
-    「每個 blank 像素離最近的源多遠」。return_indices 另外給出最近的那個源像素
-    的座標,拿它去查 seg 就是「這個 blank 像素屬於誰」。
+    distance_transform_edt 算到零元素的距離,餵 seg == 0 就是每個 blank 像素離最近
+    的源多遠;return_indices 給出那個源像素的座標,查 seg 便知屬於誰。
     """
     dist, (iy, ix) = ndimage.distance_transform_edt(seg == 0, return_indices=True)
     owner = seg[iy, ix]
@@ -71,9 +63,8 @@ def band_mean(wl, spec, lo, hi):
 def make_groups(seg, white, owner, main_id):
     """把源分組。主源自己一組,其餘依白光總流量的中位數切成亮、暗兩半。
 
-    亮/暗這一刀是**對照組**,不是為了好看:如果環上的超出量來自源的光漏出去,
-    它必須隨源的亮度而變;如果它只是天空本身的空間梯度,亮暗兩組應該一樣。
-    白光是獨立於擬合的量,拿它分組不會有「用結果去挑樣本」的循環。
+    亮/暗這一刀是對照組:超出量若來自源的光漏出去就必須隨亮度而變,若只是天空的
+    空間梯度則兩組一樣。白光獨立於擬合,分組不會用到結果。
     """
     others = np.array([i for i in np.unique(seg[seg > 0]) if i != main_id])
     flux   = np.array([np.nansum(white[seg == i]) for i in others])
@@ -87,9 +78,8 @@ def make_groups(seg, white, owner, main_id):
 def ring_spectra(D, dist, groups, far):
     """回傳 {區域名: (平均光譜, spaxel 數)}。D 可以是殘差,也可以是天空模型。
 
-    極端壞 voxel 先換成 NaN 再平均 —— 丟掉的 voxel 極少,但不做的話那幾個極端值
-    會主宰整個平均。源足跡內部本來就有大訊號,不能用同一把尺去砍,所以門檻放在
-    1000(遠高於天空殘差、遠低於那些壞值)。
+    極端壞 voxel 先換成 NaN 再平均。源足跡內部本來就有大訊號,所以門檻 WILD 取在
+    遠高於天空殘差的量級。
     """
     def avg(m):
         sub = D[:, m]
@@ -149,9 +139,8 @@ def main():
     for run in args.run:
         D = fits.getdata(cubedir[run] / "sky_subtracted.fits").astype(np.float32)
         spec = ring_spectra(D, dist, groups, far)
-        # 天空模型本身。殘差看的是「留下多少」,天空模型看的是「扣掉多少」——
-        # blank 的 s 固定成 1 時 s·C_sky 對每個 spaxel 都一樣,所以天空模型在環上
-        # 的任何超出量,只能來自天光線係數 cₖ 把源的光吸了進去。
+        # 殘差看「留下多少」,天空模型看「扣掉多少」;blank 的 s 固定成 1 時 s·C_sky
+        # 處處相同,環上的超出量只能來自係數 cₖ 吸進了源的光。
         S = fits.getdata(cubedir[run] / "sky_model.fits").astype(np.float32)
         sspec = ring_spectra(S, dist, groups, far)
         del S
@@ -162,9 +151,8 @@ def main():
         for k, (s, n) in spec.items():
             print(f"{k:<24}{n:>8,}"
                   + "".join(f"{band_mean(wl, s, a, b):>11.4f}" for a, b in BANDS))
-        # 光的去向。環上比遠場多出來的光只有兩個去處:留在殘差裡(源被保住),
-        # 或進了天空模型(源被扣掉)。兩者相加是資料本身的性質,不該隨擬合方式改變
-        # —— 這一欄同時是量測結果,也是這套量法的自我檢查。
+        # 環上多出來的光只有兩個去處:留在殘差裡,或進了天空模型;兩者相加不該隨
+        # 擬合方式改變,所以這一欄也是自我檢查。
         sfar = sspec["far field"][0]
         print("\n環上多出來的光去了哪裡(5000-6000 A,皆已減掉遠場)")
         print(f"{'group':<20}{'ring':>8}{'留在殘差':>10}{'進天空模型':>12}"
@@ -231,8 +219,8 @@ def main():
         del D
 
     # ---- 03 徑向剖面(列 = 分組,行 = run,同一列共用 y 軸才比得動) ---------
-    # x 用等距的序號而不是真實距離。環的寬度本來就不等(1px 到 20px),用真實距離
-    # 畫的話內圈幾個點會擠成一團;用 log 軸則會冒出一堆小刻度蓋掉環的標籤。
+    # x 用等距序號而不是真實距離:環寬本來就不等,真實距離會把內圈幾個點擠成一團,
+    # log 軸則會冒出一堆小刻度蓋掉環的標籤。
     xr = np.arange(len(RINGS) - 1)
     fig, ax = plt.subplots(len(gnames), len(args.run), squeeze=False,
                            figsize=(5.2 * len(args.run), 4.6 * len(gnames)))
@@ -267,8 +255,8 @@ def main():
     plt.close(fig)
 
     # ---- 04 天空模型的超出量 ----------------------------------------------
-    # 和 03 同一個版面,但畫的是天空模型減掉遠場的天空模型。真正的天空不知道
-    # 附近有沒有源,所以任何隨「離足跡多遠」變化的趨勢都是污染,不是天空。
+    # 和 03 同版面,但畫天空模型減掉遠場的天空模型。真正的天空不知道附近有沒有源,
+    # 任何隨「離足跡多遠」變化的趨勢都是污染。
     fig, ax = plt.subplots(len(gnames), len(args.run), squeeze=False,
                            figsize=(5.2 * len(args.run), 4.6 * len(gnames)))
     for row, g in enumerate(gnames):

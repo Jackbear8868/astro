@@ -1,34 +1,24 @@
 """The s field of every exposure, on one fixed colour scale.
 
 s_shape_map draws one pointing at a time, each on its own robust colour scale. That
-gives every map the most contrast it can have, but it also means no two of them are on
-the same ruler: one pointing's scale is +/-0.017 and another's is +/-0.041, so the same
-amount of striping is painted a different strength in each, and whether the structure
-in s is the same from exposure to exposure cannot be read off those figures.
+gives every map the most contrast it can have, but no two are then on the same ruler:
+the same amount of striping is painted a different strength in each, so structure
+cannot be compared between exposures.
 
-Here every panel is drawn on **one absolute scale**, in s itself. Nothing is
-recentred: the exposures differ in their overall level of s by 0.0077 (medians from
-0.9942 to 1.0019) while the structure spans about +/-0.024, so a fixed scale shows the
-structure and the level difference at the same time, and the colour of a spaxel means
-the same thing in every panel.
+Here every panel is drawn on one absolute scale, in s itself, and nothing is
+recentred, so a difference in overall level and the structure inside one exposure show
+up together and a spaxel's colour means the same thing in every panel. The default
+limits are the pooled p2/p98 of everything drawn, made symmetric about 1.0, and are
+printed. s = 1 is the natural centre -- "this spaxel has exactly the sky continuum the
+mean sky has" -- so red and blue read as more and less sky than average.
 
-The default limits come from the pooled p2/p98 of everything being drawn, made
-symmetric about 1.0, and are printed. s = 1 is the natural centre: it is "this spaxel
-has exactly the sky continuum the mean sky has", so red and blue read as more and less
-sky than average rather than as more and less than some fitted number.
+--which both puts s_free and s_hat on that one scale as well, the only way the pair
+can be read against each other: s_hat is the fit and s_free is what it was fitted to,
+and two rulers would make that comparison meaningless. It costs contrast in s_hat,
+because s_free also carries the per-spaxel solving noise, so the single-kind runs each
+on their own pooled scale stay available.
 
---which both puts s_free and s_hat on that one scale as well, which is the only way
-the pair can be read against each other: s_hat is the fit and s_free is what it was
-fitted to, so "how far the fit moved this spaxel" is a comparison between the two
-images, and two rulers would make that comparison meaningless. It costs contrast in
-s_hat -- s_free carries the per-spaxel solving noise and is about 2.5x the spread --
-so the single-kind runs, each on its own pooled scale, stay available for looking at
-one of them alone.
-
-    conda run -n astro python src/skymodel/evaluation/s_compare.py
-    conda run -n astro python src/skymodel/evaluation/s_compare.py --separate
     conda run -n astro python src/skymodel/evaluation/s_compare.py --which both --separate
-    conda run -n astro python src/skymodel/evaluation/s_compare.py --which free --vmin 0.94 --vmax 1.06
 """
 import argparse
 import json
@@ -54,15 +44,11 @@ S_FILE = {"hat":  "sky_continuum_amplitude_field.npy",
 def s_dir(work, pattern=None):
     """Where this pointing's two sky continuum amplitude files live.
 
-    The pipeline writes them straight into step05, but the 14-pointing runs were made
-    into named run directories under it, and the name carries that pointing's template
-    count (blank_svdK30_tpl38_sfield), so no single literal name fits all 14. pattern
-    is therefore a glob.
-
-    Without a pattern the newest run wins, since that is what "this pointing's s field"
-    normally means. Which one it was is returned so the caller can print it -- a run
-    picked by date is a choice, and a choice the reader cannot see is what makes two
-    figures silently incomparable.
+    The pipeline writes them straight into step05, but a run can also sit in a named
+    subdirectory whose name carries that pointing's template count, so no single literal
+    name fits every pointing and pattern is a glob. Without a pattern the newest run
+    wins. Which one it was is returned so the caller can print it -- a run picked by
+    date is a choice, and an invisible choice makes two figures silently incomparable.
     """
     d = Path(work) / "step05"
     runs = [x for x in d.glob(pattern if pattern else "*")
@@ -81,12 +67,9 @@ def draw(ax, a, seg, vmin, vmax, color, width, halo):
     im = ax.imshow(a, origin="lower", cmap=S_CMAP, vmin=vmin, vmax=vmax)
     if width > 0:
         # RdBu_r runs dark blue -> white -> dark red, so no single colour is legible
-        # against all of it: black weakens in the saturated corners, white weakens
-        # near s = 1. The halo -- a wider line of the opposite tone drawn underneath --
-        # removes that dependence entirely, at the cost of a heavier line. It is off
-        # by default because on these fields most of the outline runs through the pale
-        # middle of the scale, where plain black is already clear; turn it on when a
-        # field is saturated enough for the outline to be lost in it.
+        # against all of it: black weakens in the saturated corners, white weakens near
+        # s = 1. A wider line of the opposite tone underneath removes that dependence
+        # at the cost of a heavier line, so it is off unless a field saturates.
         if halo:
             ax.contour(seg > 0, levels=[0.5], colors=halo, linewidths=width * 3.0,
                        alpha=0.9)
@@ -158,9 +141,8 @@ def main():
     if not got:
         raise SystemExit(f"nothing to plot for --which {args.which}")
 
-    # Pooled over every array being drawn -- across pointings, and across s_free and
-    # s_hat when both are asked for. A ruler made from one of them would be that one's
-    # ruler, and the other would be measured with it.
+    # Pooled over every array drawn -- across pointings, and across s_free and s_hat
+    # when both are asked for, so neither one's spread becomes the other's ruler.
     pool = np.concatenate([a[np.isfinite(a)] for _, a, _, _, _ in got])
     lo, hi = np.percentile(pool, [args.pct, 100 - args.pct])
     # Symmetric about 1.0. s = 1 means "exactly the mean sky's continuum", so putting
@@ -207,8 +189,8 @@ def main():
         cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.012)
         cb.set_label(f"s$_\\mathrm{{{kind}}}$", fontsize=10)
 
-    # Only a non-default outline goes into the name -- otherwise every existing
-    # filename would change for a setting that did not change.
+    # Only a non-default outline goes into the name, so a setting left alone does not
+    # rename the figure.
     seg_tag = "" if (args.seg_color, args.seg_width, args.seg_halo) == ("black", 1.2, "none") \
         else f"_seg{args.seg_color.lstrip('#')}w{args.seg_width:g}"
     if args.colorbar:
@@ -223,11 +205,9 @@ def main():
                 if not args.colorbar:
                     # Nothing outside the axes is left to make room for.
                     fig.subplots_adjust(0, 0, 1, 1)
-                # The scale goes into the filename: the same pointing drawn on two
-                # scales is two different figures, and sharing a name lets one replace
-                # the other. It is also how "these two were drawn on one ruler" is
-                # visible without opening them -- the s_free and s_hat files of a
-                # --which both run carry the same range.
+                # The scale goes into the filename: the same pointing on two scales
+                # is two different figures, and one name would let one replace the
+                # other. It also shows which files share a ruler without opening them.
                 o = (pointing_dir(name, "sfield")
                      / f"s_{k}_{vmin:.3f}-{vmax:.3f}{seg_tag}.png")
                 fig.savefig(o, dpi=args.dpi, bbox_inches="tight")

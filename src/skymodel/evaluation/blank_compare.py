@@ -1,37 +1,27 @@
 """What is left in the blank region after the sky is taken out -- ours against ESO's.
 
 Blank has no source in it, so after a perfect sky subtraction its mean spectrum is
-zero: no continuum, no residual sky lines, nothing but noise averaged down by the
-number of spaxels. Anything else is what the sky model got wrong. Two pipelines can
-therefore be compared directly, because both are being measured against the same right
-answer rather than against each other.
+zero: no continuum, no residual sky lines, only noise averaged down. Anything else is
+what the sky model got wrong, and both pipelines are measured against that same answer.
 
     ours   the mean of our sky_subtracted cube over the blank spaxels
     ESO    the mean of the ESO nosky cube over the same spaxels
 
---diff adds a lower panel with their difference. Since both are the same data minus a
-sky,
+--diff adds a lower panel with their difference. Both curves are the same data minus a
+sky, so it is (data - our sky) - (data - ESO sky) = ESO sky - our sky, the two sky
+models differenced with the data cancelled out. Off by default: read against zero, the
+panel above already says how far each is.
 
-    (data - our sky) - (data - ESO sky) = ESO sky - our sky
-
-it is the difference between the two sky models as they were actually applied, with
-the data cancelled out of it. It is off by default: when both curves are being read
-against zero, subtracting one from the other answers a question nobody asked -- how
-far each is from zero is already in the panel above.
-
---mode sky compares the inputs instead: our blank mean sky (step3's
-blank_mean_spectrum, the sky as observed) against wsky - nosky (the sky ESO chose to
-remove). That answers a
-different question -- what the two think the sky *is*, rather than what each leaves
-behind -- and its --diff panel is mean(nosky) in blank.
+--mode sky compares the inputs instead -- our blank mean sky (step3's
+blank_mean_spectrum, the sky as observed) against wsky - nosky, the sky ESO chose to
+remove -- and its --diff panel is mean(nosky) in blank.
 
 Same spaxels, one procedure
 ---------------------------
-The blank mask is rebuilt from step03/meta.json -- the same seg and the same --xlim /
---ylim / --exclude-box -- so both curves are averaged over identical spaxels with
-identical sigma-clipping. A spaxel must be spectrally complete in both cubes: a
-channel missing from either has no comparison to make. How many that leaves is
-printed, since our cube and ESO's do not carry NaN in the same places.
+The blank mask is rebuilt from step03/meta.json, the same seg and the same --xlim /
+--ylim / --exclude-box, so both curves are averaged over identical spaxels with
+identical sigma-clipping. A spaxel must be spectrally complete in both cubes; how many
+that leaves is printed, because the two do not carry NaN in the same places.
 
     conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/blank_compare.py --work results/skymodel/p07 \\
@@ -58,13 +48,10 @@ from products import spectrum_stats  # noqa: E402
 
 C_OURS, C_ESO, C_RESID, C_ZERO = "#1f77b4", "#e8710a", "#b30000", "0.55"
 
-# What products.spectrum_stats returns, in the order it is shown, with the label used on
-# the figure. rms_from_zero keeps its full name: "rms" alone is unambiguous only while
-# sigma is next to it, and a number quoted out of the figure loses that.
-#
-# One format for every row and both blocks. With %g the two columns choose their own
-# precision from their own magnitude -- 0.032115 next to 0.5693 -- and the eye reads
-# the difference in decimal places as a difference in the numbers.
+# What products.spectrum_stats returns, in display order, with the figure's label.
+# rms_from_zero keeps its full name: "rms" alone is unambiguous only while sigma is
+# next to it. One format for every row and both blocks -- with %g each column would
+# pick its own precision, and a gap in decimal places reads as a gap in the numbers.
 STATS = [("mean", "mean"), ("sigma", "sigma"), ("skewness", "skewness"),
          ("kurtosis", "kurtosis"), ("rms_from_zero", "rms_from_zero")]
 FMT = "{:.4f}"
@@ -72,11 +59,8 @@ CHUNK = 200
 
 
 def blank_mask(work, meta):
-    """The blank spaxels step3 used, rebuilt from its meta.
-
-    Not "blank" in general -- *that* run's blank. A comparison made on a different
-    set of spaxels than the number it is compared against is not a comparison.
-    """
+    """The blank spaxels step3 used, rebuilt from its meta -- that run's blank, not
+    blank in general, since two numbers over different spaxels are not a comparison."""
     white = fits.getdata(work / "step01/whitelight_nosky.fits")
     seg_p = ROOT / meta["seg"] if not Path(meta["seg"]).is_absolute() else Path(meta["seg"])
     seg = fits.getdata(seg_p)
@@ -101,10 +85,9 @@ def data_hdu(h):
 def our_cube(work, pattern=None):
     """Our sky_subtracted for this pointing, and the run directory it came from.
 
-    step6 writes it into step06; the 14-pointing runs wrote it into named directories
-    under step05 whose names carry that pointing's template count, so no literal name
-    fits all 14 and the pattern is a glob. Without one the newest wins, and the name is
-    returned so the caller can print which run the figure is actually about.
+    step6 writes it into step06, but a run under step05 can be named anything, so the
+    selector is a glob and without one the newest wins. The directory is returned so
+    the caller can say which run the figure is about.
     """
     d = Path(work) / "step05"
     runs = [x for x in d.glob(pattern if pattern else "*")
@@ -121,18 +104,14 @@ def our_cube(work, pattern=None):
 def collapse(x, clip, statistic):
     """Collapse the blank spaxels of a chunk of channels into one spectrum.
 
-    mean -- step3's rule, verbatim: robust centre and spread to decide what to reject,
-    but the final average is the mean. The mean is the unbiased estimate of the level,
-    which is what "did the sky come out" is asking.
+    mean -- step3's rule verbatim: a robust centre and spread decide what to reject, but
+    the average is the mean, the unbiased estimate of the level the question asks for.
 
-    median -- the level that half the blank spaxels are above. It cannot be moved by
-    any minority of spaxels, however extreme, so it answers a different question:
-    what a typical blank spaxel looks like, rather than what the region as a whole
-    sums to. On a right-skewed cross-spaxel distribution the two are not the same
-    number, and the gap between them is itself a measurement.
+    median -- the level half the blank spaxels are above, which no minority can move
+    however extreme. It says what a typical blank spaxel looks like rather than what
+    the region sums to; on a skewed distribution the gap between them is a measurement.
 
-    Returns (spectrum, rejected, total) -- the last two are 0 for the median, which
-    rejects nothing.
+    Returns (spectrum, rejected, total); the last two are 0 for the median.
     """
     if statistic == "median":
         return np.median(x, axis=1).astype(np.float64), 0, 0
@@ -146,9 +125,9 @@ def collapse(x, clip, statistic):
 def robust_range(y, pct=0.5, pad=0.35):
     """A y range set by the spectrum, not by its worst channel.
 
-    Percentiles rather than min/max: a handful of dead or hot channels is enough to
-    stretch the axis until everything real is a flat line on zero. Zero is always
-    inside the range -- it is the value these spectra are being read against.
+    Percentiles rather than min/max: a few dead or hot channels would stretch the axis
+    until everything real is flat on zero. Zero stays inside, being what these spectra
+    are read against.
     """
     lo, hi = np.percentile(y[np.isfinite(y)], [pct, 100 - pct])
     m = pad * max(hi - lo, 1e-9)
@@ -158,10 +137,9 @@ def robust_range(y, pct=0.5, pad=0.35):
 def check_against_step3(work, wl, ours):
     """Does the reconstruction land on step3's own blank mean spectrum?
 
-    Not expected to be zero: step3 kept the spaxels complete in wsky, this keeps the
-    ones complete in both cubes, and a different sample gives a different mean. It is
-    reported as a fraction of the level, and with where the worst of it is, because on
-    a bright sky line a small fractional change is a large number.
+    Not expected to be zero: step3 kept the spaxels complete in wsky, this keeps those
+    complete in both cubes, and a different sample gives a different mean. Reported as a
+    fraction and with the worst channel, a bright sky line making a small fraction large.
     """
     saved = np.load(Path(work) / "step03/blank_mean_spectrum.npy")
     d = np.abs(ours - saved)
@@ -216,9 +194,8 @@ def main():
         if not nosky.is_absolute():
             nosky = ROOT / nosky
     else:
-        # DATACUBE_FINAL_7.fits -> DATACUBE_FINAL_ESOSKY_7.fits. Derived rather than
-        # guessed at by pointing number: the pointing directory name and the cube
-        # number are not the same thing in every run.
+        # DATACUBE_FINAL_7.fits -> DATACUBE_FINAL_ESOSKY_7.fits, derived from the name
+        # rather than the pointing number, which is not always the same thing.
         mo = re.fullmatch(r"DATACUBE_FINAL_(\d+)\.fits", wsky.name)
         if not mo:
             raise SystemExit(f"cannot derive the ESO cube from {wsky.name}; pass --nosky")
@@ -226,9 +203,8 @@ def main():
     if not nosky.exists():
         raise SystemExit(f"{nosky} does not exist")
 
-    # The two cubes to average, and what each curve is called. In residual mode the
-    # left one is our own product; in sky mode it is the raw cube, and the ESO curve
-    # becomes a difference, which is why the second entry is a pair.
+    # The two cubes to average, and what each curve is called. In sky mode the left one
+    # is the raw cube and the ESO curve becomes a difference.
     if args.mode == "residual":
         run = our_cube(W, args.run)
         if run is None:
@@ -272,10 +248,8 @@ def main():
             print(f"    coverage {min(j + CHUNK, nz)}/{nz}", end="\r", flush=True)
         print(" " * 34, end="\r")
         complete = cw & cn
-        # The two counts are reported separately because they are different facts.
-        # cw is step3's own sample -- meta's n_blank_used is the mask before this
-        # filter, not after it. cn is how much of blank the ESO cube still has a
-        # complete spectrum for, and it is the smaller of the two.
+        # Two counts, two facts: cw is step3's own sample (meta's n_blank_used is the
+        # mask before this filter), cn is what the ESO cube still has complete.
         print(f"  spectrally complete: ours {int(cw.sum()):,}   ESO {int(cn.sum()):,}"
               f"   both {int(complete.sum()):,}   of {int(m.sum()):,} blank")
 
@@ -288,8 +262,7 @@ def main():
             b = np.asarray(dn.data[j:j + CHUNK], np.float32)[:, m][:, complete]
             ours[j:j + a.shape[0]], r, t = collapse(a, clip, args.statistic)
             rej += r; tot += t
-            # sky mode's ESO curve is a difference of cubes, residual mode's is the
-            # ESO cube itself.
+            # In sky mode the ESO curve is a difference of cubes, not the ESO cube.
             eso[j:j + a.shape[0]], _, _ = collapse(
                 a - b if args.mode == "sky" else b, clip, args.statistic)
             print(f"    averaging {min(j + CHUNK, nz)}/{nz}", end="\r", flush=True)
@@ -313,8 +286,7 @@ def main():
         print(f"    {lab:<14}"
               + "".join(f"{FMT.format(st[k]):>{lw + 2}}" for k, _ in STATS))
 
-    # One row when the difference is off, so the two curves get the whole canvas
-    # instead of the figure keeping an empty half.
+    # One row when the difference is off, so the two curves get the whole canvas.
     h = args.figsize[1] if args.diff else args.figsize[1] * 0.62
     fig = plt.figure(figsize=(args.figsize[0], h))
     if args.diff:
@@ -329,24 +301,17 @@ def main():
         ax1 = None
         sax = fig.add_subplot(gs[0, 1])
 
-    # ours thick, ESO thin on top: at the same width the two would coincide and a
-    # hidden line could not be told from a line that was never drawn -- which is the
-    # question the panel is there to answer.
     if args.mode == "residual":
-        # In residual mode zero is the answer both are being measured against, so the
-        # line is drawn and the panel is not allowed to autoscale away from it.
+        # In residual mode zero is the answer both are measured against, so it is drawn.
         ax0.axhline(0, lw=0.9, color=C_ZERO)
-    # ESO underneath, thicker and faded; ours on top, thin and solid. Whichever is
-    # drawn last wins where they overlap, and our curve is the one being examined.
-    # The alpha is on the lower curve only: on the upper one it would blend our blue
-    # with whatever is behind it, exactly where it needs to be legible.
+    # ESO underneath, thicker and faded; ours on top, thin and solid, since whatever is
+    # drawn last wins where they overlap and equal widths would hide one curve outright.
+    # The alpha is on the lower curve only, or our blue would blend with the background.
     ax0.plot(wl, eso, lw=1.3, color=C_ESO, alpha=args.alpha, zorder=2, label=lab_b)
     ax0.plot(wl, ours, lw=0.7, color=C_OURS, zorder=4, label=lab_a)
     ax0.set_ylabel("flux")
-    # Drawing order -- ESO, then ours -- so the legend reads the same way round as
-    # the figure was built. It sits above the axes rather than inside: with the y range
-    # tightened onto our curve the panel is full at the top, and a legend in the corner
-    # would cover the ESO residuals that the corner is there to show.
+    # The legend follows the drawing order, and sits above the axes rather than inside:
+    # the panel is full at the top, where a legend would cover the ESO residuals.
     ax0.legend(fontsize=11, loc="lower left", bbox_to_anchor=(0, 1.005), ncol=2,
                frameon=False, borderaxespad=0)
     ax0.grid(alpha=0.2)
@@ -370,8 +335,8 @@ def main():
         ax1.set_ylim(*(args.resid_ylim if args.resid_ylim else robust_range(resid)))
 
     sax.axis("off")
-    # Right-aligned values in a fixed-width column, so the two blocks line up digit
-    # for digit and can be compared by eye without reading the numbers.
+    # Right-aligned in a fixed-width column, so the blocks line up digit for digit and
+    # can be compared by eye without reading the numbers.
     w = max(len(FMT.format(v)) for y in (ours, eso, resid)
             for v in spectrum_stats(y).values())
 
@@ -381,9 +346,8 @@ def main():
             f"{name:<{lw}} = {FMT.format(st[k]):>{w}}" for k, name in STATS),
             transform=sax.transAxes, color=colour, va="top",
             family="monospace", fontsize=10)
-    # Same order as the legend, which is the order the two were drawn in. Three lists
-    # of the same pair on one figure disagreeing about which comes first is a way to
-    # misread a number as belonging to the other curve.
+    # Same order as the legend and the drawing: three lists of the same pair in
+    # different orders is a way to read a number as the other curve's.
     block(lab_b, eso, C_ESO, 0.98)
     block(lab_a, ours, C_OURS, 0.72)
     if args.diff:

@@ -1,18 +1,13 @@
 """What the sky-line basis is learned from: mean sky minus the sky continuum.
 
-step3 subtracts the continuum from every blank spaxel and learns K basis vectors
-from what is left, so the residual is the sky-line spectrum with the smooth part
-taken out. The training matrix itself is per spaxel and is never written to disk
--- it is nz x n_blank, tens of thousands of columns -- but its sigma-clipped mean
-is exactly mean_sky - C_sky, because C_sky is one value per channel and shifts
-every spaxel by the same amount. That is the curve drawn here.
+step3 subtracts the continuum from every blank spaxel and learns K basis vectors from
+what is left. The per-spaxel training matrix is never written to disk, but its
+sigma-clipped mean is exactly mean_sky - C_sky, since C_sky is one value per channel
+and shifts every spaxel alike, and that is the curve drawn here. Being a mean, it shows
+the lines the basis has to describe but not how much they vary between spaxels, which
+is the part the basis exists to capture; step3's threshold is drawn as a band for
+that.
 
-Being the mean, it shows the lines the basis has to describe but not how much they
-vary between spaxels, which is the part the basis exists to capture. The sky line
-threshold, also written by step3, is drawn as a band for that.
-
-    conda run -n astro python src/skymodel/evaluation/sky_line_residual.py \\
-        --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/sky_line_residual.py \\
         --work results/skymodel/p01 --ylim -10 80 --no-band
 """
@@ -52,8 +47,7 @@ def main():
     wl = np.load(d / "wavelength.npy")
     ms = np.load(d / "blank_mean_spectrum.npy")
     C  = np.load(d / "sky_continuum.npy")
-    # The threshold is stored per iteration; the last row is the one step3 finished
-    # with.
+    # The threshold is stored per iteration; the last row is what step3 finished with.
     sg = np.load(d / "continuum_iterations.npz")["threshold"][-1]
     res = ms - C
 
@@ -62,8 +56,8 @@ def main():
           f"   min {res.min():8.2f}")
     print(f"  continuum  median {np.median(C):7.3f}")
     # The residual is not centred on zero and is not meant to be: the continuum is
-    # fitted only on the channels that survived the line mask, so on line channels
-    # it is an interpolation, and the lines it did not describe are what is left.
+    # fitted only on channels that survived the line mask, so elsewhere it interpolates
+    # and the lines it did not describe are what is left.
     print(f"  channels above zero {int((res > 0).sum()):,} / {res.size:,}"
           f"  ({100 * (res > 0).mean():.1f}%)")
 

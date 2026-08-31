@@ -1,35 +1,25 @@
 """The white light image of the input cube (with sky) -- what the sky looks like, and
 whether the mask covers the galaxy.
 
-What this draws is **the raw data before any sky subtraction**, not our product. It
-answers two questions that should be settled before entering the pipeline:
+This draws the raw data before any sky subtraction, not our product, and answers two
+questions that belong before the pipeline: what the spatial structure of the sky is
+(flat? striped? how large?), and whether the outline of seg covers the range the galaxy
+extends to. Whatever it does not cover is taken as blank and used to learn the sky,
+which amounts to learning the galaxy's own light as sky and then subtracting it.
 
-    the spatial structure   is it flat? is there striping? how large is the
-    of the sky              amplitude?
-    is the mask big         does the outline of seg cover the range the galaxy
-    enough                  actually extends to -- the part it does not cover gets
-                            taken as blank and used to learn the sky, which amounts
-                            to learning the galaxy's own light as sky and then
-                            subtracting it
-
-Where the contrast comes from
------------------------------
-The sky continuum is a pedestal of about 52, while the structure we want to look at is
-only 1% of it. Stretching the raw values directly, the pedestal would use up the whole
-colour scale and the figure would be a uniform colour -- not because the data are
-flat, but because the colour scale was wasted.
-
-So the blank median is subtracted first, then it is divided by the robust spread of
-blank, and only then asinh is applied:
+The sky continuum is a large pedestal and the structure of interest a small fraction of
+it, so stretching the raw values would spend the whole colour scale on the pedestal and
+give a uniform figure -- flat because the scale was wasted, not because the data are.
+The blank median is subtracted first, the result divided by the robust spread of blank,
+and asinh applied last:
 
     z = (flux − sky) / sigma_blank
 
-0 is the sky, the unit of the colour scale becomes "how many sigma above the sky", and
-the three levels -- the striping of the sky (about 1 sigma), the faint sources (2-4)
-and the core of the galaxy (about 9) -- are all visible at the same time.
+0 is the sky and the unit of the colour scale becomes "how many sigma above the sky",
+which puts the sky's striping, the faint sources and the galaxy core on one scale.
 
 Bad voxels are rejected by common.collapse (a sigma-clip across spaxels, clipping only
-blank), so cosmic rays do not leave spurious bright spots on the figure.
+blank), so cosmic rays leave no spurious bright spots.
 
     conda run -n astro python src/skymodel/evaluation/whitelight_wsky.py --work results/skymodel/p01
 """
@@ -69,10 +59,8 @@ def main():
 
     blank = valid & (seg == 0)
     sky = float(np.nanmedian(img[blank]))
-    # The spread uses percentiles rather than the standard deviation: the part of the
-    # galaxy spilling outside the mask also falls inside blank, and it would inflate
-    # the standard deviation, loosening the colour scale with it until the striping is
-    # no longer visible.
+    # Percentiles rather than the standard deviation: any source light falling inside
+    # blank would inflate it, loosening the colour scale until the striping is lost.
     sig = float(np.nanpercentile(img[blank], 84)
                 - np.nanpercentile(img[blank], 16)) / 2
     z = (img - sky) / sig

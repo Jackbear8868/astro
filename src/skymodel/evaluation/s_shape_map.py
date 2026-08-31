@@ -1,34 +1,24 @@
 """The spatial shape of the sky continuum coefficient s -- one figure per pointing.
 
-What s is
----------
 For every spaxel step5 solves D(λ) = s·C_sky(λ) + Σₖ cₖ·Lₖ(λ). s is the amplitude of
-the sky continuum, one number per pixel. Ideally it should be smooth (airglow does not
-change abruptly on scales of tens of arcsec), so the spatial map of s is a direct
-check on whether the sky model is reasonable.
+the sky continuum, one number per pixel, and airglow does not change abruptly on scales
+of tens of arcsec, so the spatial map of s is a direct check on the sky model.
 
-What the two figures are (both are files step5 has already written; this script does
-not recompute them)
-------------------------------------------------------------------------------------
-Written into results/skymodel/evaluation/{pNN}/ as s_free.png and s_hat.png, one
-each, on a colour scale they share. The figures carry no colour bar, so that scale
-is printed to the terminal instead -- read it from there when a number is needed.
+Both figures are files step5 already wrote; nothing is recomputed here. They go into
+results/skymodel/evaluation/{pNN}/ as s_free.png and s_hat.png on a colour scale they
+share, and carry no colour bar -- that scale is printed to the terminal instead.
 
-    s_free   the free per-pixel solution in blank. Only blank has values, and the
-             positions of the sources are holes.
-             It carries the solving noise, and **next to a source it gets propped up
-             by the source's light** -- which is exactly the entry point of
-             over-subtraction: s grows -> the sky model grows -> the source's light
-             gets subtracted as if it were sky.
-    s_hat    the fitted field mu + a(y) + b(x). It is trained only on the pixels far
-             from the sources, so the pixel next to a source has no say, and it
-             reaches into the holes (a(y) is a parameter shared by a whole row, not a
-             neighbourhood average).
+    s_free   the free per-pixel solution in blank. Only blank has values and the
+             sources are holes. It carries the solving noise, and it is where
+             over-subtraction starts: source light propping s up grows the sky model,
+             which then subtracts that light as if it were sky.
+    s_hat    the fitted field mu + a(y) + b(x), trained only on pixels far from the
+             sources, so the pixel next to a source has no say. It reaches into the
+             holes, since a(y) is shared by a whole row, not a neighbourhood average.
 
-The field step6 actually applies is this same s_hat with the spaxels step6 did not
-solve left out (the low-coverage border), so it is not drawn separately -- it would be
-the same field with a piece missing. Which spaxels those were is np.isfinite of any
-channel of step06/sky_model.fits.
+step6 applies this same s_hat minus the spaxels it did not solve (the low-coverage
+border), so that field is not drawn separately; which spaxels those were is
+np.isfinite of any channel of step06/sky_model.fits.
 
     conda run -n astro python src/skymodel/evaluation/s_shape_map.py --work results/skymodel/p01
 """
@@ -80,25 +70,20 @@ def main():
     for a in (per_spaxel, field):
         a[~valid] = np.nan
 
-    # The colour scale is shared by both panels, otherwise "which one is higher" could
-    # not be seen. Both the centre and the range are decided by s_free -- it is the
-    # raw measurement and s_hat is its fit, and letting the fit set the ruler would
-    # hide the fit's own bias.
+    # One colour scale for both, or "which is higher" could not be seen. Centre and
+    # range come from s_free: it is the raw measurement, and letting its fit set the
+    # ruler would hide the fit's own bias.
     c, lo, hi = diverging_range(per_spaxel)
     if args.half_width is not None:
         lo, hi = c - args.half_width, c + args.half_width
 
-    # One file each. Side by side the two would have to share a canvas width, and
-    # the striping in s is only a couple of percent -- at half the width it is not
-    # resolved. The shared colour scale is what makes them comparable, not being
-    # printed next to each other.
-    # The run goes into the filename. A pointing can hold several step05 runs
-    # (p03 has three), they all write the same two amplitude files, and without this
-    # the second run's figures silently replace the first's.
+    # One file each: side by side they would share a canvas width, and the structure
+    # in s is a small fraction of its level, so half the width does not resolve it.
+    # The shared colour scale is what makes them comparable. The run goes into the
+    # filename because every step05 run writes the same two amplitude files.
     out = pointing_dir(W.name)
     tag = "" if args.run in (None, "default") else f"_{args.run}"
-    # --half-width changes the colour scale, which changes what the figure says, so
-    # it belongs in the filename for the same reason the run does.
+    # --half-width changes the colour scale, so it belongs in the name too.
     if args.half_width is not None:
         tag += f"_hw{args.half_width:g}"
     written = []
@@ -114,8 +99,8 @@ def main():
         written.append(o)
 
     d = (per_spaxel - field)[np.isfinite(per_spaxel) & np.isfinite(field)]
-    # The figures carry no colour bar, so the scale they were drawn on exists
-    # nowhere else -- without this line the images cannot be read quantitatively.
+    # No colour bar on the figures, so without this line they cannot be read
+    # quantitatively.
     print(f"{W.name}  colour scale {lo:.4f} to {hi:.4f} (centre {c:.4f})")
     print(f"  s_hat median {np.nanmedian(field[valid]):.4f}   "
           f"s_free-s_hat median {np.median(d):+.4f}  spread {np.std(d):.4f}")

@@ -1,21 +1,15 @@
 """源流量的加法偏差:它在全場是常數嗎?源模型放軟一點會不會放大得更兇?
 
-背景:在**沒有源**的 blank 格上放一組源模板去擬合,擬合會給出一個固定的負流量
-(單位:源亮度 = 天空亮度時為 1)。它是加法的,所以源越暗被吃掉的比例越大。
-機制:s 固定之後模型裡沒有自由的平滑成分,天空連續譜的形狀誤差只能倒進源模板。
+在沒有源的 blank 格上放一組源模板去擬合,量到的流量偏差是加法的,所以源越暗被吃掉
+的比例越大。機制是 s 固定之後模型裡沒有自由的平滑成分,天空連續譜的形狀誤差只能倒
+進源模板。兩個問題共用同一套量測:
 
-這支同時回答兩個問題,因為它們共用同一套量測:
+    ②  偏差在全場是常數嗎?常數就是可校正的系統誤差,量出來直接扣掉;否則得修模
+        型。量法是 blank 格散布在整個視場上各量一次,看它和位置、亮度的關係。
+    ③  源模型放軟(成分多)是不是放大得更兇?本徵譜彼此高度相關,湊一個小傾斜需
+        要一組大係數。量法是同一批格,把模板截成不同欄數各算一次。
 
-    ②  偏差在全場是常數嗎?
-        是 -> 它就是一個**可校正的系統誤差**,量出來直接扣掉即可
-        否 -> 得修模型
-        量法:blank 格散布在整個視場上各量一次,畫成圖,並看它和位置/亮度的關係
-
-    ③  源模型放軟(成分多)是不是放大得更兇?
-        四條星系本徵譜彼此高度相關,要湊出一個小傾斜需要一組大係數。
-        量法:同一批格,把模板截成 1 / 2 / 3 / 4 欄各算一次
-
-不需要注入任何東西 —— blank 格本來就沒有源,真值就是 0。
+不需要注入任何東西,blank 格的真值就是 0。
 
     conda run -n astro python src/skymodel/experiments/flux_bias_map.py
 """
@@ -38,8 +32,7 @@ from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noq
 from s_flux_bias import wls                              # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
-# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+# 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
 EVAL = ROOT / "results/skymodel/evaluation/s_field"
 BAND = (5500.0, 6500.0)
 
@@ -72,8 +65,7 @@ def main():
                                 p["train_clip_sigma"],
                                 main=mg)
 
-    # "classification" is the key; "best" is what step5 wrote before the
-    # parameter was renamed, and products made then are still on disk.
+    # "classification" 是鍵名;磁碟上較舊的產物寫的是 "best"。
     best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T_all = build_templates(best, air_to_vacuum(wl))
     tid = args.tpl_id if args.tpl_id else int(best["id"][np.nanargmax(

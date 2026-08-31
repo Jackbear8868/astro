@@ -1,16 +1,12 @@
 """源區域的殘差:wsky 扣掉我們預測的天空**和**源之後還剩下什麼。
 
-和拿 nosky 當基準不同 —— nosky 裡面有 ESO 自己扣天空的誤差,拿它當「真值」
-會把兩套流程的誤差混在一起。這裡完全在自己的產物內部閉合:
+不拿 nosky 當基準:它裡面有 ESO 自己扣天空的誤差,當成真值會把兩套流程的誤差混在
+一起。這裡在自己的產物內部閉合:
 
-    residual = sky_subtracted - A x T
-             = wsky - sky_model - source_model
+    residual = sky_subtracted - A x T = wsky - sky_model - source_model
 
-模型如果完整,殘差就只剩雜訊,平均值在 0、沒有波長結構。任何殘留的結構都是
-模型沒解釋掉的東西,不需要外部參考就能判讀。
-
-一列一個 run,右邊是該列自己的統計量。chi 那一欄是殘差除以 cube 自帶的 STAT
-的標準差 —— STAT 直接採用,不做任何修正,模型完美時應該是 1。
+模型完整的話殘差只剩雜訊,任何殘留結構都是模型沒解釋掉的東西。一列一個 run,右邊
+是統計量;chi 是殘差除以 cube 自帶的 STAT 標準差,不做修正,完美時應該是 1。
 
     conda run -n astro python src/skymodel/experiments/star_library_residual.py \
         --work results/skymodel/p01 --ids 22 50 \
@@ -39,15 +35,12 @@ def source_residual(cube_dir, seg, sid, lam_vac):
     """一個源的平均殘差、平均 sigma,以及模板蓋不到的通道數。
 
     source_template_amplitude_map 的第 j 列是第 j 條模板成分的係數,超過該源成分數
-    的列是 NaN(step6 用固定寬度 N_COMPONENTS 存),所以要照模板實際的欄數去切。
-
-    模板的靜止範圍蓋不到的通道,源模型是 **0** 而不是 NaN —— 那才是交付出去的
-    產物實際的樣子:step6 在那些通道沒有源模型,源的流量原封不動留在資料裡。
-    設成 NaN 會讓那一段從統計裡消失,等於把「模型蓋不到」偽裝成「沒有問題」。
+    的列是 NaN(step6 用固定寬度 N_COMPONENTS 存),要照模板實際的欄數去切。模板蓋
+    不到的通道,源模型是 0 而不是 NaN,因為交付的產物就是這樣:那裡沒有源模型,源
+    的流量原封不動留在資料裡,設成 NaN 會讓那一段從統計裡消失。
     """
     meta = json.loads((cube_dir / "meta.json").read_text())
-    # "classification" is the key; "best" is what step5 wrote before the
-    # parameter was renamed, and products made then are still on disk.
+    # "classification" 是鍵名;磁碟上較舊的產物寫的是 "best"。
     best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T = build_templates(best, lam_vac).get(int(sid))
 
@@ -146,8 +139,8 @@ def main():
                 chi = r[band] / s[band]
             chi = chi[np.isfinite(chi)]
             n_ok = int(np.isfinite(r[band]).sum())
-            # 通道數要一起報:模板蓋不到的地方 T 是 NaN,殘差也就沒有定義,
-            # 兩個 run 的統計量若建立在不同數量的通道上就不能直接比。
+            # 通道數要一起報:模板蓋不到的地方殘差沒有定義,兩個 run 的統計量若
+            # 建立在不同數量的通道上就不能直接比。
             lines = [f"{'channels':<14}{n_ok:>10,}",
                      f"{'of':<14}{int(band.sum()):>10,}",
                      f"{'no template':<14}{n_unc:>10,}",

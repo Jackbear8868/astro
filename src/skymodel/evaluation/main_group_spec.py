@@ -1,31 +1,23 @@
 """For every member of the adjacent blob, use the spectrum to judge whether it is part
 of the main galaxy.
 
-The problem with grouping the main source is: SExtractor's deblender splits the main
-galaxy into several pieces, and the condition "they are stuck together" is not enough
--- another object superimposed on the galaxy is stuck to it just as well. This script
-lists the spectral evidence needed for that judgement, one table per pointing.
+SExtractor's deblender splits the main galaxy into several pieces, and "they are stuck
+together" is not enough to group them -- another object superimposed on the galaxy is
+stuck to it just as well. This script lists the spectral evidence for that judgement,
+one table per pointing:
 
-Four sets of numbers are printed for each member:
-
-  star / gal rchi2   the best reduced chi2 of each of the two branches of the same
-                     source.
-                     They can only be compared within one row -- a bright source has
-                     little photon noise, so a slight imperfection of the model
-                     divided by a very small sigma is already a very large chi2, and
-                     comparing across rows is meaningless.
+  star / gal rchi2   the best reduced chi2 of each branch of the same source. Only
+                     comparable within one row: a bright source has little photon
+                     noise, so a slight model imperfection over a small sigma is
+                     already a large chi2.
   z_gal, dv          the best redshift of the galaxy branch, and its velocity
-                     difference from the main source group.
-                     The main source group takes the galaxy-branch redshift of "the
-                     member containing the brightest pixel".
-  n_z                the number of grid points in the galaxy branch whose rchi2 falls
-                     within +1% of the best value.
-                     This is how tightly the redshift is pinned down -- a large number
-                     means the redshift is not constrained.
-  forced             by how many % the rchi2 gets worse when this member is forced
-                     onto the redshift of the main source group.
+                     difference from the main source group, whose redshift is the one
+                     of the member containing the brightest pixel.
+  n_z                grid points in the galaxy branch within +1% of the best rchi2 --
+                     how tightly the redshift is pinned down.
+  forced             by how many % the rchi2 worsens when this member is forced onto
+                     the main source group's redshift.
 
-    conda run -n astro python src/skymodel/evaluation/main_group_spec.py
     conda run -n astro python src/skymodel/evaluation/main_group_spec.py -n 1 4 10
 """
 import argparse
@@ -54,8 +46,8 @@ def blob_members(seg, white):
 
 
 def area_keep(seg, ids, min_frac):
-    """The old area criterion, kept here only for comparison -- utils has already
-    switched to the redshift criterion."""
+    """The area criterion, kept for comparison with the redshift criterion utils
+    uses."""
     area = {i: int((seg == i).sum()) for i in ids}
     top = max(area.values())
     return [i for i in ids if area[i] >= min_frac * top]
@@ -64,10 +56,9 @@ def area_keep(seg, ids, min_frac):
 def branch_best(work, sid):
     """The best solution of each of the two branches of one seg ID.
 
-    step4 stores the two branches separately, as step04/scans_star.npz and
-    scans_galaxy.npz; on the star side z is a radial velocity.
-    Returns (best star rchi2, best galaxy rchi2, best galaxy z, the galaxy's z and
-    rchi2 arrays).
+    step4 stores them as step04/scans_star.npz and scans_galaxy.npz; on the star side
+    z is a radial velocity. Returns (best star rchi2, best galaxy rchi2, best galaxy z,
+    the galaxy's z and rchi2 arrays).
     """
     step04 = work / "step04"
     try:
@@ -100,13 +91,10 @@ def main():
         ids, _, k = blob_members(seg, wn)
         keep_area = area_keep(seg, ids, args.min_frac)
 
-        # the redshift of the main source group is taken from "the member containing
-        # the brightest pixel" -- the largest in area is not necessarily the core
+        # the brightest pixel, not the largest area, marks the core
         peak_id = int(seg[k])
-        # This table is built from the whole chi2 surface of both branches, which step4
-        # keeps only when source_fit.keep_scans is on. Without the scans every column
-        # below is empty, and an empty table is worse than none: the summary at the end
-        # still prints, as nan.
+        # The table needs the whole chi2 surface of both branches, which step4 keeps
+        # only with source_fit.keep_scans on; without it every column below is empty.
         if not (W / "step04/scans_galaxy.npz").exists():
             raise SystemExit(
                 f"★ {W / 'step04/scans_galaxy.npz'} does not exist. This table needs the whole "
@@ -135,8 +123,7 @@ def main():
             dz = z_gal - z_main
             dv = C_KMS * dz / (1 + z_main)
             n_z = int((r <= r_gal * (1 + args.tol)).sum())
-            # forced onto the redshift of the main source group: take the grid point
-            # closest to z_main
+            # forced onto the main group's redshift: the grid point closest to z_main
             jf = int(np.argmin(np.abs(z - z_main)))
             forced = 100 * (r[jf] - min(r_gal, r_star)) / min(r_gal, r_star)
             verdict = "keep" if i in keep_area else "drop"
@@ -173,10 +160,8 @@ def main():
     if not bad:
         print("  (none)")
 
-    # threshold scan: makes "how sensitive this criterion is to the threshold"
-    # directly visible
-    # the equivalent velocity depends on the pointing's own z, so the km/s column is
-    # the median over the members rather than a single exact number
+    # Threshold scan, so the criterion's sensitivity to it is visible. The equivalent
+    # velocity depends on each pointing's own z, so the km/s column is a median.
     zm = np.median([r[5] - r[10] for r in rows])
     print(f"\n{'dz_max':>10} {'~km/s':>9} | {'keep':>6} | {'drop':>6} | dropped members")
     print("-" * 74)

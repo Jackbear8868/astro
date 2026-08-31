@@ -1,31 +1,23 @@
 """Zoom on the main galaxy: what is detected on and around its extended light.
 
-The whole-field figures (seg_id_map, seg_slide_map) are locator maps. At that scale
-Haro 11's halo is a few hundred pixels across and the things sitting on it are a few
-pixels each, so the two questions this figure is for cannot be read off them:
-
-    does the segmentation stop where the light stops, or is there still visible
-    extended light outside the boundary?
-    what else did SExtractor detect inside and around that extended light?
+The whole-field figures (seg_id_map, seg_slide_map) are locator maps, and at that
+scale the halo and the few-pixel detections on it are too small to answer the two
+questions this figure is for: does the segmentation stop where the light stops, and
+what else did SExtractor detect inside and around that extended light?
 
 So this crops to the main source group's bounding box plus a margin and stretches the
-background hard enough for the halo to show. The main group is drawn as a **contour
-only** -- a translucent fill would sit on top of exactly the light the figure exists to
-show. Every other source in the crop is filled, outlined and labelled with its seg ID,
-so anything found here can be looked up in the whole-field map.
+background hard enough for the halo to show. The main group is drawn as a contour only
+-- a translucent fill would sit on exactly the light the figure exists to show. Every
+other source in the crop is filled, outlined and labelled with its seg ID, so anything
+found here can be looked up in the whole-field map.
 
 The main group is the connected blob containing the brightest pixel
-(utils.main_source_group). With --step04 its members are additionally required to
-share the main source's redshift; without it only adjacency is applied, and in some
-pointings adjacency chains through touching neighbours until the blob covers most of
-the field. The printed ID list and the printed bbox are there so that a chained blob
-is visible rather than silent.
+(utils.main_source_group); with --step04 its members must also share the main source's
+redshift. Adjacency alone can chain through touching neighbours, so the printed ID list
+and bbox make a chained blob visible. The margin is clipped to the data, and the
+printout says how much room each side actually had.
 
-Haro 11 sits against a field edge in most pointings, so the margin is clipped to the
-data and the printout says how much room each side actually had.
-
-    conda run -n astro python src/skymodel/evaluation/halo_sources.py --work results/skymodel/p01
-    conda run -n astro python src/skymodel/evaluation/halo_sources.py --work results/skymodel/p14 \\
+    conda run -n astro python src/skymodel/evaluation/halo_sources.py --work results/skymodel/p01 \\
         --margin 60 --soft 0.005
 """
 import argparse
@@ -46,17 +38,14 @@ from utils import DZ_MAX, main_source_group  # noqa: E402
 
 FIGURES = EVAL / "masking"
 
-# The main group's outline. Orange is what utils.plot_main_group already uses for
-# the same object, and repeating it means the two figures cannot be misread as showing
-# two different footprints.
+# The main group's outline, in the colour utils.plot_main_group uses for the same
+# object, so the two figures cannot be misread as two different footprints.
 C_MAIN = "#ff7f0e"
-# How far past the main group's bounding box to show. The point of the margin is the
-# light that lies *outside* the boundary, so it has to be a real fraction of the
-# galaxy, not a few pixels of framing.
+# How far past the main group's bounding box to show. The margin exists for the light
+# outside the boundary, so it must be a real fraction of the galaxy, not framing.
 MARGIN = 45
-# asinh softening of the background. arcsinh_stretch's project default (0.02) is set
-# for the whole field, where the halo is one feature among many; here the halo is the
-# subject, so the faint end is pulled up much further.
+# asinh softening of the background. arcsinh_stretch's project default is set for the
+# whole field; here the halo is the subject, so the faint end is pulled up further.
 SOFT = 0.004
 # Fill opacity of the neighbouring sources. They are drawn over sky, not over the
 # halo's interesting part, so they can be solid enough to read at a glance.
@@ -101,8 +90,7 @@ def main():
 
     H, Xw = seg.shape
     ys, xs = np.nonzero(mg)
-    # np.clip, not max/min by hand: the margin routinely runs off the field, because
-    # the galaxy is against an edge in most pointings.
+    # np.clip, not max/min by hand: the margin can run off the field.
     y0, y1 = int(np.clip(ys.min() - args.margin, 0, H)), int(np.clip(ys.max() + 1 + args.margin, 0, H))
     x0, x1 = int(np.clip(xs.min() - args.margin, 0, Xw)), int(np.clip(xs.max() + 1 + args.margin, 0, Xw))
     sub = np.s_[y0:y1, x0:x1]
@@ -110,17 +98,15 @@ def main():
     print(f"{Path(args.work).name}: field {H}x{Xw}, main group {len(ids)} ids {ids}, "
           f"{int(mg.sum()):,} px")
     print(f"  bbox y {ys.min()}-{ys.max()}  x {xs.min()}-{xs.max()}")
-    # Room actually available on each side. Where this is less than --margin the crop
-    # is cut by the field, and the light beyond it is not missing -- it was never
-    # observed in this pointing.
+    # Room actually available on each side. Less than --margin means the crop is cut
+    # by the field, and the light beyond it was never observed.
     print(f"  margin {args.margin} px requested; available  "
           f"left {int(xs.min())}  right {int(Xw - 1 - xs.max())}  "
           f"bottom {int(ys.min())}  top {int(H - 1 - ys.max())}")
     print(f"  crop y {y0}-{y1 - 1}  x {x0}-{x1 - 1}   ({y1 - y0} x {x1 - x0} px)")
 
-    # Distance from every pixel to the nearest main-group pixel, so each neighbour can
-    # be reported as "this far outside the galaxy's boundary" -- an area and a centroid
-    # alone do not say whether a source sits on the halo or well off it.
+    # Distance to the nearest main-group pixel, so each neighbour reports how far
+    # outside the boundary it is; area and centroid alone do not say that.
     dist = ndimage.distance_transform_edt(~mg)
 
     others = []
@@ -142,9 +128,8 @@ def main():
         print(f"    {r['id']:>4}{r['area']:>7}{r['in_crop']:>9}"
               f"{r['x'] + x0:>7.1f}{r['y'] + y0:>7.1f}{r['dist']:>13.1f}")
 
-    # The stretch is computed on the whole field, not on the crop: the 99.5th
-    # percentile of a crop centred on the galaxy is the galaxy, so the reference
-    # brightness would move with the crop and two pointings would not be comparable.
+    # The stretch comes from the whole field, not the crop: a percentile of a crop
+    # centred on the galaxy is the galaxy, so the reference would move with the crop.
     stretched, vmax = arcsinh_stretch(white, valid, soft=args.soft)
     bg = stretched[sub]
 

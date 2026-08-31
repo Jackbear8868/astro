@@ -1,18 +1,12 @@
 """學天光的範圍 —— 一條直線把視場切開,畫在影像上讓人直接看。
 
-**用殘留星系光**定界線:
-
-    ① 看主源遮罩的質心在 y、x 兩軸偏離視場中心多遠,取偏得較嚴重的那一軸
-    ② 界線沿那一軸每次外移 5 px 掃過去,每次量一次留下來的 blank 平均比遠場
-       高多少(= 殘留星系光)
-    ③ 取「還滿足污染 <= max_contam」之中保留最多格的那一條
-
-界線因此有一句可以講清楚的意義:**這條線以外,殘留星系光不超過 max_contam**。
-取整到 5 的倍數 —— 半個像素的精度在這裡沒有意義,整數界線好記、好寫進文件。
+界線用殘留星系光定:取主源遮罩質心偏離視場中心較嚴重的那一軸,界線沿它每次外移
+round_to 個像素掃過去,每次量留下來的 blank 平均比遠場高多少,再取還滿足污染
+<= max_contam 之中保留最多格的那一條。界線因此有一句講得清楚的意義:這條線以外,
+殘留星系光不超過 max_contam。取整到 round_to 的倍數,整數界線好記、好寫進文件。
 
 輸出的界線可以直接餵給 step3 的 --xlim / --ylim。
 
-    conda run -n astro python src/skymodel/experiments/sky_region_bound.py
     conda run -n astro python src/skymodel/experiments/sky_region_bound.py --max-contam 0.1
 """
 import argparse
@@ -37,9 +31,8 @@ FIGURES = ROOT / "results/skymodel/evaluation/masking/prof_seg"
 def bound(main, base_ok, img, base, max_contam, round_to=5):
     """挑界線 —— 直接用「殘留污染」定,不用「離遮罩多遠」。
 
-    掃描:界線每次往外挪 round_to 個像素,量一次留下來的 blank 平均比遠場
-    高多少,取「還滿足污染 <= max_contam」之中**保留最多格**的那一條。這樣界線
-    的意義是可以講清楚的一句話 —— 「這條線以外,殘留星系光不超過 max_contam」。
+    界線每次往外挪 round_to 個像素,量留下來的 blank 平均比遠場高多少,取還滿足污染
+    <= max_contam 之中保留最多格的那一條。
 
     回傳 (軸, 條件字串, keep 布林圖, 界線座標, 污染)。軸 0 = y,1 = x。
     """
@@ -103,8 +96,8 @@ def main():
         main, _, _ = main_source_group(seg, np.where(valid, img, np.nan))
         edge = ndimage.distance_transform_edt(valid)
         d_main = ndimage.distance_transform_edt(~main)
-        # 基線只定一次,用**全視場離主源最遠的一成** —— 若跟著界線走,
-        # 每條候選線都拿不同的基線去比,掃描出來的數字就不可比。
+        # 基線只定一次,用全視場離主源最遠的一成:跟著界線走的話,每條候選線都拿
+        # 不同基線去比,掃描出來的數字不可比。
         cand = valid & (seg == 0) & (edge > args.margin)
         base = float(np.median(img[cand & (d_main >
                                            np.percentile(d_main[cand], 90))]))
@@ -112,8 +105,7 @@ def main():
                                         args.max_contam, args.round_to)
 
         if blank.sum() < 500:
-            # 主源幾乎橫跨整個視場(或遮罩本身有問題)時,單軸切法切不出東西。
-            # 這不是程式錯誤,是這條規則對這一顆不適用 —— 要讓它講出來,
+            # 主源幾乎橫跨整個視場時單軸切法切不出東西:這是規則不適用,要講出來,
             # 不能悄悄回一個空的範圍。
             print(f"#{n:<3}{txt:>12}{int(blank.sum()):>12,}"
                   f"{100 * blank.sum() / valid.sum():>8.1f}%{'切不出範圍':>12}")

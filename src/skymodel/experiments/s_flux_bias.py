@@ -1,22 +1,17 @@
 """源流量的加法偏差是誰造成的?
 
-在**沒有源**的 blank 格上放一組源模板去擬合(見 s_prior_holetest),擬合會給出
-一個固定的負流量(單位:源亮度 = 天空亮度時為 1)。它不隨注入強度按比例改變,
-所以是**加法**的偏差,不是按比例吸收 —— 也因此源越暗,被吃掉的比例越大。
-
-這支就查它從哪來。兩個互補的量法:
+在沒有源的 blank 格上放一組源模板去擬合(見 s_prior_holetest),量出來的流量偏差
+不隨注入強度按比例改變,所以是加法的,源越暗被吃掉的比例越大。這支查它從哪來,用
+兩個互補的量法:
 
     A  joint     [T, sky] 一起解                  = 正式流程的做法
-    B  project   先只用 sky 解(和 fit_blank 一樣),
-                 再把殘差投影到 T 上              = 沒有競爭的情況
+    B  project   先只用 sky 解(和 fit_blank 一樣),再把殘差投影到 T 上 = 沒有競爭
 
-    A ≈ B   ->  偏差在**資料/殘差**裡:天空模型本身留下一個長得像負的源的東西
-    A ≪ B   ->  偏差來自**競爭**:設計矩陣裡的其他欄把源的光搶走了
+    A ≈ B   ->  偏差在資料/殘差裡:天空模型本身留下一個長得像負的源的東西
+    A ≪ B   ->  偏差來自競爭:設計矩陣裡的其他欄把源的光搶走了
 
-再加一個 K 掃描(天光線 basis 用幾條)。若 |偏差| 隨 K 增大,兇手就是那些自由的
-basis —— 30 個自由參數去擬合一條平滑的星系連續譜,吸走一部分是很合理的。
-
-不需要注入任何東西:blank 格本來就沒有源,真值就是 0。
+再加一個 K 掃描(天光線 basis 用幾條):|偏差| 隨 K 增大就代表是那些自由的 basis
+在吸收平滑的星系連續譜。不需要注入任何東西,blank 格的真值就是 0。
 
     conda run -n astro python src/skymodel/experiments/s_flux_bias.py
 """
@@ -40,8 +35,7 @@ from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noq
 from s_prior_holetest import pick_hole                   # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
-# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+# 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
 EVAL = ROOT / "results/skymodel/evaluation/s_field"
 BAND = (5500.0, 6500.0)
 
@@ -98,8 +92,7 @@ def main():
                                     p["min_main_source_distance"], p["train_clip_sigma"],
                                 main=main, exclude=hole)
 
-    # "classification" is the key; "best" is what step5 wrote before the
-    # parameter was renamed, and products made then are still on disk.
+    # "classification" 是鍵名;磁碟上較舊的產物寫的是 "best"。
     best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T_all = build_templates(best, air_to_vacuum(wl))
     tid = args.tpl_id if args.tpl_id else int(best["id"][np.nanargmax(

@@ -1,20 +1,15 @@
 """The source map with nothing around it -- for slides.
 
-This is a different figure from seg_id_map, not an option on it. seg_id_map is the
-locator map used while working: the axes are part of what it does, because reading a
-source's x/y off it is how you go and look at that spaxel. On a slide nothing outside
-the image is read, so the title, the axes and the frame are noise, and the image is
-made to fill the canvas so no white margin appears against the slide background.
+A different figure from seg_id_map, not an option on it. seg_id_map is the locator map
+used while working, and its axes are part of the job: reading a source's x/y off it is
+how you go and look at that spaxel. On a slide nothing outside the image is read, so
+title, axes and frame are noise, and the image fills the canvas.
 
-What the two share is deliberate: the same asinh stretch, the same translucent fill
-plus contour. Two figures of the same field drawn by different rules would look like
-different data. Only the colour and the surroundings differ.
+The two deliberately share the asinh stretch and the translucent fill plus contour --
+the same field drawn by different rules would look like different data. Only colour
+and surroundings differ, the default being green rather than the locator map's pale
+red, which sits too close to greyscale in brightness to separate when projected.
 
-The default colour is green rather than the locator map's pale red, which sits too
-close to greyscale in brightness to separate cleanly when projected.
-
-    conda run -n astro python src/skymodel/evaluation/seg_slide_map.py \\
-        --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/seg_slide_map.py \\
         --work results/skymodel/p01 --labels --min-x 15 --color '#22d3ee'
 """
@@ -37,16 +32,13 @@ from utils import arcsinh_stretch  # noqa: E402
 FIGURES = EVAL / "masking"
 
 COLOR = "#4ade80"
-# At slide size the fill is there to say where the sources are, not to be read
-# through -- 0.25 marks the extent while leaving the body of Haro 11 visible
-# underneath. The IDs are off by default for the same reason: 60 numbers, many of
-# them overlapping along the field edge, are unreadable from the back of a room.
+# At slide size the fill only says where the sources are, so it stays light enough to
+# leave the bright source body visible underneath. The IDs are off by default for the
+# same reason: crowded numbers are unreadable from the back of a room.
 ALPHA = 0.25
-# asinh softening. The percentile inside arcsinh_stretch sets what counts as the
-# bright end; this sets how far the faint end is pulled up, and it is the one that
-# decides whether the faint sources are visible at all. arcsinh_stretch's own
-# default is shared by every figure in the project, so it is passed in here rather
-# than changed there.
+# asinh softening. The percentile inside arcsinh_stretch sets the bright end; this
+# sets how far the faint end is pulled up, and so whether faint sources show at all.
+# It is passed in rather than changed there, where every figure shares the default.
 SOFT = 0.01
 
 
@@ -56,14 +48,11 @@ def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
 
     ids limits which sources are drawn; None draws every label in seg.
 
-    background=False drops the white light and leaves the mask alone on black --
-    the figure then says "these spaxels are source, those are not" and nothing
-    else. With nothing underneath to see through, the fill is drawn solid.
-
-    per_source=True gives each source its own colour from a qualitative palette,
-    so neighbouring sources stay apart from each other. It is for the mask figure,
-    where there is no background to separate them; over the white light the
-    contours already do that, and many colours there would read as if the colour
+    background=False drops the white light and leaves the mask alone on black, so the
+    figure says only which spaxels are source. With nothing to see through, the fill is
+    drawn solid. per_source=True gives each source its own colour from a qualitative
+    palette, for that mask figure, where no background separates neighbours. Over the
+    white light the contours already do, and many colours would read as if the colour
     meant something about the source.
     """
     if ids is None:
@@ -72,8 +61,8 @@ def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
 
     h, w = white.shape
     fig, ax = plt.subplots(figsize=(12, 12 * h / w))
-    # The project's one stretch, the same one products.id_map uses, so the two
-    # figures of the same field cannot end up looking like different data.
+    # The project's one stretch, as products.id_map uses, so the two figures of the
+    # same field cannot end up looking like different data.
     if background:
         bg, vmax = arcsinh_stretch(white, soft=soft)
         ax.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
@@ -81,9 +70,8 @@ def slide_map(seg, white, out, color=COLOR, alpha=ALPHA, labels=False,
         ax.imshow(np.zeros(seg.shape), origin="lower", cmap="gray", vmin=0, vmax=1)
         alpha = 1.0
 
-    # One fill for all sources, one contour per source: the fill shows extent and
-    # the contour keeps small sources visible, but the fill does not need to be
-    # drawn once per source the way the contour does.
+    # One fill for all sources, one contour per source: the fill shows extent, the
+    # contour keeps small sources visible, and only the contour needs repeating.
     palette = qualitative(len(ids)) if per_source else None
     rgba = np.zeros(seg.shape + (4,))
     if per_source:
@@ -160,9 +148,8 @@ def main():
             continue
         ids.append(int(i))
 
-    # The output name carries both the pointing and the seg's parent directory: two
-    # different segmentations share their filename, so the stem alone collides and one
-    # silently overwrites the other.
+    # The name carries the pointing and the seg's parent directory: two segmentations
+    # share a filename, so the stem alone collides and one overwrites the other.
     name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"slide_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)

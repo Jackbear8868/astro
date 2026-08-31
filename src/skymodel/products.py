@@ -1,11 +1,10 @@
 """Reading back and displaying what the pipeline wrote.
 
-No pipeline step imports this module. It holds what the scripts under
-`evaluation/` and `experiments/` share when they work from a finished run --
-locating a pointing's fitted products, reading the settings recorded beside
-them, condensing a spectrum into numbers, and the figures more than one script
-draws. It sits next to `utils.py` rather than inside `evaluation/` so that
-`experiments/` scripts do not have to import from `evaluation/`.
+No pipeline step imports this module. It holds what the scripts under `evaluation/`
+and `experiments/` share when working from a finished run -- locating a pointing's
+fitted products, reading the settings recorded beside them, condensing a spectrum into
+numbers, and the figures more than one script draws. It sits next to `utils.py` so
+`experiments/` need not import from `evaluation/`.
 """
 
 from pathlib import Path
@@ -30,8 +29,8 @@ OLD_AMP_KEYS = {"r_far": "min_source_distance",
 def sky_amplitude_params(meta):
     """The s-field settings out of a step5 meta.json, under their current names.
 
-    Products written before the parameters were renamed carry the old spelling;
-    translating here keeps that compatibility in one place instead of six.
+    Older products carry the old spelling; translating here keeps that compatibility
+    in one place instead of six.
     """
     p = meta.get("sky_amplitude_params") or meta.get("s_field_params") or {}
     return {OLD_AMP_KEYS.get(k, k): v for k, v in p.items()}
@@ -45,9 +44,9 @@ def fit_dirs(work, run=None):
         cube dir      sky_subtracted.fits, sky_model.fits and
                       source_template_amplitude_map.npy           by step6
 
-    With no `run`, or with run="default", the two are step05 and step06. Any
-    other `run` names a single directory under step05 holding both kinds of
-    product, which is how an alternative run is kept beside the pipeline's own.
+    With no `run`, or run="default", the two are step05 and step06. Any other `run`
+    names one directory under step05 holding both kinds -- an alternative run kept
+    beside the pipeline's own.
     """
     work = Path(work)
     if run is None or run == "default":
@@ -71,8 +70,8 @@ def spectrum_stats(spec):
 
 
 def plot_compare(wl, spec, spec_compare, out_path, label="ours", label_compare="nosky", ylim=(-20, 20), title=None):
-    """Two panels: the two spectra (blue = spec, dashed orange = spec_compare) on
-    the left, their summary statistics on the right."""
+    """The two spectra on the left (blue = spec, dashed orange), their stats on the
+    right."""
     fig, (ax, stat_ax) = plt.subplots(1, 2, figsize=(15.5, 4.5), gridspec_kw={"width_ratios": [5, 1]})
     ax.axhline(0, color="0.5", lw=0.5)
     ax.plot(wl, spec, lw=0.9, color="#1f77b4", label=label)
@@ -107,11 +106,11 @@ def per_spaxel_continuum(
     ----------
     spectra : ndarray, shape (nz, n_spaxels)
     line_mask : ndarray of bool, shape (nz,)
-        Sky-line channels, left out of the running median.
+        Sky-line channels, left out of the median.
     window : int
         Running-median window, in spectral pixels.
     chunk : int
-        Spaxels processed at once; memory and speed only.
+        Spaxels per pass; memory and speed only.
 
     Returns
     -------
@@ -160,21 +159,18 @@ PLAIN_COLOR = "#ff7b7b"     # not grouping; pale red stays visible on greyscale
 def id_map(seg, white, rows, out, by_group=False):
     """White light background + source outlines + ID labels.
 
-    The background is asinh-stretched: white light spans several orders of
-    magnitude, and a linear display makes everything outside the galaxy body
-    black.
-
-    by_group=False (the default) draws no group colours. Classification is
-    step4's conclusion, and putting it on a locator map invites reading it as
-    established fact; this map only answers "which spot is which source".
+    The background is asinh-stretched: white light spans several orders of magnitude,
+    and a linear display makes everything outside the galaxy body black. by_group=False
+    draws no group colours -- classification is step4's conclusion, and putting it on a
+    locator map invites reading it as fact; this map only says which spot is which.
     """
     fig, ax = plt.subplots(figsize=(13, 12.5))
     v = np.nanpercentile(white[np.isfinite(white) & (white != 0)], 99.5)
     ax.imshow(np.arcsinh(white / (0.02 * v)), origin="lower", cmap="gray",
               vmin=0, vmax=np.arcsinh(1 / 0.02))
 
-    # Fill plus contour: the fill shows extent, and the contour stays visible on
-    # sources too small to show one.
+    # Fill plus contour: the fill shows extent, the contour stays visible on sources
+    # too small to show one.
     for r in rows:
         m = seg == r["id"]
         c = GROUP_COLOR[r["group"]] if by_group else PLAIN_COLOR
@@ -192,8 +188,7 @@ def id_map(seg, white, rows, out, by_group=False):
     ax.set_xlabel("x [px]")
     ax.set_ylabel("y [px]")
     if by_group:
-        # Outside the axes: sources sit in the upper right, where an in-axes
-        # legend would cover them.
+        # Outside the axes, where it cannot cover a source.
         ax.legend(handles=[plt.Line2D([], [], color=c, lw=6, label=g)
                            for g, c in GROUP_COLOR.items()],
                   loc="upper center", bbox_to_anchor=(0.5, -0.06), ncol=3,

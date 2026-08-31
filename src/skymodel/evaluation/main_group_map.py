@@ -1,32 +1,25 @@
 """How the main source group is put back together from the seg IDs it was split
 into -- a before/after comparison, for any number of pointings at once.
 
-SExtractor's deblender splits Haro 11 into several pieces (it is a merging galaxy, so
-it has several bright knots to begin with), and how many pieces it is split into, and
-how, differs from one observation to the next. Any rule of the form "pick one seg ID"
-will only get hold of one of those pieces, and when the downstream steps use it to
-decide "how many px around it to exclude" and "which half to mask", they will mask the
-wrong place.
+A merging galaxy has several bright knots, so SExtractor's deblender splits it into
+pieces, and how it splits differs from one observation to the next. Any rule of the
+form "pick one seg ID" gets hold of one piece only, and the downstream steps then
+decide how much to exclude around the wrong place.
 
-What utils.main_source_group does: take the connected component containing the
-brightest pixel (with no dilation), then require that a member's galaxy-branch
-redshift differ from that of the main source group by no more than dz_max --
-adjacency only says that they are siblings from the same deblend, and another object
-superimposed on the galaxy would be adjacent just as well, so the redshift is what
-separates it out.
+utils.main_source_group instead takes the connected component containing the brightest
+pixel, with no dilation, and then requires a member's galaxy-branch redshift to be
+within dz_max of the group's. Adjacency alone only says the pieces came out of the same
+deblend, and another object superimposed on the galaxy is adjacent just as well.
 
-    left   before: every seg ID inside the adjacent blob gets its own colour,
-           labelled with its number
-    right  after: those that passed the redshift criterion and were kept
+    left   before: every seg ID inside the adjacent blob, coloured and numbered
+    right  after: those the redshift criterion kept
 
-step5 already draws this for the pointing it is running, into
-step05/main_source_group.png,
-by calling the same utils.plot_main_group. This script exists for the two things
-that one cannot do: several pointings in one command, and the numbers underneath --
-which IDs were rejected, and how much of the field's flux the group holds.
+step5 draws this for the pointing it is running, into step05/main_source_group.png, via
+the same utils.plot_main_group. This script adds the two things that cannot: several
+pointings in one command, and the numbers underneath -- which IDs were rejected, and
+how much of the field's flux the group holds.
 
     conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 12 5 1
-    conda run -n astro python src/skymodel/evaluation/main_group_map.py -n 1 --step04 ...
 """
 import argparse
 import sys
@@ -65,8 +58,7 @@ def main():
         step04 = (Path(args.step04) if args.step04
                   else step04_dir(W, args.run) or W / "step04")
         mg, ids, pk = main_source_group(seg, wn, step04, args.dz_max)
-        # without a redshift only the adjacency criterion is applied -- and the blob
-        # "before filtering" is exactly what the left panel is meant to show
+        # without a redshift only adjacency applies, which is the left panel
         all_ids = main_source_group(seg, wn)[1]
 
         out = pointing_dir(name) / f"main_group{args.out_suffix}.png"

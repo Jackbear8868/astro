@@ -1,30 +1,21 @@
 """Is what is left in blank noise, or is it wrong? -- per channel, for both pipelines.
 
-The mean spectrum over blank looks flat for a well-subtracted cube, but a mean over
-tens of thousands of spaxels looks flat for a badly subtracted one too, as long as the
-error is random: averaging N spaxels divides random scatter by sqrt(N) and leaves a
-systematic offset untouched. "The mean is small" is therefore not the measurement --
-"the mean is small **compared with what random scatter alone would have left**" is.
+A mean over tens of thousands of blank spaxels looks flat whether the subtraction was
+good or bad, as long as the error is random: averaging N spaxels divides random scatter
+by sqrt(N) and leaves a systematic offset untouched. So each panel draws the mean
+residual against its own noise floor:
 
-So each panel draws the mean residual against its own noise floor:
+    scatter   the spread across blank spaxels within one channel, (p84 - p16) / 2 --
+              what a single spaxel actually looks like.
+    floor     scatter / sqrt(N). Inside this band the channel's residual is
+              indistinguishable from the same spaxels averaged with no systematic
+              error; outside it, the same mistake was made in every spaxel.
 
-    scatter   the spread across blank spaxels within one channel, (p84 - p16) / 2.
-              This is what a single spaxel actually looks like, and it is nowhere near
-              zero for either pipeline.
-    floor     scatter / sqrt(N). Where the mean stays inside this band, the residual in
-              that channel is indistinguishable from the same spaxels averaged with no
-              systematic error at all. Where it leaves the band, the pipelines made the
-              same mistake in every spaxel, which is a sky model error and not noise.
+The band is what makes the two pipelines comparable: rms and mean both shrink with the
+number of spaxels averaged, so they say as much about the size of the blank region as
+about the sky model, while the ratio to the floor does not. The top panel draws the two
+scatters together, so how much of the separation below is systematic can be judged.
 
-The band is what makes the two pipelines comparable at all. rms and mean both shrink
-with the number of spaxels averaged, so they say as much about the size of the blank
-region as about the sky model; the ratio to the floor does not.
-
-The top panel draws the two scatters together. They come out on top of each other,
-which is the point: the pipelines leave the same per-spaxel noise, so everything that
-separates them in the panels below is systematic.
-
-    conda run -n astro python src/skymodel/evaluation/blank_noise_floor.py --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/blank_noise_floor.py --work results/skymodel/p01 \\
         --n-floor 3 --ylim -0.4 0.4
 """
@@ -51,9 +42,9 @@ CHUNK = 200
 def channel_stats(hdu, mask, keep, nz):
     """Per channel: the mean across the kept blank spaxels, and their robust scatter.
 
-    (p84 - p16) / 2 rather than the standard deviation: a handful of bad spaxels in one
-    channel would set a standard deviation, and the noise floor built from it would then
-    be so wide that nothing could ever leave the band.
+    (p84 - p16) / 2 rather than the standard deviation: a handful of bad spaxels would
+    set the standard deviation, and a floor built from it would be so wide that nothing
+    could ever leave the band.
     """
     mean = np.empty(nz)
     scat = np.empty(nz)
@@ -145,8 +136,8 @@ def main():
     else:
         ax[0].set_ylim(0, np.percentile(np.concatenate([so, se]), 99.5) * 1.15)
 
-    # The two residual panels share a y range. Given their own, ESO's would be squeezed
-    # to look like ours and the figure would report the opposite of the measurement.
+    # The two residual panels share a y range, or the larger residual is squeezed to
+    # look like the smaller one.
     lim = args.ylim if args.ylim else robust_range(np.concatenate([mo, me]))
     for a, (lab, mm, fl, c) in zip(ax[1:], (("ours", mo, fo, C_OURS),
                                             ("ESO", me, fe, C_ESO))):

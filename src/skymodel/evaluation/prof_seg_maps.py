@@ -1,26 +1,19 @@
 """What the 14 segmentations given by the professor look like -- one ID map per
 pointing, plus one overview.
 
-Under wsky_cubes/ on the professor's Drive, besides the cubes, each pointing also
-comes with
+Each pointing comes with two files besides the cube:
 
-    DATACUBE_FINAL_{N}_pseudo_r.fits    the background image used for detection (the
+    DATACUBE_FINAL_{N}_pseudo_r.fits    the background image used for detection, the
                                         equally weighted average of the nosky cube
-                                        over 5625-6825 A)
-    DATACUBE_FINAL_{N}_seg.fits         the segmentation produced on that background
-                                        image
+                                        over 5625-6825 A
+    DATACUBE_FINAL_{N}_seg.fits         the segmentation produced on that image
 
-This script does one thing only: overlay the two and draw them. The background image
-is **the professor's own pseudo_r**, not our whitelight -- the mask grew out of
-pseudo_r, and pairing it with a different background image would give the illusion of
-a misalignment.
+This script overlays the two and draws them, on the professor's own pseudo_r rather
+than our whitelight -- the mask grew out of pseudo_r, and a different background would
+give the illusion of a misalignment. The drawing is left to products.id_map, with no
+second implementation: two figures of one kind drawn by different rules would look
+like different data because the stretch, colours or labelling differ.
 
-The drawing itself is left entirely to products.id_map, with no second implementation:
-one kind of figure can only have one way of being drawn in this project, otherwise
-putting two of them side by side would make them look like different data merely
-because the stretch, the colours, or the labelling rules differ.
-
-    conda run -n astro python src/skymodel/evaluation/prof_seg_maps.py
     conda run -n astro python src/skymodel/evaluation/prof_seg_maps.py -n 4 8 12
 """
 import argparse
@@ -76,9 +69,8 @@ def overview(ns, out_path):
         seg, img = load(n)
         a = np.ravel(ax)[k]
         a.axis("on"); a.set_xticks([]); a.set_yticks([])
-        # the stretch matches id_map (asinh, with 2% of the 99.5 percentile as the
-        # soft threshold), so that the overview and the single figures look like the
-        # same data.
+        # the stretch matches id_map, so the overview and the single figures look
+        # like the same data.
         bg, vmax = arcsinh_stretch(img)
         a.imshow(bg, origin="lower", cmap="gray", vmin=0, vmax=vmax)
         a.contour(seg > 0, levels=[0.5], colors="#1f77b4", linewidths=0.6)
@@ -110,10 +102,9 @@ def main():
         out = pointing_dir(f"p{n:02d}") / "segmentation_map.png"
         id_map(seg, img, rows, out, by_group=False)
 
-        # the main source being split into several pieces is a recurring problem with
-        # this data set -- measure it here in passing, so that no separate script is
-        # needed. The flux is integrated over pseudo_r (that is the quantity used for
-        # detection).
+        # A main source split into several pieces shows up as a divided flux share,
+        # so measure it here rather than in a separate script. The flux is integrated
+        # over pseudo_r, the quantity detection used.
         flux = {int(i): float(np.nansum(np.where(seg == i, img, 0)))
                 for i in np.unique(seg) if i > 0}
         tot  = sum(flux.values()) or 1.0

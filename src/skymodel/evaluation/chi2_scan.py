@@ -2,17 +2,13 @@
 side by side.
 
 step4 classifies by scanning both model families over redshift and keeping whichever
-reaches the lower reduced chi2 on the same channel set. There is no absolute
-threshold, so the whole decision is the two minima of this figure -- and how far
-apart they are is the confidence in it.
+reaches the lower reduced chi2 on the same channel set. There is no absolute threshold,
+so the decision is the two minima of this figure and their separation is the confidence
+in it. The families get separate panels because their scan ranges differ by orders of
+magnitude -- a stellar radial velocity against a galaxy redshift -- and on one x axis
+the stellar scan would be a single vertical line. The shared y axis is the axis the
+comparison is made on.
 
-The two families are drawn in separate panels because they are scanned over ranges
-that differ by two orders of magnitude: stars over +-0.005 (a velocity, the star is
-in our own Galaxy), the galaxy eigenspectra over 0 to 1.5. On one x axis the stellar
-scan would be a single vertical line. The y axis is shared, which is the axis the
-comparison is actually made on.
-
-    conda run -n astro python src/skymodel/evaluation/chi2_scan.py --work results/skymodel/p01 --id 10
     conda run -n astro python src/skymodel/evaluation/chi2_scan.py --work results/skymodel/p01 --id all
 """
 import argparse
@@ -28,9 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, pointing_dir  # noqa: E402
 from utils import load_scan  # noqa: E402
-# Imported rather than repeated: the stellar library is drawn in two places and the
-# order and colours have to agree between them, or the same template is a different
-# colour on two figures of the same talk.
+# Imported rather than repeated: the stellar library is drawn in two places, and the
+# order and colours have to agree or one template gets two colours.
 from plot_eigen import SPECTRAL_ORDER  # noqa: E402
 
 C_GAL = "#e8710a"
@@ -41,8 +36,8 @@ LOG_RATIO = 20.0        # span above which the shared y axis switches to log
 def scan_files(step04, sid):
     """(stars, galaxy) scan arrays for one source, either possibly None.
 
-    The two branches are one file each, named after the branch: a scan is one branch,
-    and z means a radial velocity on the star side and a redshift on the galaxy side.
+    One file per branch, named after it, because z means a radial velocity on the star
+    side and a redshift on the galaxy side.
     """
     def one(branch):
         try:
@@ -55,12 +50,9 @@ def scan_files(step04, sid):
 def curves(d, spectral=False):
     """(label, z, reduced chi2, colour index) per template, each sorted by z.
 
-    The saved rows are ordered by chi2, not by z -- plotting them in file order
-    would draw a curve that jumps back and forth across the axis.
-
-    spectral=True puts the stellar library in Harvard order and ties each
-    template's colour to its place in that sequence, so a template keeps its
-    colour whichever source is being looked at.
+    The saved rows are ordered by chi2, not by z, so file order would draw a curve
+    jumping back and forth. spectral=True puts the stellar library in Harvard order and
+    ties each colour to a place in that sequence, so a template keeps its colour.
     """
     out = []
     for tpl in dict.fromkeys(d["template"].tolist()):
@@ -70,9 +62,8 @@ def curves(d, spectral=False):
         out.append([tpl, z[o], r[o], 0])
     if spectral:
         out.sort(key=lambda c: (SPECTRAL_ORDER.find(c[0][0].upper()), c[0]))
-        # Label with the spectral class alone. The subtype and luminosity class are
-        # the same for every template in the library, so printing them repeats one
-        # fact seven times in a legend that has to fit above half a panel.
+        # Spectral class alone: subtype and luminosity class are shared across the
+        # library, so printing them repeats one fact in every legend entry.
         for c in out:
             c[0] = c[0][0].upper()
     else:
@@ -85,12 +76,9 @@ def curves(d, spectral=False):
 def draw(ax, cs, colours, side="left"):
     """One family's scan, with each curve's own minimum marked.
 
-    The legend sits above the axes rather than inside: with seven curves that can
-    each be the lowest, no corner is reliably free, and a box placed inside covers
-    one of the curves being compared.
-
-    The two panels anchor their legends to opposite ends of their own axes. Both
-    anchored left, the wider one runs past its panel and lands on top of the other.
+    The legend sits above the axes: any curve can be the lowest, so no corner is
+    reliably free and a box inside would cover one of the curves being compared. The
+    two panels anchor to opposite ends, or the wider legend lands on the other panel.
     """
     for tpl, z, r, ci in cs:
         col = colours[ci % len(colours)]
@@ -126,8 +114,8 @@ def main():
     if not fit_file.exists():
         raise SystemExit(f"no source_fits.npz under {step04}")
     source_fits = np.load(fit_file)
-    # The whole chi2 curve exists only on disk, and step4 does not write it unless it
-    # is asked to, so its absence is a configuration to change and not a missing file.
+    # step4 writes the whole chi2 curve only when asked, so its absence is a config
+    # to change, not a lost file.
     if not (step04 / "scans_galaxy.npz").exists():
         raise SystemExit(
             f"no scans_*.npz under {step04} -- this figure is the redshift scans "
@@ -168,8 +156,7 @@ def main():
             hi = g[1] if hi is None else max(hi, g[1])
         axs.set_ylabel("reduced $\\chi^2$")
 
-        # The lower of the two minima is the classification, so it is drawn across
-        # both panels: the decision is which curve dips below this line.
+        # The lower minimum is the classification, so the line crosses both panels.
         for ax in (axs, axg):
             ax.axhline(min(rs, rg), lw=0.9, ls="--", color=C_MIN, zorder=1)
         if args.logy == "on" or (args.logy == "auto" and lo and hi / lo > LOG_RATIO):

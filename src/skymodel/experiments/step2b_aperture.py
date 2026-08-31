@@ -1,25 +1,15 @@
 """用固定的圓形孔徑抽源光譜,取代 SExtractor 的 segmentation footprint。
 
-為什麼換
-    step2 用的是 SExtractor 切出來的不規則形狀,形狀完全由偵測門檻決定 ——
-    門檻動一點,抽出來的光譜就變。圓形孔徑是外加的、固定的:同一個半徑套在
-    每個源上,和偵測門檻無關,可重現。
+step2 用 SExtractor 切出來的不規則形狀,形狀完全由偵測門檻決定,門檻動一點抽出來
+的光譜就變;圓形孔徑是外加、固定的,同一個半徑套在每個源上,可重現。
 
-半徑 (--radius,預設 APERTURE_R)
-    PSF 隨波長變窄,所以固定孔徑在不同波長收到的流量比例不同,會造成假的
-    連續譜斜率:半徑越小,這個假斜率越大;半徑越大,孔徑收進的雜訊越多、
-    S/N 越低。半徑是這兩者的折衷。
+半徑 (--radius,預設 APERTURE_R):PSF 隨波長變窄,固定孔徑在不同波長收到的流量比例
+不同,會造成假的連續譜斜率;半徑越小假斜率越大,越大收進的雜訊越多,半徑是折衷。
 
-圓心 = 整數像素
-    做法:背景扣除後的流量加權形心 → 四捨五入 → 用整數圓心重畫圓、再算一次
-    形心 → 直到整數圓心不再移動。
-
-    ① 背景一定要扣。白光背景的底座和源本身的淨流量同量級,不扣的話加權形心
-       量到的主要是遮罩的形狀而不是源的分布。
-    ② 迭代要在圓內做,不能只在 seg 遮罩內。只做後者的話圓心仍然繼承 seg 的
-       形狀,而那正是我們想擺脫的東西。
-    ③ 整數圓心的代價是最多 0.71 px(= √2 / 2)的捨入誤差;換到的是每個源
-       完全相同的孔徑形狀與像素數,源之間直接可比。
+圓心取整數像素:背景扣除後的流量加權形心 → 四捨五入 → 用整數圓心重畫圓再算一次形
+心 → 直到圓心不動。背景一定要扣,白光背景的底座和源的淨流量同量級,不扣的話形心量
+到的是遮罩的形狀;迭代要在圓內做,只在 seg 遮罩內做的話圓心仍然繼承 seg 的形狀。
+代價是最多 √2 / 2 px 的捨入誤差,換到每個源完全相同的孔徑形狀與像素數。
 
 輸出 <工作區>/step02b/,格式和 step02 相同,step4 加 --aperture 就會改讀它:
     source_spectra.npz  ids / flux_sum / variance_sum / spaxel_count / wavelength
@@ -47,8 +37,7 @@ APERTURE_R = 6.0        # px。1 px = 0.2 arcsec,所以 6 px = 1.2 arcsec 半徑
 def disc(shape, cy, cx, r):
     """以 (cy, cx) 為圓心、半徑 r 的圓內像素。
 
-    判準是「像素中心到圓心的距離 ≤ r」,所以納入的一律是完整的像素 ——
-    不會出現半個像素,不需要面積加權。
+    判準是像素中心到圓心的距離 ≤ r,納入的一律是完整像素,不需要面積加權。
     """
     yy, xx = np.ogrid[0:shape[0], 0:shape[1]]
     return (yy - cy) ** 2 + (xx - cx) ** 2 <= r * r
@@ -57,11 +46,9 @@ def disc(shape, cy, cx, r):
 def find_center(w, seg, t, r, max_iter=10):
     """整數圓心。回傳 (cy, cx, 迭代次數, 是否有效)。
 
-    w 是已經扣掉背景、負值壓到 0 的白光影像 —— 權重必須非負,否則雜訊的負權重
-    會把形心往任意方向拉。
-
-    迭代到整數圓心不再移動為止。因為圓心被限制在整數格點上,這是一個有限狀態的
-    迭代,收斂即是「不動點」,通常 1–2 輪就到;不收斂(在兩點之間跳)時取最後一次。
+    w 是已扣背景、負值壓到 0 的白光影像:權重必須非負,否則雜訊的負權重會把形心
+    往任意方向拉。圓心限制在整數格點上,所以這是有限狀態的迭代,收斂即不動點;
+    不收斂(在兩點之間跳)時取最後一次。
     """
     m = seg == t
     if not m.any():
@@ -93,11 +80,9 @@ def find_center(w, seg, t, r, max_iter=10):
 def sum_spectra_by_mask(cube_path, masks, chunk=200):
     """對一組(可重疊的)布林遮罩各自加總光譜。
 
-    不能用 step2 的標籤圖版本 —— 相鄰的源孔徑會重疊,標籤圖逼我們把重疊的
-    像素判給其中一個,等於偷偷截掉另一個。
-
-    flux、var、nspax 三者計數的必定是同一批 spaxel:先用 ok 遮罩把不可用的
-    位置清成 0 再相加,而不是各自 nansum。
+    不能用 step2 的標籤圖版本:相鄰的源孔徑會重疊,標籤圖逼我們把重疊的像素判給
+    其中一個,等於偷偷截掉另一個。flux、var、nspax 三者計數的必定是同一批 spaxel
+    —— 先用 ok 遮罩把不可用的位置清成 0 再相加,而不是各自 nansum。
     """
     idx = [np.flatnonzero(m.ravel()) for m in masks]
     with fits.open(cube_path, memmap=True) as h:
@@ -140,8 +125,7 @@ def main():
     fov   = white != 0
     seg   = np.where(fov, seg, 0)                 # 視場外一律歸 0
 
-    # 背景取 blank 區(視場內、非源)的中位數。中位數而不是平均 —— 殘留的暗源
-    # 會把平均拉高,中位數不受影響。
+    # 背景取 blank 區(視場內、非源)的中位數:殘留的暗源會把平均拉高。
     bg = float(np.median(white[fov & (seg == 0)]))
     w  = np.maximum(white - bg, 0.0)              # 權重非負
     w[~fov] = 0.0
@@ -176,8 +160,7 @@ def main():
 
     flux, var, nspax = sum_spectra_by_mask(WSKY, masks)
 
-    # 波長軸從抽光譜用的那個 cube 的 DATA 標頭建 —— 光譜就是逐通道從它加總來的,
-    # 兩者必須是同一條軸。
+    # 波長軸從抽光譜那個 cube 的 DATA 標頭建,光譜是逐通道從它加總來的。
     np.savez(STEP02B / "source_spectra.npz", ids=ids, flux_sum=flux,
              variance_sum=var, spaxel_count=nspax,
              wavelength=wavelength_grid(fits.getheader(WSKY, "DATA")))
@@ -206,9 +189,8 @@ def main():
 
 
 def aperture_map(white, seg, rows, r, out):
-    """孔徑畫在白光上,圓心用十字標出來 —— 用來確認圓心沒有落在奇怪的地方。
-
-    seg 的輪廓一起畫,才看得出「孔徑」和「原本的 segmentation」差多少。
+    """孔徑畫在白光上、圓心用十字標出,確認圓心沒落在奇怪的地方;一起畫 seg 的
+    輪廓,才看得出孔徑和原本的 segmentation 差多少。
     """
     import matplotlib
     matplotlib.use("Agg")

@@ -1,20 +1,16 @@
 """K 該取多少?三個判準的對照。
 
 判準 1  ZAP 的做法(libs/zap/zap/zap.py:926 `_compute_deriv`)
-    看 explained_variance_ 曲線的一階差分。曲線還在陡降時,成分描述的是
-    天光線殘差;一旦降幅變成線性(二階導數歸零),再往下就是在移除天體訊號。
-    實作:取前 25% 的成分算差分,用其中第 15% 之後那段當「平坦區」的基準,
-    找第一個差分回到 (平均 − 5 sigma) 以上的位置。
-    注意 ZAP 是逐波長區段做的,我們是全波段一組,所以數字不能直接互相引用。
+    看 explained_variance_ 曲線的一階差分:曲線還在陡降時成分描述的是天光線殘差,
+    降幅變成線性(二階導數歸零)之後再往下就是在移除天體訊號。ZAP 逐波長區段做,
+    這裡是全波段一組,數字不能互相引用。
 
-判準 2  交叉驗證(直接量測)
-    spaxel 隨機分半,basis 只用 train 學,殘差只在 test 上算。
-    這直接回答「多學一條對沒看過的 spaxel 有沒有幫助」。
+判準 2  交叉驗證:spaxel 隨機分半,basis 只用 train 學,殘差只在 test 上算,直接
+    回答「多學一條對沒看過的 spaxel 有沒有幫助」。
 
-判準 3  每多一條成分,降低的變異數有沒有超過雜訊
-    先用 STAT 把每個通道白化,再看特徵值。純雜訊的特徵值有一個平台
-    (Marchenko-Pastur);特徵值掉到平台上就代表那條成分和雜訊分不出來。
-    lambda_k / lambda_noise 就是「這條成分帶的訊號是雜訊的幾倍」。
+判準 3  每多一條成分降低的變異數有沒有超過雜訊:先用 STAT 把每個通道白化再看特徵
+    值。純雜訊的特徵值有一個平台(Marchenko-Pastur),掉到平台上就代表那條成分和
+    雜訊分不出來;lambda_k / lambda_noise 是這條成分帶的訊號是雜訊的幾倍。
 
     conda run -n astro python src/skymodel/experiments/choose_K.py --work results/skymodel/p01
 """
@@ -28,38 +24,30 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# 判準本體放在這裡。它曾經住在 step3 的檔案裡,但 step3 從來不呼叫它 ——
-# 留在 pipeline 主檔裡只會讓人以為 step3 是用 ZAP 的方式選 K 的。唯一的使用者
-# 就是這支診斷程式,所以搬過來,和它畫的圖放在一起。
+# 判準本體放在這裡:唯一的使用者就是這支診斷程式,和它畫的圖放在一起。
 def zap_k(var, nsigma=5):
     """ZAP 的成分數判準。照抄 libs/zap/zap/zap.py:926 的 `_compute_deriv`。
 
-    回傳 (K, deriv, mn1, std1),後三個是畫圖用的中間量。
+    回傳 (K, deriv, mn1, std1),後三個是畫圖用的中間量。把特徵值曲線(降冪)的一階
+    差分看成「每多一條成分還能再解釋掉多少變異數」:一開始陡降的成分描述的是天光線
+    殘差,降幅趨於線性之後再往下只是在移除雜訊與天體訊號,所以要找的是降幅第一次回
+    到平坦區水準的位置。
 
-    想法:把特徵值曲線(降冪)的一階差分看成「每多一條成分,還能再解釋掉多少
-    變異數」。曲線一開始陡降 —— 那些成分描述的是天光線殘差,是我們要的;
-    降幅逐漸趨於**線性**(二階導數歸零)之後,再往下就只是在移除雜訊與天體
-    訊號。所以要找的是「降幅第一次回到平坦區水準」的那個位置。
-
-        ① 只看前 25% 的成分 —— 後面早就進入平坦區,納進來只會稀釋統計
+        ① 只看前 25% 的成分,後面早就進入平坦區,納進來只會稀釋統計
         ② deriv = diff(var[:npix])
-        ③ 平坦區的基準取 deriv 的後 85%(跳過最前面 15% 的陡降段)
+        ③ 平坦區基準取 deriv 的後 85%(跳過最前面 15% 的陡降段):
                mn1 = mean(deriv[ind:])   std1 = nsigma * std(deriv[ind:])
         ④ K = 第一個滿足 deriv >= mn1 - std1 的位置
-           也就是降幅第一次不再顯著陡於平坦區
 
-    nsigma=5 是 ZAP 的預設值,不是我們調的。門檻越鬆(nsigma 越大)K 越小。
-
-    注意 ZAP 是**逐波長區段**各自做這件事(它把光譜切成數段,每段自己選 K),
-    我們是全波段一組,所以兩邊的數字不能互相引用。
+    nsigma=5 是 ZAP 的預設值,門檻越鬆(nsigma 越大)K 越小。ZAP 逐波長區段各自做
+    這件事,這裡是全波段一組,兩邊的數字不能互相引用。
     """
     npix  = int(0.25 * var.shape[0])
     deriv = np.diff(var[:npix])
     ind   = int(0.15 * deriv.size)
     mn1   = deriv[ind:].mean()
     std1  = deriv[ind:].std() * nsigma
-    # 第一個元素補 False:deriv[i] 描述的是「從第 i 條到第 i+1 條」的降幅,
-    # 所以位置要往後挪一格才對得上成分編號。
+    # 第一個元素補 False:deriv[i] 是第 i 到第 i+1 條的降幅,要挪一格才對得上編號。
     hit   = np.flatnonzero(np.append([False], deriv >= (mn1 - std1)))
     return (int(hit[0]) if hit.size else -1), deriv, mn1, std1
 
@@ -103,8 +91,8 @@ def main():
     print(f"blank {n:,} 個 spaxel x {nz} 通道\n")
 
     # ---------- 全部特徵值(一次算完,三個判準共用) ----------
-    # 直接對 (nz x nz) 的共變異數做特徵分解,比對 (n x nz) 做完整 SVD 便宜得多,
-    # 而 explained_variance_ 本來就是共變異數的特徵值。
+    # 對 (nz x nz) 共變異數做特徵分解比完整 SVD 便宜得多,而 explained_variance_
+    # 本來就是共變異數的特徵值。
     Xc = X - X.mean(axis=1, keepdims=True)
     cov = (Xc @ Xc.T) / (n - 1)
     ev = np.linalg.eigvalsh(cov)[::-1]                       # 由大到小
@@ -185,8 +173,7 @@ def main():
     fig.suptitle(f"{W.name}: how many sky basis components?  three criteria",
                  fontsize=12)
     fig.tight_layout()
-    # 檔名帶 pointing:每顆的 blank 樣本不同,K 的判準本來就可能給出不同答案,
-    # 寫成同一個檔會讓後跑的那顆蓋掉前一顆。
+    # 檔名帶 pointing:每顆的 blank 樣本不同,共用檔名會讓後跑的蓋掉前一顆。
     out = FIGURES / f"choose_K_{W.name}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     print(f"\nsaved -> {out}")

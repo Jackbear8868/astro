@@ -1,36 +1,21 @@
 """自我一致地修正 C_sky 的形狀,再端到端驗收。
 
-診斷(sky_continuum_dof + flux_bias_map)
-----------------------------------------
-blank 格扣完整套天空模型之後,殘差不是零:它有一個沿波長的傾斜,而且
+C_sky 是用 running median + spline 從平均天空譜估的,而迭代到最後只剩一部分通道沒
+被遮、分布還不均勻,spline 在約束不均的地方會留下平滑的形狀偏差。s 固定之後模型裡
+沒有自由的平滑成分,這種偏差只能倒進源模板,成為源流量的加法偏差。診斷見
+sky_continuum_dof 與 flux_bias_map。
 
-    形狀:每一格都一樣
-    振幅:幾乎不隨位置變
-    偏差:全場幾乎是常數
-
-也就是 **C_sky(λ) 本身的形狀系統性地錯了**,錯得到處一樣。而 s 被固定之後模型裡
-沒有自由的平滑成分,那個傾斜只能倒進源模板,成為源流量的加法偏差。
-
-C_sky 是用 running median + spline 從平均天空譜估的,而迭代到最後只剩一小部分
-通道沒被遮、分布還很不均勻(紅端遮得多)。spline 在約束不均的地方留下平滑的形狀
-偏差,完全說得通。
-
-修法
-----
+修法:
     1. 用現在的模型解 blank,取殘差
-    2. 只用**非天光線**的通道算逐通道中位 —— 我們修的是連續譜,不是線
+    2. 只用非天光線的通道算逐通道中位 —— 修的是連續譜,不是線
     3. 平滑成 delta_C(λ),外推到全部通道
     4. C_sky <- C_sky + delta_C
 
-**關鍵:樣本完全沒變,還是只有 blank。**另一種做法是把源
-扣掉、拿源區當天空樣本,源就有機會漏進天空模型;這裡不碰源區一根寒毛,只修
-「C_sky 的形狀和 blank 格實際需要的不一致」。
+樣本完全沒變,還是只有 blank。把源扣掉、拿源區當天空樣本的話,源就有機會漏進天空
+模型;這裡不碰源區,只修 C_sky 的形狀和 blank 格實際需要的不一致。
 
-判準(事先訂好)
---------------
-    主源旁保留率 進步 >= 0.02
-    遠場殘差     留在 ±0.05
-    blank 上的加法偏差 明顯往 0 靠
+事先訂好的判準:主源旁保留率進步 >= 0.02、遠場殘差留在 ±0.05、blank 上的加法偏差
+明顯往 0 靠。
 
     conda run -n astro python src/skymodel/experiments/ccorr_continuum.py
 """
@@ -53,8 +38,7 @@ from utils import (build_amplitude_field, fit_blank, main_source_group,  # noqa:
                    running_median, robust_spread)
 
 ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
-# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+# 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
 EVAL = ROOT / "results/skymodel/evaluation/sky_basis"
 
 
@@ -111,8 +95,7 @@ def main():
     print(f"平均殘差(連續譜通道):中位 {np.median(med[cont]):+.4f}   "
           f"範圍 {med[cont].min():+.4f} ~ {med[cont].max():+.4f}")
 
-    # 只用非天光線通道決定形狀,再用 spline 外推到全部通道。
-    # 天光線通道的殘差被線的擬合誤差主導,拿它決定連續譜的形狀是錯的。
+    # 只用非天光線通道決定形狀再外推:天光線通道的殘差被線的擬合誤差主導。
     x = np.flatnonzero(cont).astype(float)
     y = running_median(med[cont], args.window)
     spl = UnivariateSpline(x, y, k=3, s=len(x) * (args.smooth * robust_spread(y)) ** 2, ext=3)

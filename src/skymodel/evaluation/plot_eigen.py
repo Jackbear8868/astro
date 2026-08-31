@@ -5,26 +5,18 @@
     --kind star     the stellar library step4 draws its stellar candidates from,
                     one curve per template, ordered by spectral type
 
-The curves are drawn by evaluating the same splines the fit uses, over each spline's
-own domain -- not by re-reading the files. Anything trimmed away when a spline was
-built (the constant padding at both ends of the eigenspectra, the zero-filled gaps
-in the stellar files) is therefore absent from the figure too, so what is drawn is
-what the fit can actually see. Where a curve's own domain does not reach, it is NaN
-and simply stops.
+The curves come from evaluating the same splines the fit uses, over each spline's own
+domain, not from re-reading the files. Whatever spline construction trimmed -- padding
+at the ends of the eigenspectra, zero-filled gaps in the stellar files -- is absent
+here too, so what is drawn is what the fit can see. Outside its own domain a curve is
+NaN and stops. They differ in amplitude by orders of magnitude, so --mode chooses how
+they share one pair of axes:
 
-The curves differ in amplitude by up to two orders of magnitude, so how they share
-one pair of axes has to be chosen:
+    raw      as they are; the first component dominates and the rest sit on zero
+    offset   each shifted down a fixed step; shapes comparable, levels not
+    norm     each divided by its own peak |value|; feature sizes comparable too
+    panels   no sharing -- one row per component, each with its own y range
 
-    raw      as they are. The first component dominates and the rest sit on zero.
-    offset   each shifted down by a fixed step. Shapes are comparable, levels are not.
-    norm     each divided by its own peak |value|. Shapes are comparable, and so are
-             the relative sizes of features within one component.
-    panels   they do not share -- one row per component, each with its own y range,
-             on a common wavelength axis.
-
-    conda run -n astro python src/skymodel/evaluation/plot_eigen.py
-    conda run -n astro python src/skymodel/evaluation/plot_eigen.py --mode offset
-    conda run -n astro python src/skymodel/evaluation/plot_eigen.py --kind qso --muse
     conda run -n astro python src/skymodel/evaluation/plot_eigen.py --kind star --mode panels
 """
 import argparse
@@ -44,17 +36,16 @@ from utils import (DWARF_DIR, load_ascii_template, load_eigen_galaxy,  # noqa: E
 
 FIGURES = EVAL / "templates"
 
-# Where each set lives and how it is read. Kept together so a figure cannot claim
-# one source while reading another.
+# Where each set lives and how it is read, kept together so a figure cannot claim one
+# source while reading another.
 EIGEN = {
     "galaxy": (ROOT / "data/eigen_galaxy_Bolton2012.fits", load_eigen_galaxy),
     "qso":    (ROOT / "data/qso_eigen_linear_55732.dat",   load_eigen_qso),
 }
 KINDS = sorted(EIGEN) + ["star"]
 
-# Harvard order. Sorting the filenames alphabetically would interleave the sequence
-# (a0v before o5v), and the whole point of a stellar library on one figure is to
-# read the trend along it.
+# Harvard order: sorting the filenames alphabetically would interleave the sequence
+# (a0v before o5v), and the point of the figure is to read the trend along it.
 SPECTRAL_ORDER = "OBAFGKMLTY"
 
 
@@ -71,9 +62,8 @@ def class_label(stem):
 def load_curves(kind, class_labels=False):
     """(lo, hi, sample, labels) for one template set.
 
-    sample(lam) returns (len(lam), n_curve); positions outside a curve's own
-    domain come back NaN rather than extrapolated, so a figure never shows a
-    template reaching further than its data does.
+    sample(lam) returns (len(lam), n_curve), NaN outside a curve's own domain rather
+    than extrapolated, so no template is drawn past its data.
     """
     if kind in EIGEN:
         path, loader = EIGEN[kind]
@@ -174,16 +164,14 @@ def main():
         labels = [labels[j] for j in keep]
         n = len(keep)
 
-    # tab10 rather than common.qualitative: that helper draws from tab20, whose
-    # entries alternate a dark and a light shade of the same hue, so four curves
-    # would come out as two pairs. With this few series each needs its own hue.
+    # tab10 rather than common.qualitative: tab20 alternates a dark and a light shade
+    # of the same hue, so four curves would read as two pairs.
     tab10 = plt.get_cmap("tab10").colors
     colours = [tab10[j % len(tab10)] for j in range(n)]
 
     if args.mode == "panels":
-        # One row per component, each autoscaling on its own values. That is the
-        # point of this layout: the components differ by two orders of magnitude,
-        # and any shared y axis trades one component's detail for another's.
+        # One row per component, autoscaling on its own values: they differ by orders
+        # of magnitude, and a shared y axis trades one's detail for another's.
         fig, axes = plt.subplots(n, 1, sharex=True,
                                  figsize=(args.figsize[0], args.figsize[1] * 0.45 * n))
         for j, ax in enumerate(axes):
@@ -194,10 +182,8 @@ def main():
             if args.ylim:
                 ax.set_ylim(*args.ylim)
             else:
-                # Every label sits in the same corner, so the room for it has to be
-                # made per row instead: the axis is stretched upward until the
-                # curve's own right-hand end clears LABEL_TOP. A row whose curve is
-                # low on the right just gets the plain margin.
+                # Every label sits in the same corner, so room is made per row: the
+                # axis stretches up until the curve's right-hand end clears LABEL_TOP.
                 y0, y1 = ax.get_ylim()
                 e = max(1, F.shape[0] // 5)
                 top = float(np.nanmax(y[-e:]))
@@ -205,22 +191,20 @@ def main():
                 ax.set_ylim(y0, max(y1 + 0.10 * (y1 - y0), room))
             ax.set_ylabel("flux")
             ax.grid(alpha=0.2)
-            # In the corner rather than in a legend: with one curve to a row, a
-            # legend box is a frame drawn around something the row already says.
+            # In the corner, not a legend: one curve to a row needs no key.
             ax.text(0.996, 0.94, labels[j], transform=ax.transAxes,
                     ha="right", va="top", fontsize=13, color=colours[j])
         axes[-1].set_xlabel("rest wavelength [$\\AA$]")
         fig.subplots_adjust(hspace=0.08)
     else:
-        # Each mode is a different y axis, so the label has to change with it.
-        # nan-aware throughout: a curve that does not span the whole range is NaN
-        # outside its own, and a plain max would poison the scale for all of them.
+        # Each mode is a different y axis, so the label changes with it. nan-aware
+        # throughout: a short curve is NaN outside its own domain, and a plain max
+        # would poison the scale for all of them.
         if args.mode == "norm":
             Y = F / np.nanmax(np.abs(F), axis=0)
             ylab = "flux / peak |flux|"
         elif args.mode == "offset":
-            # One step for every curve, taken from the largest span, so no two
-            # overlap regardless of which one is the tallest.
+            # One step for every curve, from the largest span, so none overlap.
             step = args.step if args.step else float(
                 np.nanmax(np.nanmax(F, axis=0) - np.nanmin(F, axis=0)))
             Y = F - step * np.arange(n)
@@ -242,8 +226,8 @@ def main():
                   bbox_to_anchor=(0, 1.005), borderaxespad=0)
         ax.grid(alpha=0.2)
 
-    # The mode and the range both change what the figure shows, so both go in the
-    # name: without them a second run silently replaces the first.
+    # Mode and range both change what the figure shows, so both go in the name;
+    # otherwise a second run silently replaces the first.
     rng = "muse" if (args.muse and not args.xlim) else ("cut" if args.xlim else "full")
     stem = (f"eigen_{args.kind}_{args.mode}_{rng}"
             + ("_onlyfull" if args.only_full else ""))

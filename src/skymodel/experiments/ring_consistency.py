@@ -1,36 +1,23 @@
 """膨脹到哪裡才停 —— 問「這一圈還是不是同一個天體」,而不是「這一圈夠不夠亮」。
 
-想法(使用者提的):把遮罩放大之後,新增的那圈如果和原本圈起來的範圍**係數差太多**,
-就代表那圈不該算進來。
+不能比係數的大小:表面亮度本來就往外遞減,振幅變小是物理,照「差太多就否決」的
+規則任何真實的源都會在第一圈被判死。要比的是形狀 —— 這一圈的光譜是不是足跡光譜
+的一個縮放版。
 
-這裡把它做成可以量的形式,並修掉一個會讓它直接失效的地方:
+① 參考光譜 P(λ) = <足跡> − <遠場>,兩個都是原始資料的平均,沒有經過任何擬合:
+   遮罩決定 blank 樣本、blank 樣本決定 basis,拿擬合結果回頭定遮罩會形成迴圈。
 
-    不能比係數的「大小」。表面亮度本來就往外遞減,振幅變小是物理,不是不合適。
-    照「差太多就否決」的規則,任何真實的源都會在第一圈就被判死。
-    要比的是**形狀** —— 這一圈的光譜是不是「足跡光譜的一個縮放版」。
-
-做法
-----
-① 參考光譜 P(λ) = <足跡> − <遠場>
-   兩個都是原始資料的平均,**沒有經過任何擬合** —— 遮罩會決定 blank 樣本、
-   blank 樣本會決定 basis,所以拿擬合結果回頭定遮罩會形成迴圈。減掉遠場平均
-   則完全在迴圈外面(而且代數上就是先前診斷用的那個守恆量)。
-
-② 對每一圈,用**同一組固定的 step03 basis**(不重學)做兩個巢狀擬合:
+② 對每一圈,用同一組固定的 step03 basis(不重學)做兩個巢狀擬合:
 
        模型 A   <環> − <遠場> = alpha · P(λ) + Σ cₖ · Lₖ(λ)
        模型 B   <環> − <遠場> =                Σ cₖ · Lₖ(λ)
 
-   alpha 是「這一圈裡有多少同一個天體」;Δchi2 = chi2(B) − chi2(A) 是
-   「把 P 加進去到底有沒有幫助」。多一個參數,所以虛無假設下 Δchi2 ~ chi2_1。
+   alpha 是這一圈裡有多少同一個天體,Δchi2 = chi2(B) − chi2(A) 是加進 P 有沒有
+   幫助;多一個參數,虛無假設下 Δchi2 ~ chi2_1。天光線 basis 當干擾項是保守的,
+   它有機會吸走一部分 P,判到的「有源」只會少報不會多報。
 
-   天光線 basis 一起放進去當干擾項是**保守**的:它有機會吸走一部分 P,
-   讓 alpha 偏小、Δchi2 偏低,所以判到的「有源」只會少報不會多報。
-
-③ 門檻不指定。把整塊印章平移到隨機的空白位置,做完全相同的計算 —— 空白區
-   應該沒有這個天體,所以那裡的 Δchi2 就是虛無分布。STAT 低估了相關雜訊,
-   這一步會自動把低估的倍率量出來(f = median(Δchi2_null) / 0.455,
-   0.455 是 chi2_1 的中位數),門檻取 f × 3.84(chi2_1 的 95%)。
+③ 門檻不指定:整塊印章平移到隨機的空白位置做完全相同的計算,空白區沒有這個天體,
+   那裡的 Δchi2 就是虛無分布,門檻直接取它的百分位。
 
     conda run -n astro python src/skymodel/experiments/ring_consistency.py \\
         --work results/skymodel/p01
@@ -50,7 +37,7 @@ import matplotlib.pyplot as plt
 ROOT    = Path(__file__).resolve().parents[3]
 FIGURES = ROOT / "results/skymodel/evaluation/masking/edge_oversub"
 
-WILD  = 1e3     # 原始 cube 裡有 -5e5 這種壞 voxel,見 edge_oversubtraction.py
+WILD  = 1e3     # 壞 voxel 的絕對值遠超物理範圍,見 edge_oversubtraction.py
 CHI2_1_MEDIAN = 0.4549364    # chi2 分布(自由度 1)的中位數
 CHI2_1_95     = 3.8414588    # 同上,95 百分位
 
@@ -66,9 +53,8 @@ def label_aware(seg, rmax):
 def region_mean(D, V, idx):
     """一塊區域的平均光譜,以及那個平均的變異數。
 
-    平均的變異數是 Σvar / n^2 —— 這條式子假設 spaxel 之間互相獨立。重採樣讓相鄰
-    voxel 相關,所以它是**低估**的。不在這裡修:虛無分布會把低估的倍率直接量出來,
-    比猜一個修正係數可靠。
+    變異數 Σvar / n^2 假設 spaxel 之間互相獨立,而重採樣讓相鄰 voxel 相關,所以它
+    是低估的。不在這裡修:虛無分布會把低估的倍率直接量出來。
     """
     d = D[:, idx]
     v = V[:, idx]
@@ -85,12 +71,12 @@ def region_mean(D, V, idx):
 def nested_fit(y, s2, P, L, ok):
     """模型 A(含 P)對模型 B(不含 P)。回傳 (alpha, Δchi2)。
 
-    不需要真的解兩次。把 y 和 P 都先「投影掉」basis 之後,問題就退化成一維:
+    不需要解兩次。把 y 和 P 都先投影掉 basis 之後,問題退化成一維:
 
         alpha = (r_P · r_y) / (r_P · r_P)        Δchi2 = (r_P · r_y)^2 / (r_P · r_P)
 
-    r_y、r_P 是各自扣掉 basis 最佳擬合後的殘差。這是巢狀模型的標準結果,
-    而且只要對同一個設計矩陣做一次分解、兩個右手邊一起解,不必解兩次。
+    r_y、r_P 是各自扣掉 basis 最佳擬合後的殘差;同一個設計矩陣分解一次,兩個右手邊
+    一起解。
     """
     g = ok & np.isfinite(y) & np.isfinite(s2) & (s2 > 0) & np.isfinite(P)
     if g.sum() < L.shape[0] + 10:
@@ -151,8 +137,7 @@ def main():
     seg   = fits.getdata(seg_path).astype(int)
     white = fits.getdata(STEP01 / "whitelight_nosky.fits")
     wl    = np.load(STEP03 / "wavelength.npy")
-    # 固定用現有的 step03 basis,**不重學** —— 重學的話遮罩會透過 basis 影響自己
-    # 的判定,那正是要避開的迴圈。
+    # 固定用現有的 step03 basis,不重學 —— 重學會讓遮罩透過 basis 影響自己的判定。
     L = np.load(STEP03 / f"sky_line_basis_{args.basis}_K{args.K}.npy")
     print(f"basis: sky_line_basis_{args.basis}_K{args.K}.npy  {L.shape}(固定,不重學)")
 
@@ -191,12 +176,9 @@ def main():
             a, dc = nested_fit(m - far_m, s2, P, L, ok)
             a_r.append(a); d_r.append(dc)
 
-        # 虛無分布:整塊印章(足跡 + 各圈)平移到隨機的空白位置,**就地重算 P**。
-        #
-        # 這一點很要緊。若 P 沿用源原本位置的光譜,就切斷了「足跡和貼著它的環
-        # 相鄰、共享同一塊局部天空結構」這件事 —— 而那正是最可能製造偽陽性的
-        # 機制。就地重算之後,虛無分布裡的 P 和環同樣是鄰居,幾何與空間相關性
-        # 都和真實情況一致,門檻才不會被低估。
+        # 虛無分布:整塊印章(足跡 + 各圈)平移到隨機的空白位置,就地重算 P。P 若
+        # 沿用原位置的光譜,就切斷了「足跡和貼著它的環共享同一塊局部天空結構」,
+        # 而那正是最可能製造偽陽性的機制,門檻會被低估。
         fy = np.concatenate([st["fy"]] + [r[0] for r in st["rings"] if r[0].size])
         fx = np.concatenate([st["fx"]] + [r[1] for r in st["rings"] if r[1].size])
         got, tries, nulls = 0, 0, []
@@ -223,9 +205,8 @@ def main():
               f"alpha(r=1..4) " + " ".join(f"{x:7.3f}" for x in a_r[:4]))
 
     # ---- 門檻:直接取虛無分布的百分位 --------------------------------------
-    # 門檻直接取虛無分布的百分位,不繞道「量出 STAT 低估的倍率 f,再乘上 chi2_1
-    # 的 95 百分位」—— 那條路要先假設尾巴服從 chi2_1,而天空的空間結構不是高斯
-    # 白雜訊。虛無樣本夠多時,實測百分位不需要任何分布假設。f 仍然印出來當診斷用。
+    # 不繞道「量出 STAT 低估的倍率 f 再乘上 chi2_1 的 95 百分位」:那要先假設尾巴
+    # 服從 chi2_1,而天空的空間結構不是高斯白雜訊。f 仍然印出來當診斷用。
     nn  = np.array([x for x in null_all if np.isfinite(x)])
     f   = float(np.median(nn) / CHI2_1_MEDIAN) if nn.size else 1.0
     thr = float(np.percentile(nn, 95))
@@ -255,9 +236,8 @@ def main():
         print(f"  逐源各自算的 95 百分位:中位 {np.median(v):.1f},"
               f"範圍 {v.min():.1f} - {v.max():.1f}(合池是否合理的檢查)")
 
-    # 用哪一個門檻。逐源在原理上正確(每個源的 P 形狀、環幾何都不同),但需要夠多
-    # 平移樣本才估得準,樣本太少時逐源門檻的散布大半只是估計雜訊。樣本不足的源
-    # (例如 Haro 11 根本平移不進任何空白區)一律退回合池。
+    # 逐源在原理上正確(每個源的 P 形狀、環幾何都不同),但要夠多平移樣本才估得準,
+    # 樣本太少時逐源門檻的散布大半只是估計雜訊,所以樣本不足的源退回合池。
     def thr_of(i):
         if args.threshold == "pooled":
             return thr

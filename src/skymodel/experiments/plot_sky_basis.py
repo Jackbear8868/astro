@@ -1,19 +1,17 @@
 """天光線 basis 長什麼樣 —— K 條成分一次看完。
 
-54 條 3801 通道的曲線疊在一起是看不懂的,所以拆成兩種看法,各自回答不同的問題:
+幾十條長光譜疊在一起看不懂,所以拆成兩種看法:
 
-    上   全部 K 條畫成一張影像(成分 x 波長),用發散色階、以 0 為中心。
-         回答「哪些成分在哪些波長有力量」—— 天光線的位置會變成一條條垂直亮紋,
-         而如果某條成分整條都很平,那它多半在描述雜訊而不是天光線。
-    下   前幾條各自畫出來、上下錯開。
-         回答「單一條成分的形狀」—— 影像看得出位置,看不出正負與線型。
+    上   全部 K 條畫成一張影像(成分 x 波長),發散色階以 0 為中心,回答哪些成分
+         在哪些波長有力量 —— 天光線變成一條條垂直亮紋,整條都平的成分多半在描述
+         雜訊。
+    下   前幾條各自畫出來、上下錯開,回答單一條成分的形狀:影像看得出位置,看不
+         出正負與線型。
 
-色階用百分位而不是最大值:第一條成分的振幅比後面大一個量級,用最大值當上限
-會讓其餘的成分全部變成同一個顏色。
+色階用百分位而不是最大值:前幾條成分的振幅遠大於後面,用最大值當上限會讓其餘成分
+全變成同一個顏色。
 
     conda run -n astro python src/skymodel/experiments/plot_sky_basis.py --work results/skymodel/p01
-    conda run -n astro python src/skymodel/experiments/plot_sky_basis.py \\
-        --basis results/skymodel/experiments/seg_threshold/prof2sigma/step03/sky_line_basis_svd_K54.npy
 """
 import argparse
 from pathlib import Path
@@ -29,9 +27,8 @@ FIGURES = ROOT / "results/skymodel/evaluation/sky_basis"
 
 def main():
     ap = argparse.ArgumentParser(description="畫出天光線 basis")
-    # --work 給「某顆 pointing 的 step03」,--basis 給任意一個 basis 檔 ——
-    # 後者是為了畫 experiments/ 底下那些不屬於任何 pNN 的 basis(例如
-    # seg_threshold/ 的門檻掃描產物),兩者擇一。
+    # --work 給某顆 pointing 的 step03,--basis 給任意一個 basis 檔(例如
+    # experiments/ 底下不屬於任何 pNN 的產物),兩者擇一。
     ap.add_argument("--work", default=None,
                     help="pointing 的工作區,例如 results/skymodel/p01;"
                          "會去讀它的 step03/sky_line_basis_{method}_K{K}.npy")
@@ -57,14 +54,12 @@ def main():
     K  = B.shape[0]
     print(f"{bp}  {B.shape}   波長 {wl[0]:.1f}-{wl[-1]:.1f} A")
 
-    # 來源標籤 = basis 檔的上兩層目錄。sky_line_basis_svd_K30.npy 這個檔名只說得出
-    # 方法與 K,說不出「從哪些 spaxel 學的」,而那正是不同版本之間唯一的差別
-    # (p01 / p02 / 膨脹遮罩 / 門檻掃描 ...)。只用檔名的話,不同來源的同 K 會
-    # 寫成同一個檔互相覆蓋,而且從檔名完全看不出來被蓋掉了。
+    # 來源標籤 = basis 檔的上兩層目錄。檔名只說得出方法與 K,說不出從哪些 spaxel
+    # 學的,而那正是不同版本之間唯一的差別;只用檔名會無聲互相覆蓋。
     src = f"{bp.parent.parent.name}_{bp.parent.name}"
 
-    # SVD 的正負號不具意義(分解本身的自由度)。統一成「最大絕對值為正」,
-    # 不然同一條成分在不同 run 之間可能整條翻轉,看起來像變了。
+    # SVD 的正負號是分解的自由度,統一成最大絕對值為正,否則同一條成分在不同 run
+    # 之間可能整條翻轉,看起來像變了。
     B = B * np.sign(B[np.arange(K), np.abs(B).argmax(axis=1)])[:, None]
 
     if args.per_component:
@@ -72,8 +67,7 @@ def main():
              else FIGURES / "step3_basis" /
                   f"{src}__{bp.stem.replace('sky_line_basis_', 'basis_')}")
         d.mkdir(parents=True, exist_ok=True)
-        # y 範圍全部成分共用 —— 各自 autoscale 的話,一條只有雜訊的成分會被
-        # 放大到和真正的天光線成分看起來一樣強,逐張翻閱時完全誤導。
+        # y 範圍全部成分共用:各自 autoscale 會把只有雜訊的成分放大到看起來一樣強。
         v = float(np.percentile(np.abs(B), 99.9)) * 1.15
         for i in range(K):
             f, a = plt.subplots(figsize=(13, 3.2))

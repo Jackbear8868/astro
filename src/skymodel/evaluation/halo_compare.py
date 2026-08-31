@@ -1,32 +1,21 @@
 """Haro 11's extended light, one spectrum per pointing, on one figure.
 
-Each pointing sees the same galaxy through a different dither, a different exposure
-depth and a different part of the field of view, so "is the extended light the same
-thing in all of them" is a question only a figure like this can answer.
+Each pointing sees the same galaxy through a different dither, exposure depth and part
+of the field of view, so "is the extended light the same thing in all of them" is a
+question only a figure like this can answer.
 
-What counts as the halo
------------------------
-The faintest fraction of the main source group, by white-light surface brightness --
-an isophotal zone, the same construction halo_spectra uses for its outermost layer.
-Not a box at a fixed position: the galaxy sits somewhere different in every pointing,
-and a box would sample a different part of it each time. Not a ring of fixed radius
-either: Haro 11 is a merger and is neither round nor centred on anything, so a ring
-crosses the bright knots and the faint outskirts at the same radius.
+The halo is the faintest fraction of the main source group by white-light surface
+brightness -- an isophotal zone, the same construction halo_spectra uses for its
+outermost layer. Not a box at a fixed position, since the galaxy sits somewhere
+different in every pointing; not a ring of fixed radius either, since a merger is
+neither round nor centred and a ring would cross knots and outskirts at one radius.
 
-What is not comparable
-----------------------
-The wavelength grids. Pointings have 3801 or 3802 channels, their starts differ by up
-to 0.7 A, and p14 begins about 150 A redward of the rest with 120 fewer channels.
-Nothing is resampled -- each curve is drawn against its own wavelength array, so no
-two channels are silently equated.
+Two things are not comparable, and are left alone rather than forced. The wavelength
+grids differ in length and in start, so nothing is resampled and each curve is drawn
+against its own array -- no two channels are silently equated. The zones differ too,
+in area and in which part of the galaxy they cover, so the printed table gives each
+one's spaxel count and median surface brightness.
 
-The zone sizes. Each pointing contributes its own faintest quartile, and how much of
-the galaxy is inside the field differs (in some pointings Haro 11 runs off the edge),
-so the zones are neither the same area nor the same part of the galaxy. The printed
-table gives the spaxel count and the median surface brightness of each, which is what
-makes the differences readable rather than invisible.
-
-    conda run -n astro python src/skymodel/evaluation/halo_compare.py
     conda run -n astro python src/skymodel/evaluation/halo_compare.py \\
         --frac 0.5 --xlim 6500 6900 --normalise
 """
@@ -56,17 +45,13 @@ CACHE = FIGURES / "cache"
 def halo_mask(seg, white, valid, main, frac, band=None):
     """Which spaxels count as halo, away from the field edge.
 
-    Two constructions, and they answer different questions.
-
-    frac -- the faintest `frac` of this pointing's main source group. Self-scaling, so
-    it always finds the outskirts of whatever the group is; but how far out the group
-    reaches differs between pointings, so the zones sit at different surface
-    brightnesses and are not the same part of the galaxy.
-
-    band -- an absolute surface-brightness window (lo, hi) in white-light units, the
-    same numbers in every pointing. The zones are then genuinely the same isophote and
-    can be compared directly; the price is that a pointing may contribute very few
-    spaxels, or none, and the count has to be read alongside the curve.
+    Two constructions answering different questions. frac takes the faintest `frac` of
+    this pointing's main source group: self-scaling, so it always finds the outskirts
+    of whatever the group is, but the zones then sit at different surface brightnesses
+    between pointings. band takes an absolute surface-brightness window (lo, hi) in
+    white-light units, the same numbers everywhere, so the zones are genuinely one
+    isophote; the price is that a pointing may contribute few spaxels, and the count
+    has to be read alongside the curve.
     """
     ok = valid & (ndimage.distance_transform_edt(valid) > EDGE_MARGIN)
     inside = main & ok
@@ -144,10 +129,9 @@ def main():
         if int(m.sum()) == 0:
             print(f"  skip {name}: the selection contains no spaxel")
             continue
-        # One cube read takes minutes and the figure gets re-drawn many times while its
-        # scales are settled, so the spectra are cached on the selection that produced
-        # them. The key carries every input that changes the numbers -- a cache that can
-        # be read back for a different selection is worse than no cache.
+        # A cube read takes minutes and the figure is redrawn often, so spectra are
+        # cached. The key carries every input that changes the numbers -- a cache read
+        # back for a different selection is worse than no cache.
         key = (f"{name}_{run.name}_"
                + (f"band{args.band[0]:g}-{args.band[1]:g}" if args.band
                   else f"frac{args.frac:g}")

@@ -1,46 +1,30 @@
 """挖洞測試:把 s 的先驗當成擬合的一部分,能不能贏過現行的「事後平滑」。
 
-現行做法的限制
---------------
-現在是兩步:①每格獨立解 s ②丟掉源區的、平滑剩下的。問題出在①—— 源區的
-chi2 地形是一條長平谷(a·T 和 s·C_sky 都是平滑的連續譜,沿著「a 加一點、s 減
-一點」走 chi2 幾乎不變),逐格擬合會在谷底上任意挑一點。等②拿到 s 的時候,
-看到的是那個任意的選擇,不是資料。**事後平滑救不回沒被記錄下來的東西。**
+現行做法是兩步:①每格獨立解 s,②丟掉源區的、平滑剩下的。問題出在①:源區的
+chi2 地形是一條長平谷(a·T 和 s·C_sky 都是平滑的連續譜,沿著「a 加一點、s 減一
+點」走 chi2 幾乎不變),逐格擬合會在谷底上任意挑一點,②看到的是那個任意選擇而
+不是資料。核回歸那一項也只在訓練點附近有值,離得夠遠的地方 s_hat 就只剩
+mu + a(y) + b(x)。
 
-結果是核回歸那一項只在訓練點附近有值:離訓練點夠遠的地方 den = 0,那些地方
-s_hat 就是純粹的 mu + a(y) + b(x)。
-
-要測的改法
-----------
-把兩步合成一個目標函數,先驗直接進擬合:
+要測的改法是把兩步合成一個目標函數,先驗直接進擬合:
 
     最小化   || W·(D − A·theta) ||²  +  lambda·( s − M )²        M = mu + a(y) + b(x)
 
-**先驗中心用 M,不是「要求平滑」** —— s 的真實結構是週期 37 px 的儀器條紋,
-|grad s|² 那種平滑懲罰會把真的結構磨掉。
+先驗中心用 M,而不是要求平滑:|grad s|² 那種懲罰會把 s 本身的細結構磨掉。實作上不
+需要組大矩陣,給定 M 之後每一格仍然獨立,lambda·(s−M)² 只是在設計矩陣底下多加一行
+[0…sqrt(lambda)…0],目標值 sqrt(lambda)·M。
 
-實作上不需要組大矩陣:給定 M 之後每一格仍然獨立,而 lambda·(s−M)² 只是在設計
-矩陣底下**多加一行** [0…sqrt(lambda)…0],目標值 sqrt(lambda)·M。
+測法是在 blank 區挖一個洞,洞裡有真值(那些格本來就是 blank,自由解出來的 s 可信):
 
-怎麼測才乾淨
-------------
-在 **blank 區**挖一個洞,洞裡有真值(那些格本來就是 blank,自由解出來的 s 可信)。
-
-    ① 洞裡的格從「建場的訓練樣本」中排除 —— 模擬源區的處境
-    ② 對洞裡的格**注入一個真實的星系模板**,強度用「源連續譜 / 天空連續譜」的
-       比值 f 控制。不注入的話沒有東西可以被 s 吸收,簡併的偏差不會出現,
-       測到的只有變異數,不是我們要修的那個病。
-    ③ 用三種方法解洞裡的 s,和真值比:
-           free     lambda = 0,s 完全自由            = 沒有先驗
-           field    s 固定成場的值(不含洞的訓練)     = **現行做法**
-           prior L  s 自由但被 lambda 拉向 M         = 提案
-    ④ 兩個指標一起看(原則 1):
-           s 的偏差   ->  天空扣得對不對
-           源流量回收 ->  源有沒有被吃掉
+    ① 洞裡的格從建場的訓練樣本中排除 —— 模擬源區的處境
+    ② 對洞裡的格注入一個真實的星系模板,強度用「源連續譜 / 天空連續譜」的比值 f
+       控制。不注入的話沒有東西可以被 s 吸收,測到的只有變異數,不是要修的那個病。
+    ③ 用三種方法解洞裡的 s,和真值比:free(lambda = 0,沒有先驗)、field(s 固定
+       成場的值,現行做法)、prior L(s 自由但被 lambda 拉向 M)
+    ④ 兩個指標一起看:s 的偏差看天空扣得對不對,源流量回收看源有沒有被吃掉
 
 求解器和正式流程一致:lsq_linear / BVLS,s >= 0,單一模板時 A >= 0。
 
-    conda run -n astro python src/skymodel/experiments/s_prior_holetest.py
     conda run -n astro python src/skymodel/experiments/s_prior_holetest.py -f 0.1 0.3 1.0
 """
 import argparse
@@ -62,8 +46,7 @@ from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noq
                    main_source_group, median_polish, robust_spread)
 
 ROOT = Path(__file__).resolve().parents[3]
-# 圖與量測值一律寫中央,檔名帶 pointing —— 放在各自的工作區裡的話,
-# 要比較幾顆就得開幾個目錄,而且檔名相同排不到一起。
+# 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
 EVAL = ROOT / "results/skymodel/evaluation/s_field"
 BAND = (5500.0, 6500.0)      # 量「源 / 天空」比值用的乾淨窗口
 
@@ -71,8 +54,7 @@ BAND = (5500.0, 6500.0)      # 量「源 / 天空」比值用的乾淨窗口
 def pick_hole(blank, seg, valid, radius, margin):
     """在 blank 區挑一個圓洞:圓心取離任何源、離視野邊緣都最遠的那一格。
 
-    洞要放在「本來就乾淨」的地方,否則真值本身就不可信 —— 那會讓整個測試
-    失去基準。半徑由呼叫端給,並回報它相對於 Haro 11 足跡的大小。
+    洞要放在本來就乾淨的地方,否則真值本身就不可信,整個測試也就沒有基準。
     """
     d_src  = ndimage.distance_transform_edt(seg == 0)
     d_edge = ndimage.distance_transform_edt(valid)
@@ -86,9 +68,8 @@ def pick_hole(blank, seg, valid, radius, margin):
 def solve(y, var, design, lb, ub, lam=None, prior=None):
     """單一 spaxel 的加權最小平方,可選擇加一行先驗。
 
-    先驗那一行是 [0 … sqrt(lam) … 0](只在 s 那一欄非零),目標值 sqrt(lam)·M。
-    這一行和資料的行**用同一個最小平方一起解**,所以它不是事後修正,
-    而是真的參與了「谷底上要挑哪一點」的決定。
+    先驗那一行是 [0 … sqrt(lam) … 0](只在 s 那一欄非零),目標值 sqrt(lam)·M。它和
+    資料的行用同一個最小平方一起解,所以是參與了「谷底上挑哪一點」,不是事後修正。
     """
     g = np.isfinite(y) & np.isfinite(var) & (var > 0)
     if g.sum() <= design.shape[0]:
@@ -161,8 +142,7 @@ def main():
           f"M 中位 {np.median(M[hole]):.5f}   場 中位 {np.median(s_hat[hole]):.5f}")
 
     # ---- 注入用的模板 ----
-    # "classification" is the key; "best" is what step5 wrote before the
-    # parameter was renamed, and products made then are still on disk.
+    # "classification" 是鍵名;磁碟上較舊的產物寫的是 "best"。
     best = np.load(ROOT / (meta.get("classification") or meta["best"]))
     T_all = build_templates(best, air_to_vacuum(wl))
     tid = args.tpl_id if args.tpl_id else int(best["id"][np.nanargmax(
@@ -243,8 +223,7 @@ def main():
         run_one("free")                                  # lambda = 0
         run_one("field", s_fix=sf_h)                     # 現行做法
         for lam in args.lam:
-            # 標籤直接印 lambda 本身 —— 印 log10 取整的話,相近的 lambda 會撞成
-            # 同一個標籤,表格裡就分不出是哪一個。
+            # 標籤直接印 lambda 本身:印 log10 取整會讓相近的 lambda 撞成同一個標籤。
             run_one(f"prior {lam:.0e}", lam=lam)
 
     # ---- 圖 ----

@@ -1,30 +1,22 @@
 """The spectrum of Haro 11's extended light, layer by layer.
 
-The white-light map says where the extended light is; it cannot say what it is. This
-takes the main source group, cuts it into surface-brightness layers from the core
-outwards, adds a few rings of sky beyond its boundary, and draws the mean spectrum of
-each layer.
+The white-light map says where the extended light is, not what it is. This cuts the
+main source group into surface-brightness layers from the core outwards, adds a few
+rings of sky beyond its boundary, and draws the mean spectrum of each.
 
-Why layers by brightness rather than rings by radius: the galaxy is a merger, so it is
-neither round nor centred on anything -- rings drawn around the peak would cut across
-the bright knots and the faint outskirts at the same radius and average them together.
-A brightness layer is an isophotal zone, which is what "how far out in the galaxy"
-actually means for a shape like this. The layers are equal-count, so each has the same
-number of spaxels and therefore comparable noise -- an equal-width split in flux would
-put almost every spaxel in the faintest layer.
+Layers by brightness, not rings by radius: the galaxy is a merger, so a ring around the
+peak averages bright knots with faint outskirts at the same radius. A brightness layer
+is an isophotal zone, which is what "how far out" means for such a shape, and
+equal-count layers give comparable noise -- an equal-width split in flux would put
+almost every spaxel in the faintest one. Outside the group the seg edge is the only
+reference, so those zones are rings of distance from it: light continuing past the
+boundary was treated as sky, the check that matters here.
 
-Beyond the boundary the same argument does not apply: out there the seg boundary is
-the only reference, so those zones are rings of distance from it. They are the check
-that matters for sky subtraction -- if the galaxy's light continues past the boundary,
-those spaxels were treated as sky.
+Each layer gets its own panel and y scale: the core is orders of magnitude brighter
+than the outskirts, and a shared scale would flatten every other layer onto zero.
 
-Each layer is drawn on its own panel with its own y scale. The core is orders of
-magnitude brighter than the outskirts, so on a shared scale every layer but the core
-would be a flat line on zero, which is a statement about the axis, not about the data.
-
-The cube read is whatever has had the sky taken out: this pointing's own
-step06/sky_subtracted.fits by default, or ESO's with --cube. Reading a wsky cube would
-work and would show the sky, not the galaxy.
+The cube read is one that has had the sky taken out: this pointing's own
+step06/sky_subtracted.fits, or ESO's with --cube. A wsky cube would show the sky.
 
     conda run -n astro python src/skymodel/evaluation/halo_spectra.py --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/halo_spectra.py --work results/skymodel/p07 \\
@@ -48,39 +40,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 
-# Haro 11's redshift, and the lines bright enough to be worth marking. They are drawn
-# as guides for reading the panels -- whether a layer shows them is what the figure is
-# being asked.
-#
-# Both halves of the [O III] doublet are marked. They share an upper level (1D2 -> 3P1
-# and 1D2 -> 3P2), so their ratio is fixed by the transition probabilities alone at
-# 5007/4959 = 2.98, whatever the temperature, density or abundance. Marking only 5007
-# left the second line as an unexplained peak next to a marked one; marking both makes
-# the pair recognisable, and the ratio is then a check the reader can make by eye --
-# a region where it is not about 3 has a problem in the subtraction or the fit, not in
-# the physics.
+# Haro 11's redshift, and the lines bright enough to mark; the markers are guides for
+# reading the panels. Both halves of the [O III] doublet are marked because they share
+# an upper level, so the transition probabilities alone fix the ratio at
+# 5007/4959 = 2.98 -- a zone where it is not about 3 has a problem in the subtraction
+# or the fit, not in the physics.
 Z_HARO = 0.0204
 LINES = [("Hb", 4861.3), ("[O III] 4959", 4958.9), ("[O III] 5007", 5006.8),
          ("Ha", 6562.8), ("[S II]", 6716.4)]
-# Pale red for the line markers. They used to be grey, which put them in the same
-# colour as the axis grid -- and the 5000 A grid line sits 40 A from the Hb marker, so
-# on a figure this wide the two touched and could not be told apart. Red is not a
-# colour the grid or the zero line uses, so the separation survives at any zoom.
+# Pale red for the line markers -- a colour neither the grid nor the zero line uses.
+# Grey would match the grid, whose 5000 A line falls beside the redshifted Hb marker.
 C_LINE = "#f4a3a3"
-# Transparency for the full-height marker (--marker line). It sits exactly under the
-# peak it names, so at full strength the two are one stroke and the peak cannot be
-# read. Transparency rather than a paler colour: the hue is what says "this is a
-# redshift marker, not the grid". It is a compromise either way, which is why the
-# default marker is the tick -- that one does not cross the data at all and needs no
-# transparency.
+# Transparency for the full-height marker (--marker line): it sits under the peak it
+# names, and at full strength the two are one stroke. A paler colour would lose the hue.
 A_LINE = 0.45
 
-# Spaxels this close to the edge of the field of view are dropped. The exposure count
-# falls off there and step5 writes NaN below 90% coverage, so a layer reaching the edge
-# would be measuring the mosaic boundary rather than the galaxy.
+# Spaxels this close to the field-of-view edge are dropped: exposures fall off there
+# and step5 writes NaN below 90% coverage, so a layer there measures the mosaic.
 EDGE_MARGIN = 6
-# Channels read at a time. The cubes are ~3 GB; this keeps one chunk at tens of MB
-# while still doing the averaging in vectorised blocks.
+# Channels read at a time: small enough to keep a chunk in memory, large enough to
+# average in vectorised blocks.
 CHUNK = 256
 
 
@@ -101,8 +80,7 @@ def zone_labels(seg, white, valid, main, n_layers, rings):
         lo, hi = edges[n_layers - 1 - k], edges[n_layers - k]
         m = inside & (white >= lo) & (white <= hi if k == 0 else white < hi)
         zones[m] = len(names) + 1
-        # L1 is the brightest and the panels are stacked in that order, so the number
-        # already says which layer this is.
+        # L1 is the brightest, and the panels are stacked in that order.
         names.append(f"galaxy L{k + 1}")
 
     # --- outside it: rings of distance from the boundary ---
@@ -139,20 +117,15 @@ def zone_means(cube_path, zones, n_zones, nz):
 def panel_ylim(spec):
     """y range for one panel: what the spectrum does, not what one bad voxel does.
 
-    A single dead or hot channel in a mean spectrum can be tens of times the whole
-    range of the zone (in p01's outermost ring one channel is -122 while its
-    neighbours are near 0), and autoscaling to it flattens the real spectrum into a
-    line on zero.
+    A single dead or hot channel can be many times the whole range of a zone, and
+    autoscaling to it flattens the real spectrum onto zero. The range therefore comes
+    from the 3-channel median-filtered spectrum, which a one-channel excursion cannot
+    survive but a resolved line can, MUSE lines being several channels wide. The raw
+    curve is still what gets drawn.
 
-    The range is taken from the 3-channel median-filtered spectrum, which a
-    one-channel excursion cannot survive but a spectrally resolved emission line can
-    -- MUSE lines are several channels wide, so the median keeps them. The raw curve
-    is still what gets drawn.
-
-    The range is then extended to cover any raw value within one full panel height of
-    that, so the tips of genuine lines are not cut off for the sake of a rule aimed at
-    single channels. Anything beyond that runs off the panel, and the caller reports
-    it.
+    The range is then widened to cover any raw value within one panel height of that,
+    so the tips of real lines are not cut off by a rule aimed at single channels.
+    Anything beyond runs off the panel, and the caller reports it.
     """
     m = medfilt(spec, 3)
     lo, hi = float(np.nanmin(m)), float(np.nanmax(m))
@@ -232,9 +205,8 @@ def main():
         k = np.ones(args.smooth) / args.smooth
         spec = np.array([np.convolve(s, k, mode="same") for s in spec])
 
-    # Sequential colours: the zones are ordered inner to outer, and a qualitative
-    # palette would hide that order. The pale end of viridis is left out -- it does not
-    # read against white.
+    # Sequential colours: the zones run inner to outer, and a qualitative palette would
+    # hide that order. The pale end of viridis is left out; it does not read on white.
     cols = plt.get_cmap("viridis")(np.linspace(0.05, 0.85, n))
 
     fig, axes = plt.subplots(n, 1, sharex=True,
@@ -247,10 +219,8 @@ def main():
         if not args.no_lines:
             for _, lam in LINES:
                 if args.marker == "tick":
-                    # ymin/ymax are axes fractions, so the stroke stays in the top 8%
-                    # of the panel whatever the data range is. Nothing is drawn across
-                    # the spectrum, so the marker can neither be mistaken for a feature
-                    # nor hide one.
+                    # ymin/ymax are axes fractions, so the stroke keeps to the top of
+                    # the panel and never crosses the spectrum, whatever the range.
                     ax.axvline(lam * (1 + Z_HARO), ymin=0.92, ymax=1.0,
                                lw=1.4, color=C_LINE, zorder=3)
                 else:
@@ -267,17 +237,15 @@ def main():
             clipped.append(f"    {nm:<22}{off.size:>4} channel(s) outside the panel; "
                            f"the largest is {spec[k][worst]:.1f} at {wl[worst]:.1f} A")
         ax.set_ylabel("flux", fontsize=9)
-        # The zone name sits inside the panel: with n panels a legend outside would be
-        # a column of text the reader has to match back by colour. The spaxel count is
-        # not on the figure -- it is in the printed table, where it can be read next to
-        # the other zones' counts instead of one panel at a time.
+        # The zone name sits inside the panel: a legend outside would be a column of
+        # text to match back by colour. The spaxel count stays in the printed table,
+        # where it can be read against the other zones.
         ax.text(0.004, 0.93, nm,
                 transform=ax.transAxes, fontsize=10, va="top", ha="left",
                 bbox=dict(fc="white", ec="none", alpha=0.75, pad=1.6))
-        # No axis grid. Its lines are at the tick positions and mean nothing physical,
-        # but they are vertical grey lines on a panel whose other vertical lines are
-        # the redshift markers -- and the 5000 A tick sits 40 A from the Hb marker.
-        # Anything vertical here should be a wavelength worth knowing.
+        # No axis grid: its vertical lines sit at tick positions, mean nothing
+        # physical, and would compete with the redshift markers. Anything vertical
+        # here should be a wavelength worth knowing.
     if clipped:
         print("\n  drawn off the panel (the y range follows the median-filtered "
               "spectrum, so single bad channels do not set it):")
@@ -285,9 +253,8 @@ def main():
     axes[-1].set_xlabel("wavelength [$\\AA$]")
     axes[-1].set_xlim(*(args.xlim if args.xlim else (wl.min(), wl.max())))
 
-    # A cube given on the command line goes into the filename: the same pointing's
-    # own sky subtraction and ESO's produce the same figure name otherwise, and the
-    # second run would overwrite the first with no sign that the two differ.
+    # A cube given on the command line goes into the filename, or this pointing's own
+    # sky subtraction and ESO's would write the same figure name.
     stem = "halo_spectra" if args.cube is None else f"halo_spectra_{cube.stem}"
     out = Path(args.out) if args.out else pointing_dir(name, "halo") / f"{stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)

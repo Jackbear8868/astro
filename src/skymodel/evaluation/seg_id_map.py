@@ -1,19 +1,14 @@
 """The source ID map of any segmentation -- drawn the same way as products.id_map.
 
-The rows of products.id_map() need to carry the group,
-redshift and similar fields). But sometimes all we want to see is "which things does
-this mask circle as sources", with nothing to do with the fitting -- for instance when
-comparing the professor's 1 sigma and 2 sigma segmentations.
+products.id_map()'s rows normally carry the group, redshift and similar fit fields, but
+sometimes the question is only which things a mask circles as sources, with nothing to
+do with the fitting -- comparing two segmentations of the same field, say.
 
-This script does one thing only: assemble the rows id_map() needs (id and centroid)
-from one seg image, and leave the rest of the drawing entirely to products.id_map, with
-no second implementation. One figure can only have one way of being drawn in this
-project, otherwise putting two of them side by side would make them look like
-different data merely because the stretch, the colours, or the labelling rules
-differ.
+So this assembles the rows id_map() needs (id and centroid) from one seg image and
+leaves the drawing to products.id_map, with no second implementation: two figures of one
+kind drawn by different rules would look like different data because the stretch,
+colours or labelling differ.
 
-    conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
-        --work results/skymodel/p01
     conda run -n astro python src/skymodel/evaluation/seg_id_map.py \\
         --work results/skymodel/p01 --seg data/wsky_seg/DATACUBE_FINAL_1_seg.fits
 """
@@ -65,16 +60,14 @@ def main():
         if c < args.min_area:
             continue
         y, x = np.nonzero(seg == i)
-        # id_map only uses the group field when by_group=True, and here it is always
-        # by_group=False, but the fields of rows have to be complete, otherwise
-        # GROUP_COLOR over in products raises KeyError.
+        # id_map reads group only when by_group=True, but the field still has to be
+        # present or GROUP_COLOR over in products raises KeyError.
         rows.append(dict(id=int(i), x=float(x.mean()), y=float(y.mean()),
                          group="galaxy"))
 
-    # the filename carries the working directory name and the seg's own directory:
-    # step01/segmentation_input.fits has the same name for all 14 pointings, and two
-    # different segmentations of the same pointing also share their filename, so either
-    # part alone lets one figure silently overwrite another.
+    # The filename carries the working directory and the seg's own directory: every
+    # pointing's seg has the same basename, and so do two segmentations of one
+    # pointing, so either part alone lets one figure silently overwrite another.
     name = f"{Path(args.work).name}_{seg_path.parent.name}_{seg_path.stem}"
     out = Path(args.out) if args.out else FIGURES / f"id_map_{name}.png"
     out.parent.mkdir(parents=True, exist_ok=True)

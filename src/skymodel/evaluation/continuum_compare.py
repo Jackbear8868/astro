@@ -1,16 +1,13 @@
 """The final sky continuum of every pointing, on one figure.
 
-The sky model is D = s * C_sky(lambda) + sum_k c_k * L_k(lambda): one continuum
-shape per pointing, scaled per spaxel by s. Drawing all of them together shows how
-far the pointings agree on that shape and how much they differ in level.
+The sky model is D = s * C_sky(lambda) + sum_k c_k * L_k(lambda): one continuum shape
+per pointing, scaled per spaxel by s. Drawing them together shows how far the pointings
+agree on that shape and how much they differ in level.
 
-The wavelength grids are NOT interchangeable. Pointings have 3801 or 3802
-channels, their starts differ by up to 0.7 A, and p14 begins about 150 A redward
-of the rest. Stacking the arrays by index would silently compare different
-wavelengths, so each curve is drawn against its own wavelength axis and nothing is
-resampled.
+The wavelength grids are not interchangeable -- they differ in length and in start --
+so stacking the arrays by index would silently compare different wavelengths. Each
+curve is drawn against its own wavelength axis and nothing is resampled.
 
-    conda run -n astro python src/skymodel/evaluation/continuum_compare.py
     conda run -n astro python src/skymodel/evaluation/continuum_compare.py \\
         --pointings p01 p02 p03 --out /tmp/c.png
 """
@@ -63,9 +60,8 @@ def main():
     for name, w, c in got:
         print(f"{name:>5}{np.median(c):>9.2f}{c.size:>6}{f'{w.min():.1f}-{w.max():.1f}':>20}")
 
-    # Colours from a qualitative map: the pointing number is a mosaic tile label,
-    # not a quantity, so a sequential colour map would imply an order that is not
-    # there.
+    # A qualitative map: the pointing number labels a mosaic tile, not a quantity, so
+    # a sequential map would imply an order that is not there.
     cols = plt.get_cmap("tab20").colors
 
     fig, a = plt.subplots(figsize=args.figsize)

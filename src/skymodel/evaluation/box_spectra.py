@@ -1,61 +1,36 @@
-"""Mean spectrum inside a box -- was the sky removed cleanly, and did the source get
-subtracted away.
+"""Mean spectrum inside a box -- was the sky removed cleanly, and did the source
+survive.
 
-One figure per box, with the statistics on the right. What is drawn is the
-sky_subtracted that step6 actually writes out (= data − sky), **with the source still
-in it**, not data − sky − source model.
+One figure per box, statistics on the right. What is drawn is the sky_subtracted cube
+step6 wrote, read and averaged over the region with nothing re-fitted (= data − sky,
+source still in it). Residuals alone cannot tell good from bad, because subtracting the
+source away shrinks them the same way (Principle 1); leaving it in separates the two:
 
-The reason is Principle 1: residuals alone cannot tell good from bad -- subtracting
-the source away as well makes the residual smaller in exactly the same way. Only by
-leaving the source in do the two things become separable in the same figure:
-
-    blank pixels    the line sits on 0             -> the sky was removed cleanly
-    source pixels   the line is a galaxy spectrum  -> the source was preserved; a
-                                                     line pushed down is
-                                                     over-subtraction
-
-And nothing is re-fitted here: the cube step6 wrote out is read directly and averaged
-over the region. What the figure shows is the same data the user gets, without the
-gap of "the figure was computed separately".
+    blank pixels    the line sits on 0  -> the sky was removed cleanly
+    source pixels   a galaxy spectrum   -> the source survived; a line pushed down is
+                                           over-subtraction
 
 The three lines
 ---------------
     ESO nosky            external reference (sky subtracted by the ESO pipeline)
-    s per-spaxel (old)   the old approach: every blank spaxel solves its own s
-    ours                 the current approach: s is replaced by a smooth spatial
-                         field, shared by the source region and blank alike
+    s per-spaxel (old)   every blank spaxel solves its own s
+    ours                 s replaced by a smooth spatial field, shared by source and
+                         blank alike
 
 How the boxes are chosen
 ------------------------
-By **content**, not by typed-in coordinates: core/halo are decided by the white light
-brightness inside the main source group, src edge is decided by "distance from the
-main source group", and blank is sampled uniformly along that distance. A box must lie
-entirely inside the region of its class (checked with minimum_filter), otherwise the
-label and the content would not match.
+By content, not by typed-in coordinates: core/halo from the white-light brightness
+inside the main source group, src edge from the distance to that group, blank sampled
+uniformly along the same distance. A box must lie entirely inside its class's region
+(checked with minimum_filter), or the label and the content would not match. map.png
+marks where they landed.
 
 Box mean vs single point
 ------------------------
---half is the half width of the box, box width = 2*half+1. **--half 0 is a single
-spaxel** -- the rule for choosing the position is exactly the same, only no averaging
-is done. A box beats the noise down as 1/sqrt(N) and is good for looking at the zero
-point; a single point is very noisy, but it is the honest answer to "what is this one
-position really like", without averaging hiding a systematic offset.
-
-The two have the same filenames, so the output directory follows --half and they do
-not overwrite each other:
-
-    evaluation/pNN/box/     --half > 0
-    evaluation/pNN/point/   --half 0
-
-Two kinds of output
--------------------
-    default (PNG)  one figure per box, the three lines overplotted for comparison.
-                   `map.png` marks where in the field of view the positions are. Use
-                   --eso none / --ref-run none when ESO or the old run is missing.
-    --pdf          one box per page, raw vs sky model on the upper panel and the
-                   residual on the lower one. **Uses only this run's own three
-                   files** (original cube / sky_model.fits / sky_subtracted.fits),
-                   so no external reference is needed.
+--half 0 is a single spaxel, chosen by the same rule but not averaged. A box beats the
+noise down as 1/sqrt(N) and is good for the zero point; a single point is noisy, but no
+averaging can hide a systematic offset in it. Both write the same filenames, so the
+output goes to evaluation/pNN/box/ or evaluation/pNN/point/ accordingly.
 
     conda run -n astro python src/skymodel/evaluation/box_spectra.py \\
         --work results/skymodel/p01
@@ -86,21 +61,16 @@ LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
 
 
 
-# The colours encode roles: the external reference orange, the old approach grey, and
-# the line we care about blue.
-# The labels are always in English -- matplotlib's default font has no Chinese glyphs,
-# and Chinese would turn into a row of tofu boxes.
+# The colours encode roles: external reference orange, old approach grey, ours blue.
+# The labels stay English -- matplotlib's default font has no Chinese glyphs.
 COL = {"ESO nosky": "#ff7f0e", "s per-spaxel (old)": "0.35", "ours": "#1f77b4"}
 SHORT = {"ESO nosky": "ESO", "s per-spaxel (old)": "old", "ours": "ours"}
-# Fallbacks for labels given on the command line: the reference is drawn in the
-# same grey as the old run, the main one in the same blue, so the roles stay
-# readable whatever the two runs are called.
+# Fallbacks for labels given on the command line: the reference in the same grey as the
+# old run, the main one in the same blue, so the roles stay readable either way.
 REF_FALLBACK, RUN_FALLBACK = "0.35", "#1f77b4"
 
-# The figures for these positions are drawn large (see the explanation inside the
-# loop). Enlarging the canvas simply gives each channel more screen pixels, with no
-# need to change the layout -- 3801 channels at 30 in x 200 dpi is about 1 channel per
-# pixel.
+# These positions get a large canvas (see the loop). It only gives each channel more
+# screen pixels; the layout is unchanged.
 BIG_BOXES = {"core"}
 BIG_FIG, BIG_DPI = (30, 8.4), 200
 
@@ -123,36 +93,26 @@ def box_mean(hdu, y0, y1, x0, x1):
 def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
     """Pick the boxes by content.
 
-    Returns ({name: (y0, y1, x0, x1)}, {name: note}) with the box endpoints included.
+    Returns ({name: (y0, y1, x0, x1)}, {name: note}), box endpoints included.
 
-    The blank boxes are numbered rather than named after their distance. The distance
-    is what picked them and it is worth knowing, but it is a different number in every
-    pointing, so "blank d=133px" cannot be looked up across the 14 and turns into a
-    different filename in each. The number is stable -- #1 is always the nearest -- and
-    the distance survives in the note, which the figure prints.
+    Blank boxes are numbered rather than named after their distance: that distance is
+    a different number in every pointing, so it makes a different filename in each.
+    #1 is always the nearest, and the distance survives in the note the figure prints.
     """
     main, ids, peak = main_source_group(seg, white, step04)
     valid = white != 0
     size  = 2 * half + 1
 
-    # "the whole box is inside a region of some class" = that class's boolean map is
-    # still True after a minimum_filter. For a boolean map, minimum_filter is exactly
-    # the check "is there any False inside this window".
+    # "the whole box is inside a class's region" = the class's boolean map survives a
+    # minimum_filter, which on a boolean map asks "is there any False in this window".
     def whole(m):
         return ndimage.minimum_filter(m.astype(np.uint8), size=size).astype(bool)
 
     d_main   = ndimage.distance_transform_edt(~main)
-    # The edge of the field of view has to be avoided: the number of exposures is low
-    # there, and step5 additionally writes NaN for spaxels with coverage < 90%. A box
-    # landing there measures the boundary effect of the mosaicking, not how well the
-    # sky was removed.
-    #
-    # The same restriction has to be applied to the main source group. halo takes "the
-    # faintest place inside the main source group", and the footprint of the main
-    # source group often extends to the edge of the field of view -- which is faint to
-    # begin with because of the insufficient exposure, so "the faintest" would
-    # systematically pick the edge and would measure the boundary effect instead of
-    # the outskirts of the galaxy.
+    # The edge of the field of view has to be avoided: exposures are few there and
+    # step5 writes NaN below 90% coverage, so a box there measures the mosaic boundary.
+    # The main source group needs the same cut -- halo takes the faintest place inside
+    # it, and the group can reach the edge, faint for want of exposure.
     d_edge   = ndimage.distance_transform_edt(valid)
     far_edge = d_edge > half + margin
     in_main  = whole(main & valid) & far_edge
@@ -165,8 +125,7 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
         boxes[name] = (cy - half, cy + half, cx - half, cx + half)
         notes[name] = note
 
-    # --- main source group: the brightest core, and the faintest place whose box is
-    #     still entirely inside the source (halo) ---
+    # --- main source group: brightest core, faintest fully-inside place (halo) ---
     wm = ndimage.uniform_filter(np.where(valid, white, 0.0), size=size)
     if in_main.any():
         cand = np.flatnonzero(in_main.ravel())
@@ -175,17 +134,15 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
     else:               # main source group too small for the box -> put it on the peak
         add("core", *peak)
 
-    # --- the ring just outside the source: the crime scene of over-subtraction ---
-    # The box lies entirely in blank, so the closest the box centre can get to the
-    # main source group is half+1 -- that already counts as "hugging the source edge".
+    # --- the ring just outside the source: where over-subtraction shows ---
+    # The box lies entirely in blank, so its centre gets no closer than half+1.
     cand = np.flatnonzero(in_blank.ravel())
     dm   = d_main.ravel()[cand]
     for t in edge_targets:
         j = int(cand[np.argmin(np.abs(dm - t))])
         add(f"src edge d={d_main.ravel()[j]:.0f}px", *divmod(j, seg.shape[1]))
 
-    # --- other sources: the two brightest non-main sources, to see whether the
-    #     improvement happens only on Haro 11 ---
+    # --- other sources: the two brightest, to see if only Haro 11 improves ---
     others = [i for i in np.unique(seg[seg > 0]) if i not in ids]
     flux   = {i: float(np.nansum(np.where(seg == i, white, 0))) for i in others}
     n_added = 0
@@ -199,8 +156,8 @@ def pick_boxes(seg, white, half, n_blank, edge_targets, margin, step04):
         add(f"source #{int(i)}", int(k[0]), int(k[1]))
         n_added += 1
 
-    # --- blank: sampled uniformly along the distance from the main source group, to
-    #     check the trend "the farther away, the cleaner" ---
+    # --- blank: sampled uniformly in distance from the main source group, for the
+    #     trend "the farther away, the cleaner" ---
     lo, hi = float(dm.min()), float(dm.max())
     for k, q in enumerate(np.linspace(0.25, 1.0, n_blank), start=1):
         j = int(cand[np.argmin(np.abs(dm - (lo + q * (hi - lo))))])
@@ -221,10 +178,9 @@ def draw_map(white, seg, amplitude_field, boxes, out_path, title):
                       vmax=float(np.nanpercentile(d, 99.7)))
     axes[0][0].set_title("whitelight", fontsize=10)
     if amplitude_field is not None:
-        # The colour scale is centred on 1.0 with a half width of 3 x the robust
-        # spread. Switching to percentiles would be asymmetric about the centre and
-        # narrower as well, and the same s field would look far more strongly
-        # striped -- that is a difference of the colour scale, not of the data.
+        # Centred on 1.0, half width 3 x the robust spread. Percentiles would be
+        # asymmetric about the centre and narrower, so the same s field would look
+        # more strongly striped -- a difference of the colour scale, not of the data.
         v = 3 * robust_spread(amplitude_field[np.isfinite(amplitude_field)])
         im = axes[0][1].imshow(amplitude_field, origin="lower", cmap="RdBu_r",
                                vmin=1 - v, vmax=1 + v)
@@ -236,8 +192,7 @@ def draw_map(white, seg, amplitude_field, boxes, out_path, title):
         for i, (nm, (y0, y1, x0, x1)) in enumerate(boxes.items()):
             c = cmap[i % 10]
             if y0 == y1 and x0 == x1:
-                # a single spaxel drawn as a box is only 1 px, invisible in a 320 px
-                # field of view
+                # a single spaxel drawn as a box is one pixel, invisible at this scale
                 ax.plot(x0, y0, "+", color=c, ms=13, mew=2.2)
             else:
                 ax.add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), x1 - x0 + 1,
@@ -257,22 +212,16 @@ def draw_map(white, seg, amplitude_field, boxes, out_path, title):
 
 
 def draw_pdf(boxes, notes, wl, tri, out_path, title, smooth_w):
-    """One box per page, two panels stacked -- judging "how well it was subtracted"
-    cannot be done from the residual alone.
+    """One box per page, two panels stacked. A small residual is not good news by
+    itself, since subtracting the source away shrinks it too, so read both:
 
-    Subtracting the source away also makes the residual smaller, so a small residual
-    is not good news by itself. The three have to be looked at together:
+        upper panel   raw and model overplotted -- does the model sit on the data
+        lower panel   resid = raw − model, enlarged. Blank should keep only noise; a
+                      source should keep its shape, and a flattened one is
+                      over-subtraction.
 
-        upper panel   raw and model overplotted on the same scale. Whether the sky
-                      model sits on top of the data is read from this panel.
-        lower panel   resid = raw − model, on an enlarged scale. A box in blank
-                      should be left with nothing but noise; a box on a source should
-                      keep the spectral shape of the galaxy/star, and being flattened
-                      is over-subtraction.
-
-    Not sharing the y scale between the two panels is deliberate: the sky continuum is
-    several orders of magnitude larger than the residual, so on a common scale the
-    residual would be a straight line stuck on 0 and nothing could be seen.
+    The panels do not share a y scale: the sky continuum is orders of magnitude larger
+    than the residual, so on a common scale the residual would be a line stuck on 0.
     """
     from matplotlib.backends.backend_pdf import PdfPages
     with PdfPages(out_path) as pdf:
@@ -281,12 +230,9 @@ def draw_pdf(boxes, notes, wl, tri, out_path, title, smooth_w):
             fig, ax = plt.subplots(2, 1, figsize=(13, 7.2), sharex=True,
                                    gridspec_kw={"height_ratios": [1.25, 1],
                                                 "hspace": 0.08})
-            # raw is drawn thick and model thin on top of it. With the same line
-            # width the two would coincide exactly in blank, and the reader could not
-            # tell "the black line is hidden under the red one" from "the black line
-            # was never drawn at all" -- which is exactly the question this panel is
-            # there to answer. Once the widths differ, a grey rim shows through where
-            # they coincide.
+            # raw thick, model thin on top. At equal widths a hidden curve and a curve
+            # that was never drawn look the same, which is the question this panel
+            # answers; different widths leave a grey rim where the two coincide.
             ax[0].plot(wl, smooth(raw, smooth_w), lw=1.4, color="0.45",
                        label="raw (wsky)")
             ax[0].plot(wl, smooth(mod, smooth_w), lw=0.5, color="#d62728",
@@ -380,9 +326,8 @@ def main():
     args = ap.parse_args()
 
     W    = ROOT / args.work
-    # The defaults are always derived from the working directory -- hard-coding them
-    # would mean that switching to another pointing takes a different pointing's cube
-    # as the reference, while the figure looks perfectly normal.
+    # Derived from the working directory: a hard-coded default would silently take
+    # another pointing's cube as the reference, on a figure that looks normal.
     if args.eso is None:
         args.eso = f"data/nosky/DATACUBE_FINAL_ESOSKY_{int(W.name[1:])}.fits"
     seg, white, _ = load_field(W)
@@ -391,11 +336,10 @@ def main():
     s_file = s_dir / "sky_continuum_amplitude_field.npy"
     amplitude_field = np.load(s_file) if s_file.exists() else None
 
-    # 主源分組要用的紅移必須出自畫的是哪一次擬合;工作區裡可能有好幾次 step4。
+    # The grouping redshifts must come from the fit being drawn -- a workspace can hold
+    # several step4 runs. meta records the classification file's path from the repo
+    # root, so its parent is that run; older products name the key "best".
     meta = json.loads((run / "meta.json").read_text())
-    # "classification" is the key; "best" is what step5 wrote before the parameter
-    # was renamed, and products made then are still on disk.
-    # 記的是分類檔相對倉庫根目錄的路徑,它所在的目錄就是那一次 step4。
     step04 = ROOT / Path(meta.get("classification") or meta["best"]).parent
     boxes, notes, main, peak = pick_boxes(seg, white, args.half, args.n_blank,
                                           args.edge, args.margin, step04)
@@ -438,42 +382,29 @@ def main():
         h.close()
         print(f"loaded {m}")
 
-    # A "box" with half=0 is a single spaxel, which is a different kind of sampling
-    # (honest but very noisy), and the two sets of figures must not be mixed in the
-    # same directory -- the filenames are identical, so whichever runs later would
-    # overwrite the earlier one.
+    # half=0 is a single spaxel, a different kind of sampling, and both write the same
+    # filenames -- mixed in one directory the later run would overwrite the earlier.
     kind = "box" if args.half else "point"
     outdir = Path(args.out) if args.out else pointing_dir(W.name, kind)
     outdir.mkdir(parents=True, exist_ok=True)
-    # The label is the key itself. "rms" alone would be shorter, and unambiguous next
-    # to sigma, but sigma is what a reader takes "rms" to mean when the two are not
-    # side by side -- on a number quoted out of the figure, or in a caption.
-    # rms_from_zero cannot be misread anywhere.
+    # The label is the key itself: "rms" alone is unambiguous only while sigma is next
+    # to it, and a number quoted out of the figure loses that.
     keys = ("mean", "sigma", "rms_from_zero")
-    # The layout of the statistics column is computed from a **character count**, not
-    # from hard-coded coordinates: the number of columns changes with whether --eso /
-    # --ref-run are switched on, and a hard-coded position would fail to overlap only
-    # for one particular combination.
+    # The statistics column is laid out from a character count, not from fixed
+    # coordinates: the number of columns depends on which of --eso / --ref-run are on.
     NW, VW = len(max(keys, key=len)) + 2, 10   # label column width, value column width
     ncol   = len(srcs)
     span   = NW + VW * ncol
     for nm, b in boxes.items():
-        # core is drawn large. At 15 in x 135 dpi, 3801 channels means 2.5 channels
-        # squeezed into 1 screen pixel, while MUSE's line width is only about 1.8
-        # channels -- the line is narrower than a pixel, so the detail is thrown away
-        # before it is even drawn. core is where the emission lines are densest and
-        # where the detail matters most, so it is the only one enlarged; the other
-        # positions are dominated by noise, and enlarging them adds no information,
-        # only file size.
+        # core is drawn large: at the default size several channels share one screen
+        # pixel and a MUSE line is narrower than that, so the detail is thrown away
+        # before it is drawn. Only core needs it -- the other positions are noise.
         big = nm in BIG_BOXES
         w, h, dpi = (BIG_FIG + (BIG_DPI,)) if big else (15, 4.2, 135)
-        sc = w / 15.0        # font size scales with the canvas, otherwise it would be
-                             # too small to read on the large figure
+        sc = w / 15.0        # font size follows the canvas, or it is unreadable when big
         fig = plt.figure(figsize=(w, h))
-        # 0.04 is "what fraction of the width one character takes", measured from a
-        # monospace character at fontsize 8.5: the columns are converted into
-        # axes-relative fractions via span, and an axis that is too narrow truncates
-        # while one that is too wide pushes the numbers off to the far side.
+        # 0.04 is the width fraction of one monospace character at fontsize 8.5, so
+        # span sizes the axis: too narrow truncates, too wide strands the numbers.
         gs  = fig.add_gridspec(1, 2, width_ratios=[6, 0.04 * span], wspace=0.02,
                                left=0.055, right=0.985,
                                top=1 - 0.59 / h, bottom=0.55 / h)
@@ -483,18 +414,12 @@ def main():
             ax.plot(wl, smooth(y, args.smooth), lw=0.5, alpha=0.8, label=lab,
                     color=COL.get(lab, REF_FALLBACK if lab == args.ref_label
                                   else RUN_FALLBACK))
-        # The y range is asymmetric -- on a source pixel the whole spectrum is above
-        # 0, and forcing symmetry would leave half the canvas empty with the curve
-        # squashed into a single line. Percentiles rather than min/max, because a
-        # handful of bad channels would otherwise set the range and flatten everything
-        # else onto the zero line. Whatever they give, 0 stays inside the range: 0 is
-        # the reference line of "the sky was removed cleanly", and without it on the
-        # canvas there is nothing to judge by.
-        #
-        # The padding is deliberately generous. The percentiles decide which channels
-        # are allowed to set the scale, not which are allowed to be seen -- a spike
-        # cut off at the frame is a measurement the reader cannot make, and here the
-        # spikes are the residual sky lines, which is what the figure is about.
+        # The range is asymmetric: on a source pixel the whole spectrum is above 0, and
+        # forcing symmetry would squash the curve into half the canvas. Percentiles
+        # rather than min/max, or a handful of bad channels set the range; 0 stays
+        # inside it either way, being the line "clean sky" is read against. The padding
+        # is generous because the percentiles choose what sets the scale, not what is
+        # visible, and a spike cut off would be a residual sky line.
         v = np.concatenate([y[np.isfinite(y)] for y in curves[nm].values()])
         lo, hi = (float(x) for x in np.percentile(v, [args.ypct, 100 - args.ypct]))
         pad = args.ypad * max(hi - lo, 1e-9)

@@ -1,33 +1,28 @@
 """The regions the sky is learned from -- which spaxels each of the two stages used.
 
-There are **two** different "regions the sky is learned from" in the pipeline, with
-different masks, and they must not be conflated:
+The two sets differ, and that difference is the figure. One panel each, over the
+white light:
 
-    step3  sky basis      blank = inside the field of view & seg == 0, then the
-                          --xlim / --ylim / --exclude-box selected visually for each
-                          pointing. **No dilation.**
-    step5  s spatial      on top of the above, additionally requires
-           field          > min_source_distance from **any** source and
-                          > min_main_source_distance from the main source group, and
-                          rejects the pixels with |s − median| > train_clip_sigma x
-                          spread. This layer is the one that "avoids the unstable
-                          regions".
+    step3  sky basis   blank spaxels in the field of view, inside the sky_region box
+                       when its apply_to names `basis`, and spectrally complete -- one
+                       missing channel would hand the decomposition a fabricated zero.
+    step5  s field     blank spaxels with a finite free solve, min_source_distance
+                       from any source and min_main_source_distance from the main
+                       group, inside the box when apply_to names `sky_amplitude`, and
+                       within train_clip_sigma robust spreads of the median s.
 
-Why the two layers use different criteria
------------------------------------------
-The basis learns the **shape** of the sky emission lines, a sky emission line looks
-the same in every blank spaxel, and the source's PSF wings mixing in has only a
-limited effect, so it only needs to avoid the halo of the main source (that is what
---xlim/--ylim are doing).
+Why the two differ
+------------------
+The basis learns the shape of the sky lines, the same in every blank spaxel, so PSF
+wings from the source barely move it and the main source's halo is enough to avoid. s
+learns the amplitude of the sky continuum, too close in shape to the galaxy's: source
+light props s up, the model grows with it, and subtracting it eats the source.
 
-s learns the **amplitude** of the sky continuum, and the continuum of the galaxy is
-too similar in shape to the sky continuum -- as soon as a training point picks up a
-little source light, s gets propped up, the sky model grows with it, and subtracting
-it eats the source. So it has to back off further, and it has to reject the pixels
-where the fit failed.
-
-The region parameters come from step3's own meta.json, so the figure can never
-disagree with the settings that produced the products it is drawn from.
+Where the numbers come from
+---------------------------
+Every parameter comes from the meta.json the step wrote beside its products, never the
+config, which can be edited after the run and leave the figure disagreeing with the
+products. Spectral completeness no product records, so the wsky cube is counted here.
 
     conda run -n astro python src/skymodel/evaluation/sky_region_map.py --work results/skymodel/p01
 """
@@ -37,105 +32,235 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from scipy import ndimage
+from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, arcsinh_stretch, load_field, pointing_dir  # noqa: E402
+from common import (ROOT, SEG_COLOR, arcsinh_stretch, load_field,  # noqa: E402
+                    pointing_dir, step04_dir)
 from products import fit_dirs, sky_amplitude_params  # noqa: E402
 from utils import build_amplitude_field, main_source_group  # noqa: E402
 
 
-def region_args(step03):
-    """The spatial restrictions step3 actually applied, read from its meta.json.
+# One colour per panel. Each has to stand off the grey background and the green
+# segmentation contour, and the two are read side by side, so also off each other.
+STEP3_COLOR = "#ff7f0e"
+STEP5_COLOR = "#e377c2"
+FILL_ALPHA = 0.72
+HALO_ALPHA = 0.30
+HALO_RADIUS = 2
+# A set gets a halo only when growing it by HALO_RADIUS multiplies its area by more
+# than this: a solid region only gains a rim, scattered spaxels grow many times over.
+HALO_WHEN_AREA_GROWS_BY = 2.0
+# The box crosses the fill, the sources and the dark background, so no single colour
+# stays visible along its whole length; white outlined in black does.
+BOX_COLOR = "#ffffff"
+BOX_STROKE = [pe.withStroke(linewidth=4.0, foreground="black")]
 
-    Nothing is copied here: a second copy of the numbers would let one side be
-    edited without the other, and the figure would then disagree with the settings
-    that produced the products, while looking perfectly normal.
+
+def region_of(meta, prefix=""):
+    """The spatial restriction a step recorded, as {xlim, ylim, exclude_box}.
+
+    The pipeline already translated the config's single box into these keys in the
+    step's meta.json, so the rule is not copied here. prefix is "train_" for step5.
     """
-    m = json.loads((step03 / "meta.json").read_text())
-    return {k: m[k] for k in ("xlim", "ylim", "exclude_box") if m.get(k)}
+    keys = ("xlim", "ylim", "exclude_box")
+    return {k: meta[prefix + k] for k in keys if meta.get(prefix + k)}
+
+
+def region_mask(region, shape):
+    """The spaxels a region keeps -- (ny, nx) boolean, all True if it is empty.
+
+    xlim/ylim are half-open and keep what is inside; exclude_box includes both endpoints
+    and drops what is inside, so which form was written says which the config box was.
+    """
+    yy, xx = np.mgrid[0:shape[0], 0:shape[1]]
+    keep = np.ones(shape, bool)
+    if "xlim" in region:
+        keep &= (xx >= region["xlim"][0]) & (xx < region["xlim"][1])
+    if "ylim" in region:
+        keep &= (yy >= region["ylim"][0]) & (yy < region["ylim"][1])
+    if "exclude_box" in region:
+        y0, y1, x0, x1 = region["exclude_box"]
+        keep &= ~((yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1))
+    return keep
+
+
+def region_rect(region, shape):
+    """The rectangle to draw for a region -- ((x, y), width, height) or None.
+
+    An unbounded side is recorded as a coordinate past the edge of the image, so the
+    bounds are clipped first, or the axes would rescale to fit the rectangle.
+    """
+    ny, nx = shape
+    if "exclude_box" in region:
+        y0, y1, x0, x1 = region["exclude_box"]
+        x0, x1 = max(x0, 0), min(x1, nx - 1)
+        y0, y1 = max(y0, 0), min(y1, ny - 1)
+        return (x0 - .5, y0 - .5), x1 - x0 + 1, y1 - y0 + 1
+    if "xlim" in region or "ylim" in region:
+        x0, x1 = region.get("xlim", [0, nx])
+        y0, y1 = region.get("ylim", [0, ny])
+        x0, x1 = max(x0, 0), min(x1, nx)
+        y0, y1 = max(y0, 0), min(y1, ny)
+        return (x0 - .5, y0 - .5), x1 - x0, y1 - y0
+    return None
+
+
+def channel_coverage(cube, chunk=200):
+    """Fraction of the channels holding data in each spaxel -- (ny, nx) float.
+
+    Neither step wrote this down, and step3 keeps the spaxels where it is exactly 1.
+    Chunked in wavelength, because counting does not need the whole cube in memory.
+    """
+    with fits.open(cube, memmap=True) as hdul:
+        data = hdul["DATA"].data
+        nz = data.shape[0]
+        n = np.zeros(data.shape[1:], np.int32)
+        for j in range(0, nz, chunk):
+            n += np.isfinite(np.asarray(data[j:j + chunk], np.float32)).sum(
+                axis=0, dtype=np.int32)
+    return n / nz
+
+
+def layers_for(mask):
+    """The (mask, alpha) layers one set is painted with, bottom first.
+
+    A spaxel is a couple of screen pixels wide, so a set of scattered single spaxels
+    would look like an empty panel. Such a set gets a halo -- itself grown by
+    HALO_RADIUS, drawn faintly underneath -- to lend every spaxel some surround. The
+    element is a disk, not the default cross, so the surround adds no direction.
+    """
+    yy, xx = np.mgrid[-HALO_RADIUS:HALO_RADIUS + 1, -HALO_RADIUS:HALO_RADIUS + 1]
+    halo = ndimage.binary_dilation(mask, structure=yy**2 + xx**2 <= HALO_RADIUS**2)
+    if halo.sum() > HALO_WHEN_AREA_GROWS_BY * mask.sum():
+        return [(halo, HALO_ALPHA), (mask, FILL_ALPHA)]
+    return [(mask, FILL_ALPHA)]
+
+
+def draw_panel(ax, mask, background, vmax, seg, colour, rect, title):
+    """One step's panel: its spaxel set over the white light, with the boundaries.
+
+    The set is an RGBA layer per pass rather than a recolouring of the background, so
+    the white light stays readable through it and the contour stays on top of both.
+    """
+    ax.imshow(background, origin="lower", cmap="gray", vmin=0, vmax=vmax)
+    for m, alpha in layers_for(mask):
+        rgba = np.zeros(mask.shape + (4,))
+        rgba[m] = list(mcolors.to_rgb(colour)) + [alpha]
+        ax.imshow(rgba, origin="lower")
+    ax.contour(seg > 0, levels=[0.5], colors=SEG_COLOR, linewidths=0.5, alpha=0.85)
+    # The box is drawn even where it coincides with the edge of the fill, so that
+    # "this line was set by hand" can be told apart from a boundary the data drew.
+    if rect is not None:
+        (x, y), w, h = rect
+        ax.add_patch(mpatches.Rectangle((x, y), w, h, fill=False, ec=BOX_COLOR,
+                                        lw=2.0, ls="--", path_effects=BOX_STROKE))
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_title(title, fontsize=12, family="monospace")
+
+
+def check(label, recorded, computed):
+    """Warn when a set rebuilt here does not have the size the step recorded.
+
+    The two are separate paths to the same set, and a replaced cube or stale products
+    part them with nothing in the figure looking wrong.
+    """
+    if recorded is not None and int(recorded) != int(computed):
+        print(f"★ {label}: the step recorded {int(recorded):,} spaxels, "
+              f"this figure rebuilds {int(computed):,}")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Sky learning regions: spaxels used by basis and s field")
-    ap.add_argument("--work", required=True)
+    ap = argparse.ArgumentParser(
+        description="Where the sky is learned from: step3's spaxel set and step5's, one panel each")
+    ap.add_argument("--work", required=True, help="pointing work directory, e.g. results/skymodel/p01")
     ap.add_argument("--run", default=None,
                     help="alternative run directory under step05; default is the pipeline's own step05/step06")
+    ap.add_argument("--step04", default=None,
+                    help="the step4 directory to take the redshifts from, e.g. "
+                         "results/skymodel/p01/step04; by default it is read from "
+                         "step5's meta.json, which records the run step5 itself used")
     args = ap.parse_args()
 
     W = ROOT / args.work
     run, _ = fit_dirs(W, args.run)
+    m3 = json.loads((W / "step03" / "meta.json").read_text())
+    m5 = json.loads((run / "meta.json").read_text())
+    p = sky_amplitude_params(m5)
 
     seg, white, valid = load_field(W)
-    reg = region_args(W / "step03")
+    coverage = channel_coverage(ROOT / m3["cube"])
 
-    # --- step3: blank, then the spatial restrictions on top ---
-    blank = valid & (seg == 0)
-    keep = np.ones_like(blank)
-    yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
-    if "xlim" in reg:
-        keep &= (xx >= reg["xlim"][0]) & (xx < reg["xlim"][1])
-    if "ylim" in reg:
-        keep &= (yy >= reg["ylim"][0]) & (yy < reg["ylim"][1])
-    if "exclude_box" in reg:
-        y0, y1, x0, x1 = reg["exclude_box"]
-        keep &= ~((yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1))
-    basis_train = blank & keep
+    # --- step3: blank, the sky_region box, and spectrally complete spaxels only ---
+    basis_region = region_of(m3)
+    blank3 = valid & (seg == 0)
+    basis = blank3 & region_mask(basis_region, seg.shape) & (coverage == 1)
+    check("step3 sky basis", m3.get("n_blank_complete"), basis.sum())
 
-    # --- step5: back further off the sources, and reject the pixels where the fit
-    #     failed ---
-    p = sky_amplitude_params(json.loads((run / "meta.json").read_text()))
+    # --- step5: further off the sources, and no failed fits. The free solve is NaN
+    #     wherever step5 did not fit, so its finite spaxels start the cuts below ---
     s = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
-    main, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), W / "step04")
     ok = valid & (seg == 0) & np.isfinite(s)
-    _, s_train = build_amplitude_field(s, seg, ok, p["min_source_distance"], p["min_main_source_distance"], p["train_clip_sigma"],
-                                       main=main)
+    check("step5 free solve", m5.get("n_blank"), ok.sum())
+    train_region = region_of(p, "train_")
+    step04 = (Path(args.step04) if args.step04
+              else step04_dir(W, args.run) or W / "step04")
+    main_group, _, _ = main_source_group(
+        seg, np.where(valid, white, np.nan), step04, dz_max=p["main_source_dz"])
+    _, sfield = build_amplitude_field(
+        s, seg, ok, p["min_source_distance"], p["min_main_source_distance"] or None,
+        p["train_clip_sigma"],
+        exclude=~region_mask(train_region, seg.shape) if train_region else None,
+        main=main_group, n_iter=p["n_iter"])
+    check("step5 s field training set", m5.get("n_train"), sfield.sum())
 
+    n_valid = int(valid.sum())
+    n3, n5 = int(basis.sum()), int(sfield.sum())
+
+    # --- the figure: one panel per step, nothing in either but its own set ---
+    fig, (ax3, ax5) = plt.subplots(1, 2, figsize=(13.5, 7.0),
+                                   sharex=True, sharey=True)
     img, vmax = arcsinh_stretch(white, valid)
-    fig, ax = plt.subplots(1, 2, figsize=(15.5, 7.4))
-    for a, m, ttl in (
-        (ax[0], basis_train,
-         f"step3  sky basis     {int(basis_train.sum()):,} spaxels"),
-        (ax[1], s_train,
-         f"step5  s field       {int(s_train.sum()):,} spaxels")):
-        a.imshow(img, origin="lower", cmap="gray", vmin=0, vmax=vmax)
-        rgba = np.zeros(m.shape + (4,))
-        rgba[m] = [0.13, 0.83, 0.08, 0.45]
-        a.imshow(rgba, origin="lower")
-        a.contour(seg > 0, levels=[0.5], colors="#39ff14", linewidths=0.4, alpha=.6)
-        a.set_title(ttl, fontsize=12)
-        a.set_xticks([]); a.set_yticks([])
+    rect3 = region_rect(basis_region, seg.shape)
+    rect5 = region_rect(train_region, seg.shape)
+    draw_panel(ax3, basis, img, vmax, seg, STEP3_COLOR, rect3,
+               f"step3  -  C_sky and line basis\n"
+               f"{n3:,}   ({100 * n3 / n_valid:.1f}% of the field)")
+    draw_panel(ax5, sfield, img, vmax, seg, STEP5_COLOR, rect5,
+               f"step5  -  s(x,y) training set\n"
+               f"{n5:,}   ({100 * n5 / n_valid:.1f}% of the field)")
+    fig.suptitle(f"{W.name}    where the sky is learned from", fontsize=14, y=0.99)
 
-    # the spatial restrictions are drawn as boxes, so that "this line was set by hand"
-    # is visible rather than looking like a boundary of the data
-    ny, nx = seg.shape
-    if "xlim" in reg or "ylim" in reg:
-        x0, x1 = reg.get("xlim", [0, nx])
-        y0, y1 = reg.get("ylim", [0, ny])
-        ax[0].add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), min(x1, nx) - x0,
-                                           min(y1, ny) - y0, fill=False,
-                                           ec="#ff7f0e", lw=2.0, ls="--"))
-    if "exclude_box" in reg:
-        y0, y1, x0, x1 = reg["exclude_box"]
-        ax[0].add_patch(mpatches.Rectangle((x0 - .5, y0 - .5), x1 - x0 + 1,
-                                           y1 - y0 + 1, fill=False,
-                                           ec="#e8272c", lw=2.0, ls="--"))
+    # The only prose in the figure: the two line styles are the boundaries the spaxel
+    # set did not draw itself.
+    boxed = [name for name, rect in (("step3", rect3), ("step5", rect5)) if rect]
+    caption = "green: segmentation"
+    if boxed:
+        caption += ("    dashed white: the sky_region box, applied to "
+                    + " and ".join(boxed))
+    fig.text(0.5, 0.02, caption, ha="center", fontsize=10, color="0.25")
 
-    lim = "  ".join(f"{k} {v}" for k, v in reg.items()) or "(無空間限制)"
-    fig.suptitle(f"{W.name}    step3: {lim}    "
-                 f"step5: > {p['min_source_distance']:.0f} px from any source, "
-                 f"> {p['min_main_source_distance']:.0f} px from Haro 11, "
-                 f"clip {p['train_clip_sigma']:.0f} sigma", fontsize=12)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    o = pointing_dir(W.name) / "sky_region.png"
-    fig.savefig(o, dpi=140, bbox_inches="tight")
-    print(f"{W.name}  blank {int(blank.sum()):,} -> basis {int(basis_train.sum()):,}"
-          f" ({100*basis_train.sum()/blank.sum():.1f}%)"
-          f" -> s field {int(s_train.sum()):,}"
-          f" ({100*s_train.sum()/blank.sum():.1f}%)   -> {o}")
+    # The panels are laid out between the caption and the suptitle: both belong to the
+    # figure, so the axes do not know they are there and a wide field runs into them.
+    fig.tight_layout(rect=[0, 0.035, 1, 0.93])
+    # The run goes into the filename: a pointing can hold several step05 runs, all
+    # writing the same amplitude files, so otherwise one figure replaces the other.
+    tag = "" if args.run in (None, "default") else f"_{args.run}"
+    out = pointing_dir(W.name) / f"sky_region{tag}.png"
+    fig.savefig(out, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"{W.name}  valid {n_valid:,}   "
+          f"step3 {n3:,} ({100 * n3 / n_valid:.1f}%)   "
+          f"step5 {n5:,} ({100 * n5 / n_valid:.1f}%)")
+    print(f"  -> {out}")
 
 
 if __name__ == "__main__":

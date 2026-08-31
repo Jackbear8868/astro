@@ -1,17 +1,12 @@
 """把源遮罩長胖 —— 認標籤的膨脹,固定半徑。
 
-動機:SExtractor 的足跡比源實際的延展緊,漏出去的光被當成 blank,會被天空
-模型吸走(見 edge_oversubtraction.py)。把遮罩長胖就是把那圈 spaxel 從
-blank 樣本裡拿掉。
+SExtractor 的足跡若比源實際的延展緊,漏出去的光會被當成 blank 讓天空模型吸走(見
+edge_oversubtraction.py);把遮罩長胖就是把那圈 spaxel 從 blank 樣本裡拿掉。
 
-**一定要認標籤,不能用普通的 binary dilation。** 相鄰的源之間可能只隔幾個像素,
-普通的 dilation 一長就會把它們黏成一塊。這裡的做法是:
-
-    每個 blank 像素問「離我最近的源是誰」,只歸給那一個源。
-    兩個源之間會自然在中線停住,標籤永遠不會互相吞併。
-
-用 distance_transform_edt(seg == 0, return_indices=True) 一次拿到距離與最近源的
-座標,查 seg 就是歸屬。半徑是**固定值**、由使用者指定。
+一定要認標籤,不能用普通的 binary dilation:相鄰的源可能只隔幾個像素,一長就黏成
+一塊。這裡每個 blank 像素只歸給離它最近的那一個源,兩個源之間自然在中線停住,標籤
+不會互相吞併。distance_transform_edt(seg == 0, return_indices=True) 一次拿到距離與
+最近源的座標,查 seg 就是歸屬。半徑固定,由使用者指定。
 
 這支只產生遮罩與 source id map,不跑任何擬合。
 
@@ -77,8 +72,8 @@ def main():
     STEP01 = W / "step01"
     seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"
 
-    # 輸出目錄預設分 pointing:seg_dil4.fits 這個名字只說得出半徑,說不出是哪一顆
-    # 的遮罩,14 顆寫進同一層會互相覆蓋,而下游 step3/step5 是照路徑讀的。
+    # 輸出目錄預設分 pointing:檔名只說得出半徑,寫進同一層會互相覆蓋,而下游
+    # step3/step5 是照路徑讀的。
     out = Path(args.outdir) if args.outdir else EXPDIR / W.name
     out.mkdir(parents=True, exist_ok=True)
     fig = Path(args.figdir); fig.mkdir(parents=True, exist_ok=True)
@@ -105,9 +100,8 @@ def main():
         new, added = dilate(seg, r)
         n_src   = int((new > 0).sum())
         n_blank = int(((new == 0) & valid).sum())
-        # 標籤守恆:認標籤成長不可能讓任何源消失。長胖後相鄰的源會在中線**貼在
-        # 一起**,那是預期行為不是合併 —— 標籤仍然分開,step5 依 seg == rid 取
-        # 區域完全不受影響。(用連通元件去數會把貼在一起的誤判成合併。)
+        # 標籤守恆:認標籤成長不會讓任何源消失。長胖後相鄰的源在中線貼在一起是
+        # 預期行為,標籤仍然分開;用連通元件去數會把貼在一起誤判成合併。
         lost  = sorted(set(np.unique(seg[seg > 0]).tolist())
                        - set(np.unique(new[new > 0]).tolist()))
         touch = set()
