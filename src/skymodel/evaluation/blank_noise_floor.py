@@ -34,7 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT  # noqa: E402
 from config import resolve_path  # noqa: E402
 from products import Run  # noqa: E402
-from blank_compare import blank_mask, data_hdu, our_cube, robust_range  # noqa: E402
+from common import data_hdu  # noqa: E402
+from products import latest_run  # noqa: E402
+from spectra import robust_range  # noqa: E402
+from zones import blank_mask  # noqa: E402
 
 C_OURS, C_ESO, C_BAND, C_ZERO = "#1f77b4", "#e8710a", "0.72", "0.45"
 CHUNK = 200
@@ -81,7 +84,7 @@ def main():
     W = pointing.work
     name = pointing.name
     meta = pointing.meta(3)
-    run = our_cube(W, args.run)
+    run = latest_run(W, "sky_subtracted.fits", "step06", args.run)
     if run is None:
         raise SystemExit(f"no sky_subtracted.fits under {W}/step05 or {W}/step06")
     # ESO's cube as the run's config names it. Deriving it from the wsky filename,

@@ -122,9 +122,22 @@ run.s_field   run.cube     run.nosky    run.step04
 run.meta(3)   run.figdir("halo")
 ```
 
-`common.py` 剩下的是畫圖那一層：`ROOT`、`EVAL`、`slug()`、`qualitative()`（相鄰源不會
-混淆的配色）、`asinh_bar()`、`diverging_range()`、`collapse()`。讀產物一律走 `Run`，
-`common.py` 不再碰磁碟上的產物。
+共用的東西分成四個模組，照「這是關於什麼的」分：
+
+| 模組 | 放什麼 |
+|---|---|
+| `products.Run` | 一個 run 的產物在哪、怎麼讀 |
+| `zones.py` | 哪些 spaxel：`zone_labels()`（亮度層＋距離環）、`blank_mask()`（某次 run 的 blank）、`zone_means()`（每個 zone 的平均光譜） |
+| `spectra.py` | 光譜圖共用的字彙：`Z_HARO`、`LINES`、曲線顏色、`despiked_range()` / `panel_ylim()` / `robust_range()` |
+| `common.py` | 影像那一層：`EVAL`、`slug()`、`qualitative()`、`asinh_bar()`、`diverging_range()`、`collapse()`、`data_hdu()` |
+
+**畫圖的腳本不再被當成 library。** 以前 `blank_compare` 匯出 `our_cube`、`halo_spectra`
+匯出 `zone_labels`、`outside_compare` 匯出 `despiked_range`，別的腳本 import 它們只為了
+拿一個函式，卻連帶執行整個模組層。現在這些定義都在上面四個模組裡，腳本之間互不 import。
+
+被合掉的重複：`Z_HARO` 原本定義在三個檔、`zone_means` 有三份、`panel_ylim` 與
+`despiked_range` 函式體一字不差（只差最後補的邊距）、`our_cube` 與 `s_dir` 是同一個
+形狀（現在是 `products.latest_run`）。
 
 已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
 `zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`

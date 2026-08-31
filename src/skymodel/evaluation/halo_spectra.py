@@ -27,9 +27,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
-from scipy import ndimage
-from scipy.signal import medfilt
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -38,104 +35,10 @@ import matplotlib.patches as mpatches
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, arcsinh_stretch  # noqa: E402
+from spectra import A_LINE, C_LINE, LINES, Z_HARO, panel_ylim  # noqa: E402
+from zones import zone_labels, zone_means  # noqa: E402
 from products import Run  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
-
-# Haro 11's redshift, and the lines bright enough to mark; the markers are guides for
-# reading the panels. Both halves of the [O III] doublet are marked because they share
-# an upper level, so the transition probabilities alone fix the ratio at
-# 5007/4959 = 2.98 -- a zone where it is not about 3 has a problem in the subtraction
-# or the fit, not in the physics.
-Z_HARO = 0.0204
-LINES = [("Hb", 4861.3), ("[O III] 4959", 4958.9), ("[O III] 5007", 5006.8),
-         ("Ha", 6562.8), ("[S II]", 6716.4)]
-# Pale red for the line markers -- a colour neither the grid nor the zero line uses.
-# Grey would match the grid, whose 5000 A line falls beside the redshifted Hb marker.
-C_LINE = "#f4a3a3"
-# Transparency for the full-height marker (--marker line): it sits under the peak it
-# names, and at full strength the two are one stroke. A paler colour would lose the hue.
-A_LINE = 0.45
-
-# Spaxels this close to the field-of-view edge are dropped: exposures fall off there
-# and step5 writes NaN below 90% coverage, so a layer there measures the mosaic.
-EDGE_MARGIN = 6
-# Channels read at a time: small enough to keep a chunk in memory, large enough to
-# average in vectorised blocks.
-CHUNK = 256
-
-
-def zone_labels(seg, white, valid, main, n_layers, rings):
-    """Integer zone map (0 = unused) plus the zone names, ordered inner to outer."""
-    d_edge = ndimage.distance_transform_edt(valid)
-    ok = valid & (d_edge > EDGE_MARGIN)
-
-    zones = np.zeros(seg.shape, int)
-    names = []
-
-    # --- inside the main group: equal-count layers of white-light brightness ---
-    inside = main & ok
-    v = white[inside]
-    # Quantile edges, brightest first, so zone 1 is the core.
-    edges = np.percentile(v, np.linspace(0, 100, n_layers + 1))
-    for k in range(n_layers):
-        lo, hi = edges[n_layers - 1 - k], edges[n_layers - k]
-        m = inside & (white >= lo) & (white <= hi if k == 0 else white < hi)
-        zones[m] = len(names) + 1
-        # L1 is the brightest, and the panels are stacked in that order.
-        names.append(f"galaxy L{k + 1}")
-
-    # --- outside it: rings of distance from the boundary ---
-    d_main = ndimage.distance_transform_edt(~main)
-    outside = ok & ~main & (seg == 0)      # other sources excluded: their light is not Haro 11's
-    for lo, hi in zip(rings[:-1], rings[1:]):
-        m = outside & (d_main > lo) & (d_main <= hi)
-        zones[m] = len(names) + 1
-        names.append(f"outside {lo}-{hi} px")
-    return zones, names
-
-
-def zone_means(cube_path, zones, n_zones, nz):
-    """Mean spectrum of every zone, read in wavelength chunks."""
-    idx = [np.flatnonzero((zones == k + 1).ravel()) for k in range(n_zones)]
-    out = np.full((n_zones, nz), np.nan)
-    with fits.open(cube_path, memmap=True) as h:
-        hdu = h["DATA"] if "DATA" in h else h[0]
-        if hdu.data.shape[0] != nz:
-            raise SystemExit(f"cube has {hdu.data.shape[0]} channels, "
-                             f"wavelength.npy has {nz}")
-        for c0 in range(0, nz, CHUNK):
-            c1 = min(c0 + CHUNK, nz)
-            block = np.asarray(hdu.data[c0:c1], np.float32).reshape(c1 - c0, -1)
-            with np.errstate(invalid="ignore"):
-                for k, ix in enumerate(idx):
-                    if ix.size:
-                        out[k, c0:c1] = np.nanmean(block[:, ix], axis=1)
-            print(f"    {c1}/{nz} channels", end="\r", flush=True)
-    print(" " * 30, end="\r")
-    return out
-
-
-def panel_ylim(spec):
-    """y range for one panel: what the spectrum does, not what one bad voxel does.
-
-    A single dead or hot channel can be many times the whole range of a zone, and
-    autoscaling to it flattens the real spectrum onto zero. The range therefore comes
-    from the 3-channel median-filtered spectrum, which a one-channel excursion cannot
-    survive but a resolved line can, MUSE lines being several channels wide. The raw
-    curve is still what gets drawn.
-
-    The range is then widened to cover any raw value within one panel height of that,
-    so the tips of real lines are not cut off by a rule aimed at single channels.
-    Anything beyond runs off the panel, and the caller reports it.
-    """
-    m = medfilt(spec, 3)
-    lo, hi = float(np.nanmin(m)), float(np.nanmax(m))
-    span = max(hi - lo, 1e-9)
-    near = spec[(spec >= lo - span) & (spec <= hi + span)]
-    if near.size:
-        lo, hi = min(lo, float(near.min())), max(hi, float(near.max()))
-    pad = 0.06 * max(hi - lo, 1e-9)
-    return lo - pad, hi + pad
 
 
 def main():
@@ -200,7 +103,7 @@ def main():
               f"{(np.median(wv) if wv.size else np.nan):>14.3f}")
 
     print("\n  averaging the cube ...")
-    spec = zone_means(cube, zones, n, wl.size)
+    spec = zone_means(cube, zones, range(1, n + 1), wl.size)
 
     if args.smooth > 1:
         k = np.ones(args.smooth) / args.smooth

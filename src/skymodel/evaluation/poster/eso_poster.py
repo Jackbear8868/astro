@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -23,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from common import EVAL, ROOT, slug
 from products import Run
-from halo_spectra import C_LINE, CHUNK, LINES, Z_HARO, zone_labels
-from outside_compare import C_ESO, C_OURS, despiked_range, zone_means
+from spectra import C_ESO, C_LINE, C_OURS, LINES, Z_HARO, despiked_range
+from zones import zone_labels, zone_means
 from utils import DZ_MAX, main_source_group
 
 RINGS = [0, 10, 25, 50]

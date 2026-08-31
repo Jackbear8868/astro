@@ -30,7 +30,6 @@ that leaves is printed, because the two do not carry NaN in the same places.
         --mode sky
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -45,7 +44,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT  # noqa: E402
 from config import resolve_path  # noqa: E402
 from products import Run  # noqa: E402
-from products import spectrum_stats  # noqa: E402
+from products import latest_run, spectrum_stats  # noqa: E402
+from common import data_hdu  # noqa: E402
+from spectra import robust_range  # noqa: E402
+from zones import blank_mask  # noqa: E402
 
 C_OURS, C_ESO, C_RESID, C_ZERO = "#1f77b4", "#e8710a", "#b30000", "0.55"
 
@@ -57,49 +59,6 @@ STATS = [("mean", "mean"), ("sigma", "sigma"), ("skewness", "skewness"),
          ("kurtosis", "kurtosis"), ("rms_from_zero", "rms_from_zero")]
 FMT = "{:.4f}"
 CHUNK = 200
-
-
-def blank_mask(work, meta):
-    """The blank spaxels step3 used, rebuilt from its meta -- that run's blank, not
-    blank in general, since two numbers over different spaxels are not a comparison."""
-    white = fits.getdata(work / "step01/whitelight_nosky.fits")
-    seg_p = ROOT / meta["seg"] if not Path(meta["seg"]).is_absolute() else Path(meta["seg"])
-    seg = fits.getdata(seg_p)
-    valid = white != 0
-    m = valid & ~((seg > 0) & valid)
-    n_all = int(m.sum())
-    yy, xx = np.mgrid[0:seg.shape[0], 0:seg.shape[1]]
-    if meta.get("xlim"):
-        m &= (xx >= meta["xlim"][0]) & (xx < meta["xlim"][1])
-    if meta.get("ylim"):
-        m &= (yy >= meta["ylim"][0]) & (yy < meta["ylim"][1])
-    if meta.get("exclude_box"):
-        y0, y1, x0, x1 = meta["exclude_box"]
-        m &= ~((yy >= y0) & (yy <= y1) & (xx >= x0) & (xx <= x1))
-    return m, n_all, seg_p
-
-
-def data_hdu(h):
-    return h["DATA"] if "DATA" in h else h[0]
-
-
-def our_cube(work, pattern=None):
-    """Our sky_subtracted for this pointing, and the run directory it came from.
-
-    step6 writes it into step06, but a run under step05 can be named anything, so the
-    selector is a glob and without one the newest wins. The directory is returned so
-    the caller can say which run the figure is about.
-    """
-    d = Path(work) / "step05"
-    runs = [x for x in d.glob(pattern if pattern else "*")
-            if x.is_dir() and (x / "sky_subtracted.fits").exists()]
-    if pattern is None and (Path(work) / "step06/sky_subtracted.fits").exists():
-        runs.append(Path(work) / "step06")
-    if not runs:
-        return None
-    if len(runs) > 1:
-        runs.sort(key=lambda x: json.loads((x / "meta.json").read_text()).get("created", ""))
-    return runs[-1]
 
 
 def collapse(x, clip, statistic):
@@ -121,18 +80,6 @@ def collapse(x, clip, statistic):
     keep = np.abs(x - med[:, None]) <= clip * sg[:, None]
     return ((x * keep).sum(axis=1, dtype=np.float64) / keep.sum(axis=1),
             int((~keep).sum()), keep.size)
-
-
-def robust_range(y, pct=0.5, pad=0.35):
-    """A y range set by the spectrum, not by its worst channel.
-
-    Percentiles rather than min/max: a few dead or hot channels would stretch the axis
-    until everything real is flat on zero. Zero stays inside, being what these spectra
-    are read against.
-    """
-    lo, hi = np.percentile(y[np.isfinite(y)], [pct, 100 - pct])
-    m = pad * max(hi - lo, 1e-9)
-    return min(lo - m, 0.0), max(hi + m, 0.0)
 
 
 def check_against_step3(run, wl, ours):
@@ -198,7 +145,7 @@ def main():
     # The two cubes to average, and what each curve is called. In sky mode the left one
     # is the raw cube and the ESO curve becomes a difference.
     if args.mode == "residual":
-        run = our_cube(W, args.run)
+        run = latest_run(W, "sky_subtracted.fits", "step06", args.run)
         if run is None:
             raise SystemExit(
                 f"no sky_subtracted.fits under {W}/step05 or {W}/step06 -- "

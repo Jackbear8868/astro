@@ -33,34 +33,13 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT, S_CMAP  # noqa: E402
-from products import Run  # noqa: E402
+from products import Run, latest_run  # noqa: E402
 
 FIGURES = EVAL / "sfield"
 
 # --which's two kinds -> the file step5 writes for each.
 S_FILE = {"hat":  "sky_continuum_amplitude_field.npy",
           "free": "sky_continuum_amplitude_per_spaxel.npy"}
-
-
-def s_dir(work, pattern=None):
-    """Where this pointing's two sky continuum amplitude files live.
-
-    The pipeline writes them straight into step05, but a run can also sit in a named
-    subdirectory whose name carries that pointing's template count, so no single literal
-    name fits every pointing and pattern is a glob. Without a pattern the newest run
-    wins. Which one it was is returned so the caller can print it -- a run picked by
-    date is a choice, and an invisible choice makes two figures silently incomparable.
-    """
-    d = Path(work) / "step05"
-    runs = [x for x in d.glob(pattern if pattern else "*")
-            if x.is_dir() and (x / S_FILE["hat"]).exists()]
-    if pattern is None and (d / S_FILE["hat"]).exists():
-        runs.append(d)
-    if not runs:
-        return None
-    if len(runs) > 1:
-        runs.sort(key=lambda x: json.loads((x / "meta.json").read_text()).get("created", ""))
-    return runs[-1]
 
 
 def draw(ax, a, seg, vmin, vmax, color, width, halo):
@@ -124,7 +103,7 @@ def main():
     sets = {k: [] for k in kinds}
     for name in args.pointings:
         W = ROOT / args.root / name
-        d = s_dir(W, args.run)
+        d = latest_run(W, S_FILE["hat"], "step05", args.run)
         if d is None:
             print(f"  skip {name}: no run with an s field under step05")
             continue

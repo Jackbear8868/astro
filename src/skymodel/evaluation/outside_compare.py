@@ -20,8 +20,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
-from scipy.signal import medfilt
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -31,54 +29,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, slug  # noqa: E402
 from config import resolve_path  # noqa: E402
 from products import Run  # noqa: E402
-from blank_compare import data_hdu, our_cube  # noqa: E402
-from halo_spectra import (C_LINE, CHUNK, LINES, Z_HARO, panel_ylim,  # noqa: E402
-                          zone_labels)
+from products import latest_run  # noqa: E402
+from spectra import (C_ESO, C_LINE, C_OURS, C_ZERO, LINES, Z_HARO,  # noqa: E402
+                     despiked_range, panel_ylim)
+from zones import zone_labels, zone_means  # noqa: E402
 from products import spectrum_stats  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 
-C_OURS, C_ESO, C_ZERO = "#1f77b4", "#e8710a", "0.55"
 # Transparency for the reference curve only, so our curve reads cleanly where the two
 # overlap. Fading the upper curve instead would muddy it exactly over ESO's spikes.
 A_ESO = 0.75
-
-
-def despiked_range(y):
-    """The range a curve occupies, with single-channel excursions left out.
-
-    A dead or hot channel sits orders of magnitude from its neighbours, and a 3-channel
-    median removes it while keeping a spectrally resolved emission line, which is
-    several channels wide. The range is then extended back to any raw value within one
-    full span of it, so a real line tip is not cut by a rule aimed at single channels.
-    """
-    m = medfilt(y, 3)
-    lo, hi = float(np.nanmin(m)), float(np.nanmax(m))
-    span = max(hi - lo, 1e-9)
-    near = y[(y >= lo - span) & (y <= hi + span)]
-    if near.size:
-        lo, hi = min(lo, float(near.min())), max(hi, float(near.max()))
-    return lo, hi
-
-
-def zone_means(cube, zones, keys, nz):
-    """Mean spectrum of each requested zone, read in wavelength chunks."""
-    idx = [np.flatnonzero((zones == k).ravel()) for k in keys]
-    out = np.full((len(keys), nz), np.nan)
-    with fits.open(cube, memmap=True) as h:
-        hdu = data_hdu(h)
-        if hdu.data.shape[0] != nz:
-            raise SystemExit(f"{cube.name} has {hdu.data.shape[0]} channels, "
-                             f"wavelength.npy has {nz}")
-        for c0 in range(0, nz, CHUNK):
-            c1 = min(c0 + CHUNK, nz)
-            block = np.asarray(hdu.data[c0:c1], np.float32).reshape(c1 - c0, -1)
-            with np.errstate(invalid="ignore"):
-                for j, ix in enumerate(idx):
-                    if ix.size:
-                        out[j, c0:c1] = np.nanmean(block[:, ix], axis=1)
-            print(f"    {cube.name[:28]:<28} {c1}/{nz}", end="\r", flush=True)
-    print(" " * 46, end="\r")
-    return out
 
 
 def main():
@@ -138,7 +98,7 @@ def main():
     pointing = Run(args.work)
     W = pointing.work
     name = pointing.name
-    run = our_cube(W, args.run)
+    run = latest_run(W, "sky_subtracted.fits", "step06", args.run)
     if run is None:
         raise SystemExit(f"no sky_subtracted.fits under {W}/step05 or {W}/step06")
     # ESO's cube as the run's config names it. Deriving it from the wsky filename,

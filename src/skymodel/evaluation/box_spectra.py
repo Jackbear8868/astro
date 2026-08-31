@@ -53,13 +53,13 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ROOT, slug  # noqa: E402
+from spectra import Z_HARO  # noqa: E402
 from products import Run  # noqa: E402
 from products import fit_dirs, spectrum_stats  # noqa: E402
 from utils import main_source_group, robust_spread  # noqa: E402
 
-Z_HARO = 0.0204
-LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
 
+LINES  = [("[O III]", 5006.8), ("Ha", 6562.8), ("[S II]", 6716.4)]
 
 
 # The colours encode roles: external reference orange, old approach grey, ours blue.

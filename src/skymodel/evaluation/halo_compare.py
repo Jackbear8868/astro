@@ -34,8 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT  # noqa: E402
 from products import Run  # noqa: E402
-from blank_compare import data_hdu, our_cube  # noqa: E402
-from halo_spectra import EDGE_MARGIN, LINES, Z_HARO, CHUNK, panel_ylim  # noqa: E402
+from common import data_hdu  # noqa: E402
+from products import latest_run  # noqa: E402
+from spectra import LINES, Z_HARO, panel_ylim  # noqa: E402
+from zones import CHUNK, EDGE_MARGIN  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
 from scipy import ndimage  # noqa: E402
 
@@ -118,7 +120,7 @@ def main():
     got = []
     for name in args.pointings:
         W = ROOT / args.root / name
-        run = our_cube(W, args.run)
+        run = latest_run(W, "sky_subtracted.fits", "step06", args.run)
         if run is None:
             print(f"  skip {name}: no sky_subtracted.fits under step05/step06")
             continue

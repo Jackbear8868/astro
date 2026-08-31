@@ -318,6 +318,31 @@ class Run:
         return d
 
 
+def latest_run(work, product, flat=None, pattern=None):
+    """The newest run directory under step05 that holds `product`, or None.
+
+    Steps 5 and 6 write straight into step05 and step06, but a run kept beside them
+    sits in a named subdirectory of step05 whose name carries what it varied, so no
+    single literal name fits every pointing and `pattern` is a glob. With no pattern
+    the newest wins, by the `created` each meta.json records. `flat` names where the
+    pipeline's own run put that product, and is weighed against the named ones.
+
+    The directory comes back rather than the file, so a caller can say which run the
+    figure is about: a run picked by date is a choice, and an invisible choice makes
+    two figures silently incomparable.
+    """
+    work = Path(work)
+    runs = [x for x in (work / "step05").glob(pattern or "*")
+            if x.is_dir() and (x / product).exists()]
+    if pattern is None and flat is not None and (work / flat / product).exists():
+        runs.append(work / flat)
+    if not runs:
+        return None
+    if len(runs) > 1:
+        runs.sort(key=lambda x: json.loads((x / "meta.json").read_text()).get("created", ""))
+    return runs[-1]
+
+
 def spectrum_stats(spec):
     """Condense a spectrum into summary statistics."""
     spec = spec[np.isfinite(spec)]

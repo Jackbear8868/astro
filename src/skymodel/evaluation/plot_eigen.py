@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT  # noqa: E402
+from spectra import Z_HARO  # noqa: E402
 from utils import (DWARF_DIR, load_ascii_template, load_eigen_galaxy,  # noqa: E402
                    load_eigen_qso)
 
@@ -92,7 +93,7 @@ def load_curves(kind, class_labels=False):
         (lambda lam: np.column_stack([sp(lam, extrapolate=False) for sp in sps])), \
         labels
 
-Z_HARO = 0.0204
+
 MUSE_RANGE = (4600.0, 9350.0)     # observed frame, the span the cubes cover
 N_SAMPLE = 6000
 LABEL_TOP = 0.86        # axes fraction the corner label is kept clear down to

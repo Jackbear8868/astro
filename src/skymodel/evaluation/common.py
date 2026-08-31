@@ -98,6 +98,15 @@ def diverging_range(a, centre=None, pct=2.0):
 from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
 
 
+def data_hdu(h):
+    """The image extension of an open MUSE cube.
+
+    A pipeline product names it DATA; a cube written by hand often has it in the
+    primary. Every reader here has to make the same choice, so it is made once.
+    """
+    return h["DATA"] if "DATA" in h else h[0]
+
+
 def collapse(path, band, wl, seg):
     """Collapse the cube over the given band -- returns (image, number rejected,
     number of elements taking part in the rejection).

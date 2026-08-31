@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from astropy.io import fits
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -22,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from common import EVAL, ROOT, slug
 from products import Run
-from halo_spectra import C_LINE, CHUNK, LINES, Z_HARO, zone_labels
+from spectra import C_LINE, LINES, Z_HARO
+from zones import zone_labels, zone_means
 from utils import DZ_MAX, main_source_group
 
 C_RAW = "0.55"
@@ -50,23 +50,6 @@ if args.zoom:
     YLIM, YTICKS = (-10, 50), [0, 10, 20, 30, 40, 50]
 else:
     YLIM, YTICKS = None, YTICKS      # None: the bottom follows the data, the top is 1000
-
-
-def zone_means(cube_path, zones, keys, nz):
-    idx = [np.flatnonzero((zones == k).ravel()) for k in keys]
-    out = np.full((len(keys), nz), np.nan)
-    with fits.open(cube_path, memmap=True) as h:
-        hdu = h["DATA"] if "DATA" in h else h[0]
-        for c0 in range(0, nz, CHUNK):
-            c1 = min(c0 + CHUNK, nz)
-            block = np.asarray(hdu.data[c0:c1], np.float32).reshape(c1 - c0, -1)
-            with np.errstate(invalid="ignore"):
-                for j, ix in enumerate(idx):
-                    if ix.size:
-                        out[j, c0:c1] = np.nanmean(block[:, ix], axis=1)
-            print(f"    {cube_path.name[:28]:<28} {c1}/{nz}", end="\r", flush=True)
-    print(" " * 50, end="\r")
-    return out
 
 
 name = args.pointing
