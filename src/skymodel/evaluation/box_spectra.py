@@ -359,7 +359,7 @@ def main():
             print(f"loaded {kind}  {p.name}")
         tri = {nm: (d["raw"], d["mod"], d["res"]) for nm, d in tri.items()}
         out = (Path(args.out) / "box_raw_model_resid.pdf" if args.out
-               else pointing_dir(W.name, "box") / "box_raw_model_resid.pdf")
+               else pointing_dir(W, "box") / "box_raw_model_resid.pdf")
         out.parent.mkdir(parents=True, exist_ok=True)
         draw_pdf(boxes, notes, wl, tri, out, f"{args.work}  [{run.name}]", args.smooth)
         draw_map(white, seg, amplitude_field, boxes, out.with_suffix(".map.png"),
@@ -385,7 +385,7 @@ def main():
     # half=0 is a single spaxel, a different kind of sampling, and both write the same
     # filenames -- mixed in one directory the later run would overwrite the earlier.
     kind = "box" if args.half else "point"
-    outdir = Path(args.out) if args.out else pointing_dir(W.name, kind)
+    outdir = Path(args.out) if args.out else pointing_dir(W, kind)
     outdir.mkdir(parents=True, exist_ok=True)
     # The label is the key itself: "rms" alone is unambiguous only while sigma is next
     # to it, and a number quoted out of the figure loses that.

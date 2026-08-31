@@ -97,7 +97,7 @@ def main():
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     band = ("" if tuple(args.band) == (4600.0, 9350.0)
             else f"_{args.band[0]:.0f}-{args.band[1]:.0f}")
-    o = pointing_dir(W.name, "whitelight") / f"compare{band}.png"
+    o = pointing_dir(W, "whitelight") / f"compare{band}.png"
     fig.savefig(o, dpi=140, bbox_inches="tight")
     print(f"saved -> {o}")
 

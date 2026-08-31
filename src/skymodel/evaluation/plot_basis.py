@@ -93,7 +93,7 @@ def main():
 
     # ------- figures: one per basis vector, all into the same folder -------
     ms  = np.load(STEP03 / "blank_mean_spectrum.npy")
-    out = pointing_dir(W.name, "basis")
+    out = pointing_dir(W, "basis")
     out.mkdir(parents=True, exist_ok=True)
 
     def save(fig, name):

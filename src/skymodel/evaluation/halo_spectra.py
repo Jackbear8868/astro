@@ -256,7 +256,7 @@ def main():
     # A cube given on the command line goes into the filename, or this pointing's own
     # sky subtraction and ESO's would write the same figure name.
     stem = "halo_spectra" if args.cube is None else f"halo_spectra_{cube.stem}"
-    out = Path(args.out) if args.out else pointing_dir(name, "halo") / f"{stem}.png"
+    out = Path(args.out) if args.out else pointing_dir(W, "halo") / f"{stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

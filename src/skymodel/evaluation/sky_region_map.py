@@ -253,7 +253,7 @@ def main():
     # The run goes into the filename: a pointing can hold several step05 runs, all
     # writing the same amplitude files, so otherwise one figure replaces the other.
     tag = "" if args.run in (None, "default") else f"_{args.run}"
-    out = pointing_dir(W.name) / f"sky_region{tag}.png"
+    out = pointing_dir(W) / f"sky_region{tag}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
 

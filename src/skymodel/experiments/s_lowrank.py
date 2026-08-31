@@ -19,6 +19,7 @@ u_k 由整列決定、v_k 由整行決定,自動伸得進洞;現行的 mu + a(y)
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -35,7 +36,10 @@ from utils import build_amplitude_field, main_source_group, median_polish, robus
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
-EVAL = ROOT / "results/skymodel/evaluation/s_field"
+# SKYMODEL_EVAL 可以把圖改寫到別處,讓 checkout 之外的結果也有地方放;
+# 不設就是 repo 裡的老位置。
+EVAL = Path(os.environ.get(
+    "SKYMODEL_EVAL", ROOT / "results/skymodel/evaluation")).expanduser() / "s_field"
 
 
 CUR = "current"      # 現行的場 = mu + a(y) + b(x),配對比較的對照組

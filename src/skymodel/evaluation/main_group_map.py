@@ -61,7 +61,7 @@ def main():
         # without a redshift only adjacency applies, which is the left panel
         all_ids = main_source_group(seg, wn)[1]
 
-        out = pointing_dir(name) / f"main_group{args.out_suffix}.png"
+        out = pointing_dir(W) / f"main_group{args.out_suffix}.png"
         plot_main_group(seg, white, mg, ids, all_ids, pk, out, title=name)
 
         f = {int(i): float(np.nansum(np.where(seg == i, white, 0)))

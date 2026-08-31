@@ -124,7 +124,7 @@ def main():
     print(f"{name}: {fit_file}")
 
     ids = source_fits["id"].tolist() if args.id == "all" else [int(args.id)]
-    out_dir = Path(args.out_dir) if args.out_dir else pointing_dir(name, "template_fit")
+    out_dir = Path(args.out_dir) if args.out_dir else pointing_dir(W, "template_fit")
     out_dir.mkdir(parents=True, exist_ok=True)
     tab10 = plt.get_cmap("tab10").colors
 

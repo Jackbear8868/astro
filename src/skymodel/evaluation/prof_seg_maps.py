@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, arcsinh_stretch, pointing_dir  # noqa: E402
+from common import EVAL, ROOT, arcsinh_stretch  # noqa: E402
 from products import id_map  # noqa: E402
 
 SEGDIR  = ROOT / "data/wsky_seg"
@@ -99,7 +99,10 @@ def main():
     for n in args.n:
         seg, img = load(n)
         rows, n_all = rows_from(seg, args.min_area)
-        out = pointing_dir(f"p{n:02d}") / "segmentation_map.png"
+        # EVAL and not pointing_dir: this reads the segmentation input, not any
+        # run's products, so there is no run directory for the figure to sit beside.
+        out = (EVAL / f"p{n:02d}"); out.mkdir(parents=True, exist_ok=True)
+        out = out / "segmentation_map.png"
         id_map(seg, img, rows, out, by_group=False)
 
         # A main source split into several pieces shows up as a divided flux share,

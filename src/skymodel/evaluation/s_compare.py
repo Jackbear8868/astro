@@ -208,7 +208,7 @@ def main():
                 # The scale goes into the filename: the same pointing on two scales
                 # is two different figures, and one name would let one replace the
                 # other. It also shows which files share a ruler without opening them.
-                o = (pointing_dir(name, "sfield")
+                o = (pointing_dir(W, "sfield")
                      / f"s_{k}_{vmin:.3f}-{vmax:.3f}{seg_tag}.png")
                 fig.savefig(o, dpi=args.dpi, bbox_inches="tight")
                 plt.close(fig)

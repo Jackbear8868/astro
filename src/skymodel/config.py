@@ -70,6 +70,19 @@ def _number(v, name, ge=None, gt=None, le=None):
     return v
 
 
+def _path(v):
+    """A path from the config, as an absolute path.
+
+    A relative one is taken against the repository root, so a config reads the same
+    from whatever directory it is run in. An absolute one is taken as written, which
+    is what lets the data and the results sit outside the checkout entirely. `~` is
+    expanded first: pathlib would otherwise treat it as an ordinary directory name and
+    build a path with a literal ~ in it.
+    """
+    p = Path(v).expanduser()
+    return p if p.is_absolute() else ROOT / p
+
+
 def load(path):
     """Read a pointing config and return the checked dict."""
     path = Path(path)
@@ -85,13 +98,12 @@ def load(path):
     if not isinstance(cfg["pointing"], int):
         _fail(f"pointing must be an integer, got {cfg['pointing']!r}")
 
-    # Stored relative to the repository root so a config is readable from anywhere.
     inp = cfg["input"]
     for k in ("cube", "nosky", "seg"):
         if k not in inp:
             _fail(f"input.{k} is missing")
-        inp[k] = ROOT / inp[k]
-    cfg["output"] = ROOT / cfg["output"]
+        inp[k] = _path(inp[k])
+    cfg["output"] = _path(cfg["output"])
 
     reg = cfg["sky_region"]
     reg["x"] = _axis(reg.get("x"), "x")
@@ -123,7 +135,7 @@ def load(path):
         if not isinstance(src, str):
             _fail("sky_line_basis.borrow_from must be the output directory of another "
                   f"run, or null, got {src!r}")
-        b["borrow_from"] = ROOT / src
+        b["borrow_from"] = _path(src)
     # Optional: writing it keeps the source's own emission lines out of the basis. The
     # windows are excluded from step3's decomposition and from nothing else -- the
     # continuum, the mean spectrum and the sky-line masks still see every channel. It is

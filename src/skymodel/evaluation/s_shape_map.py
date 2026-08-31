@@ -81,7 +81,7 @@ def main():
     # in s is a small fraction of its level, so half the width does not resolve it.
     # The shared colour scale is what makes them comparable. The run goes into the
     # filename because every step05 run writes the same two amplitude files.
-    out = pointing_dir(W.name)
+    out = pointing_dir(W)
     tag = "" if args.run in (None, "default") else f"_{args.run}"
     # --half-width changes the colour scale, so it belongs in the name too.
     if args.half_width is not None:

@@ -153,7 +153,7 @@ def main():
     ax[2].set_xlim(wl.min(), wl.max())
 
     out = (Path(args.out) if args.out
-           else pointing_dir(name, "sky") / f"blank_noise_floor_{run.name}.png")
+           else pointing_dir(W, "sky") / f"blank_noise_floor_{run.name}.png")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

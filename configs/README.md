@@ -23,6 +23,33 @@ reads a file, checks the values and hands them out with the paths resolved.
 | `max_grid_offset` | optional, default 0.1. How far apart the seg and white-light grids may be, in pixels, before the pointing is refused. Write it only to raise it, which is a decision to run on headers that disagree; the run then prints the offset and the limit that allowed it |
 | `keep_intermediate` | optional, default true. False makes steps 1 to 5 skip writing their products; step 6 always writes, being the deliverable. It changes what is left on disk and nothing else -- the step 6 of a run with it off is the step 6 of a run with it on |
 
+## Where the data and the results live
+
+`input` and `output` take a relative path, an absolute one, or one starting with `~`:
+
+    input:
+      cube: data/wsky/DATACUBE_FINAL_1.fits          # relative to the repository root
+      cube: /mnt/muse/wsky/DATACUBE_FINAL_1.fits     # taken as written
+      cube: ~/muse/wsky/DATACUBE_FINAL_1.fits        # expanded first
+
+A relative path is taken against the repository root, not the working directory, so a
+config reads the same wherever it is run from. Absolute is what lets the data and the
+results sit outside the checkout entirely -- the pipeline reads nothing else from the
+repository, so a config naming external inputs and an external `output` writes nothing
+back into it.
+
+Figures follow the run. Every `evaluation/` script takes `--work`, which is the run's
+output directory, and writes into an `evaluation` directory beside it:
+
+    --work results/skymodel/p01          ->  results/skymodel/evaluation/p01/...
+    --work /mnt/runs/p01                 ->  /mnt/runs/evaluation/p01/...
+
+The few figures that compare several pointings belong to no single run and go to
+`results/skymodel/evaluation` instead. `SKYMODEL_EVAL` moves those, which is what a
+read-only checkout needs:
+
+    SKYMODEL_EVAL=/mnt/runs/evaluation conda run -n astro python src/skymodel/evaluation/halo_compare.py
+
 ## Two values that are easy to misread
 
 `sky_line_basis.min_unmasked_frac` is a floor on how much of the spectrum

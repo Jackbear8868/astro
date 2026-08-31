@@ -358,7 +358,7 @@ def main():
     stem = (f"blank_{args.mode}_{args.statistic}_vs_eso"
             + (f"_{run.name}" if run is not None else "")
             + ("_diff" if args.diff else ""))
-    out = Path(args.out) if args.out else pointing_dir(name, "sky") / f"{stem}.png"
+    out = Path(args.out) if args.out else pointing_dir(W, "sky") / f"{stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)

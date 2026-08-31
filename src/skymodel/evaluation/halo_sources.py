@@ -161,7 +161,7 @@ def main():
     fig.subplots_adjust(0, 0, 1, 1)
 
     name = Path(args.work).name
-    out = Path(args.out) if args.out else pointing_dir(name, "masking") / "halo_sources.png"
+    out = Path(args.out) if args.out else pointing_dir(W, "masking") / "halo_sources.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=args.dpi, facecolor="black")
     plt.close(fig)

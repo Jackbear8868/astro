@@ -29,6 +29,7 @@ mu + a(y) + b(x)。
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -47,7 +48,10 @@ from utils import (air_to_vacuum, build_amplitude_field, build_templates,  # noq
 
 ROOT = Path(__file__).resolve().parents[3]
 # 圖與量測值一律寫中央,檔名帶 pointing,否則要比較幾顆就得開幾個目錄。
-EVAL = ROOT / "results/skymodel/evaluation/s_field"
+# SKYMODEL_EVAL 可以把圖改寫到別處,讓 checkout 之外的結果也有地方放;
+# 不設就是 repo 裡的老位置。
+EVAL = Path(os.environ.get(
+    "SKYMODEL_EVAL", ROOT / "results/skymodel/evaluation")).expanduser() / "s_field"
 BAND = (5500.0, 6500.0)      # 量「源 / 天空」比值用的乾淨窗口
 
 

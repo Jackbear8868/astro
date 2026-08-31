@@ -9,6 +9,7 @@ The file must not be named utils.py: the scripts point sys.path at the level abo
 import `src/skymodel/utils.py`, and a same-named file would shadow it.
 """
 import json
+import os
 import re
 from pathlib import Path
 
@@ -19,9 +20,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[3]
-# Figures and measured values go to one central place, with the pointing in the
-# filename -- otherwise comparing N pointings means opening N directories.
-EVAL = ROOT / "results/skymodel/evaluation"
+# Where figures that belong to no single run go -- the ones comparing several
+# pointings, which have no one run directory to sit beside. SKYMODEL_EVAL moves them,
+# so a checkout kept read-only, or results kept on another disk, still has somewhere
+# to write. Figures that do belong to one run use pointing_dir instead and follow it
+# without being told.
+EVAL = Path(os.environ.get(
+    "SKYMODEL_EVAL", ROOT / "results/skymodel/evaluation")).expanduser()
 
 # Threshold for rejecting bad voxels across spaxels, following mean_sky in
 # pipeline.py's sky_basis.
@@ -32,12 +37,20 @@ CLIP_SIGMA = 30
 S_CMAP = "RdBu_r"
 
 
-def pointing_dir(name, *sub):
-    """Where one pointing's figures go -- evaluation/pNN/[subdir...], creating the
-    directory if needed. One directory per pointing rather than one flat level, so
-    reading a pointing is not a filename filter over several hundred entries.
+def pointing_dir(work, *sub):
+    """Where one pointing's figures go -- an evaluation directory beside the run.
+
+    `work` is the run's output directory, which is what the config's `output` names and
+    what every script takes as --work. The figures land in evaluation/<run>/[subdir...]
+    next to it, so results kept outside the checkout carry their figures with them
+    instead of writing back into the repository, and a run under experiments/ keeps its
+    figures there rather than among the real pointings.
+
+    One directory per run rather than one flat level, so reading a pointing is not a
+    filename filter over several hundred entries.
     """
-    d = EVAL.joinpath(name, *sub)
+    work = Path(work)
+    d = work.parent.joinpath("evaluation", work.name, *sub)
     d.mkdir(parents=True, exist_ok=True)
     return d
 

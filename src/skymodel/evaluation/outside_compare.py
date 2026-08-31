@@ -281,7 +281,7 @@ def main():
         print("\n".join(clipped))
 
     span = f"_{args.xlim[0]:.0f}-{args.xlim[1]:.0f}" if args.xlim else ""
-    d = Path(args.out) if args.out else pointing_dir(name, "halo")
+    d = Path(args.out) if args.out else pointing_dir(W, "halo")
     # The comparison is named in the filename, so a directory holding several says
     # which cube each one was against. "eso" is the name for the default.
     vs = "eso" if args.label_other == "pipeline" else slug(args.label_other)
