@@ -28,7 +28,15 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 
 Step 3 writes no single sky-line mask: the three stacks hold the continuum, the detection
 threshold and the mask of every iteration, one row each, and steps 4 to 6 use the row
-`source_fit.line_mask_iter` names. The two scans step 4 can write per source are
+`source_fit.line_mask_iter` names. It reads one thing more when
+`sky_line_basis.borrow_from` names another run: that run's
+`step03/sky_line_basis_{method}_K{K}.npy`, resampled onto this pointing's wavelength
+grid and put in place of the basis this step would have learned. Only the basis is
+taken; the mean spectrum, the continuum and the masks are still learned here.
+`sky_line_basis.mask_source_lines` changes the same one thing from the other end: the
+channels the source's own emission lines land on are zeroed in the decomposition
+input, so the basis is exactly 0 there and step 6 cannot subtract those lines from
+anything. The two scans step 4 can write per source are
 its two branches, the stellar library and the galaxy eigenspectra, not two passes over
 one of them. Step 6 does not write the s it applied: wherever that has a value it is
 step 5's field to the bit, and which spaxels step 6 solved is `np.isfinite` of any

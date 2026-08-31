@@ -33,6 +33,15 @@ sky_line_basis:
   max_iter: 5                           # iterations of the continuum / line-mask loop
   clip_sigma: 30                        # sigma clip applied to the mean sky spectrum
   min_unmasked_frac: 0.16               # stop if the line mask would cover more than 1 - this
+  # Haro 11's own emission lines, kept out of the decomposition input only: the basis
+  # is 0 at these channels, so step6 cannot put flux there. Observed wavelengths,
+  # [low, high], closed at both ends; no redshift is applied here. The same four serve
+  # every pointing, it being the same galaxy in all fourteen.
+  mask_source_lines:
+    - [4959.5, 4968]        # A, H-beta
+    - [5057,   5069]        # A, [O III] 4959
+    - [5106,   5118]        # A, [O III] 5007
+    - [6694,   6709]        # A, H-alpha
 
 # Fitting a template to every detected source, which gives it a class and a
 # redshift.

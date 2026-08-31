@@ -213,6 +213,77 @@ The method and K are in the filename so two values of K can sit side by side. Th
 seed is not -- it is in `meta.json`, and without it the randomized SVD would not
 repeat.
 
+With `sky_line_basis.borrow_from` the vectors in this file were not learned here at
+all: they are another run's, resampled onto this pointing's grid with a cubic spline
+and re-orthonormalised, since the two pointings share a channel width but not a zero
+point. The filename is the same, so `meta.json` is the only thing that says so:
+
+```json
+{ "borrowed_basis": { "svd": {
+    "run": "results/skymodel/p11",
+    "basis_file": "results/skymodel/p11/step03/sky_line_basis_svd_K30.npy",
+    "basis_md5": "b78735c584f7f5f081f5455212795154",
+    "source_wavelength": [4599.8472, 9349.8472],
+    "target_wavelength": [4749.8296, 9349.8296],
+    "channel_offset": 119.9859375,
+    "orthonormality_before": 1.27e-3, "orthonormality_after": 4.70e-8 } } }
+```
+
+The key is absent from a run that learned its own basis. Nothing else in the
+directory changes: the mean spectrum, the continuum and the line masks are this
+pointing's own either way, which is what keeps step 4 comparable with a run that
+borrowed nothing.
+
+With `sky_line_basis.mask_source_lines` the vectors were learned here, but from an
+input whose source emission-line channels were set to 0, so every one of them is
+exactly 0 at those channels and the model cannot put flux there. Again the filename
+is the same and `meta.json` is the only thing that says so:
+
+```json
+{ "masked_source_lines": {
+    "n_channel": 39, "channel_fraction": 0.0106,
+    "windows": [ { "low": 5106.0, "high": 5118.0, "n_channel": 10 } ] } }
+```
+
+The windows are observed wavelengths and carry no redshift: whichever of the config's
+two forms named them, `config.load()` has already reduced it to bounds by the time
+step 3 records them. The per-window channel count is what the grid gave, so it moves
+by one between pointings whose grids are offset by less than a channel.
+
+The key is absent from a run that masked nothing, and the products beside it are
+again unchanged: the exclusion happens after the mean spectrum, the continuum and
+the line masks are built, so only the basis file differs.
+
+### Learning from a flux window instead
+
+With `sky_line_basis.select_faintest` the spaxels counted above are narrowed once
+more, to the flux window the ESO pipeline would have called sky: the valid field is
+ranked by its mean over wavelength, the faintest `ignore` of it is thrown away and
+the sky comes from the next `fraction`. On p14 with ESO's own 0.05 / 0.10 that is
+
+```
+n_blank_complete    50316    the count above, before the window
+n_selected           8225    inside the flux window as well
+```
+
+**This one moves every file in the directory**, unlike the two keys above: the mean
+spectrum, `sky_continuum.npy`, the masks and the basis are all built from the
+selected spaxels, so step 4's fitting channels move with them. `meta.json` is again
+what says so:
+
+```json
+{ "selected_faintest": {
+    "rule": "eso_skymodel_ignore_fraction", "ignore": 0.05, "fraction": 0.10,
+    "ranked_over": "valid field, spectrally complete", "n_ranked": 95599,
+    "flux_low": 67.5358, "flux_high": 82.0066,
+    "n_window_in_field": 9560, "n_offered": 50316, "n_selected": 8225 } }
+```
+
+`n_window_in_field` is how many spaxels of the ranked field the window holds, and
+`n_selected` how many of those survived the segmentation, the box and the
+completeness cut -- the two together are what say how much of ESO's own sample this
+run could use. The key is absent from a run that selected nothing.
+
 **Drawing it**
 
 ```bash
@@ -470,9 +541,15 @@ Steps 1, 3, 4, 5 and 6 each write a `meta.json` carrying the git commit, the
 timestamp and every parameter that step was given. The `step` field is read off
 the calling method at write time, so it cannot fall behind a rename.
 
-Two facts live only there and nowhere in the arrays: step 1's measured grid offset,
-and step 5's list of the rows and columns whose offset was defaulted rather than
-measured. Both decide how much of a pointing's answer rests on an assumption.
+Five facts live only there and nowhere in the arrays: step 1's measured grid
+offset, step 5's list of the rows and columns whose offset was defaulted rather than
+measured, step 3's `borrowed_basis`, which is where a line basis that came from
+another pointing says so, step 3's `masked_source_lines`, which is where a basis
+made blind at some wavelengths says so, and step 3's `selected_faintest`, which is
+where a run that learned the sky from a flux window rather than from every blank
+spaxel says so. The first two decide how much of a pointing's answer rests on an
+assumption; the last three say what the basis beside them was built from, which no
+filename carries and no array shows.
 
 Each `stepN.log` opens with the call that produced the products beside it. It is a
 record of the call, not a command to run -- the pipeline's one entrance is
