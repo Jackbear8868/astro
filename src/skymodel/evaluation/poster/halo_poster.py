@@ -79,7 +79,7 @@ else:
     print(f"cached -> {CACHE}")
 
 j = keep.index(WANT)
-outdir = run.figdir("halo")
+outdir = run.figdir("halo", poster=True)
 
 fig, ax = plt.subplots(figsize=tuple(args.figsize))
 for _, lam in LINES:

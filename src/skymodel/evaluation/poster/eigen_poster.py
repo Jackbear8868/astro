@@ -23,7 +23,10 @@ from matplotlib.ticker import FixedLocator, MaxNLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
-from plot_eigen import FIGURES, LABEL_TOP, MUSE_RANGE, N_SAMPLE, Z_HARO, load_curves
+from common import POSTER
+from plot_eigen import LABEL_TOP, MUSE_RANGE, N_SAMPLE, Z_HARO, load_curves
+
+FIGURES = POSTER / "templates"
 
 XTICKS = [5000, 6000, 7000, 8000, 9000]
 NAME_PAD = 6

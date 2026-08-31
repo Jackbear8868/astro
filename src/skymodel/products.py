@@ -302,7 +302,7 @@ class Run:
         d = {5: self.fit_dir, 6: self.cube_dir}.get(step, self.work / f"step{step:02d}")
         return json.loads(_need(d / "meta.json", f"step {step}").read_text())
 
-    def figdir(self, *sub):
+    def figdir(self, *sub, poster=False):
         """Where this run's figures go -- an evaluation directory beside the run.
 
         evaluation/<run>/[subdir...] next to the output directory, so results kept
@@ -312,8 +312,13 @@ class Run:
 
         One directory per run rather than one flat level: reading a pointing is then
         not a filename filter over several hundred entries.
+
+        poster=True inserts that level under evaluation/poster/. A print version of a
+        figure carries the same name as the screen version it is a version of, so
+        without a directory of its own it overwrites the one it was made from.
         """
-        d = self.work.parent.joinpath("evaluation", self.name, *sub)
+        parts = ("evaluation", "poster", self.name) if poster else ("evaluation", self.name)
+        d = self.work.parent.joinpath(*parts, *sub)
         d.mkdir(parents=True, exist_ok=True)
         return d
 

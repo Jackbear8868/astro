@@ -10,6 +10,10 @@
 底下的 `poster/` 是第三種：**同樣的資料、同樣的曲線，換一套印刷排版**。它不問任何新
 問題，只把線加粗、字放大、比例指定。科學內容要改，改的是這一層，不是 `poster/`。
 
+印刷版的檔名跟它所依據的螢幕版一樣，所以它們寫到 `evaluation/poster/` 底下自成一層
+（`poster/pNN/basis/top5.png`、跨 pointing 的則是 `poster/sky_basis/`），否則會直接
+覆蓋掉原本那張。屬於單一 pointing 的用 `Run.figdir(..., poster=True)`。
+
 輸出一律寫到 `results/skymodel/evaluation/`，不寫進 `pNN/` 工作區 —— `pNN/` 底下的每
 一個檔案都是 `pipeline.py` 寫的，這條規則讓「刪掉 pNN 重跑」永遠安全。
 

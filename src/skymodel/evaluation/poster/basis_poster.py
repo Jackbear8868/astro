@@ -65,7 +65,7 @@ ax.set_xlabel("wavelength [$\\AA$]", fontsize=args.fs, labelpad=NAME_PAD)
 # its curves components, and these are not those.
 ax.set_ylabel("sky line basis", fontsize=args.fs, labelpad=NAME_PAD)
 
-out = run.figdir("basis") / f"top{n}{args.suffix}.png"
+out = run.figdir("basis", poster=True) / f"top{n}{args.suffix}.png"
 out.parent.mkdir(parents=True, exist_ok=True)
 fig.savefig(out, dpi=300, bbox_inches="tight")
 plt.close(fig)

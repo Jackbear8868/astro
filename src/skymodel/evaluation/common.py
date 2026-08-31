@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parents[3]
 EVAL = Path(os.environ.get(
     "SKYMODEL_EVAL", ROOT / "results/skymodel/evaluation")).expanduser()
 
+# Where the print versions go. They carry the same filenames as the screen figures
+# they are versions of, so they need a level of their own or they overwrite them.
+# Run.figdir(poster=True) is the same rule for a figure that belongs to one pointing.
+POSTER = EVAL / "poster"
+
 # Threshold for rejecting bad voxels across spaxels, following mean_sky in
 # pipeline.py's sky_basis.
 CLIP_SIGMA = 30

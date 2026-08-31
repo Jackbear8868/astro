@@ -20,7 +20,10 @@ from matplotlib.ticker import FixedLocator, MultipleLocator
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
 from common import EVAL, ROOT
-from continuum_compare import FIGURES, load
+from common import POSTER
+from continuum_compare import load
+
+FIGURES = POSTER / "sky_basis"
 
 FS = 30
 LW = 2.0
