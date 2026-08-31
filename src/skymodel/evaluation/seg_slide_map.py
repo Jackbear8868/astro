@@ -26,7 +26,8 @@ import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, qualitative  # noqa: E402
+from common import EVAL, qualitative  # noqa: E402
+from products import Run  # noqa: E402
 from utils import arcsinh_stretch  # noqa: E402
 
 FIGURES = EVAL / "masking"
@@ -131,7 +132,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    STEP01 = ROOT / args.work / "step01"
+    STEP01 = Run(args.work).work / "step01"
     white = fits.getdata(Path(args.white) if args.white
                          else STEP01 / "whitelight_nosky.fits")
     seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"

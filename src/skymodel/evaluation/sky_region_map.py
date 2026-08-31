@@ -27,7 +27,6 @@ products. Spectral completeness no product records, so the wsky cube is counted 
     conda run -n astro python src/skymodel/evaluation/sky_region_map.py --work results/skymodel/p01
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -42,9 +41,8 @@ import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import (ROOT, SEG_COLOR, arcsinh_stretch, load_field,  # noqa: E402
-                    pointing_dir, step04_dir)
-from products import fit_dirs, sky_amplitude_params  # noqa: E402
+from common import SEG_COLOR, arcsinh_stretch  # noqa: E402
+from products import Run, sky_amplitude_params  # noqa: E402
 from utils import build_amplitude_field, main_source_group  # noqa: E402
 
 
@@ -189,14 +187,15 @@ def main():
                          "step5's meta.json, which records the run step5 itself used")
     args = ap.parse_args()
 
-    W = ROOT / args.work
-    run, _ = fit_dirs(W, args.run)
-    m3 = json.loads((W / "step03" / "meta.json").read_text())
-    m5 = json.loads((run / "meta.json").read_text())
+    pointing = Run(args.work, args.run, args.step04)
+    W = pointing.work
+    run = pointing.fit_dir
+    m3 = pointing.meta(3)
+    m5 = pointing.meta(5)
     p = sky_amplitude_params(m5)
 
-    seg, white, valid = load_field(W)
-    coverage = channel_coverage(ROOT / m3["cube"])
+    seg, white, valid = pointing.seg, pointing.white, pointing.valid
+    coverage = channel_coverage(pointing.wsky)
 
     # --- step3: blank, the sky_region box, and spectrally complete spaxels only ---
     basis_region = region_of(m3)
@@ -206,12 +205,11 @@ def main():
 
     # --- step5: further off the sources, and no failed fits. The free solve is NaN
     #     wherever step5 did not fit, so its finite spaxels start the cuts below ---
-    s = np.load(run / "sky_continuum_amplitude_per_spaxel.npy").astype(float)
+    s = pointing.s_per_spaxel
     ok = valid & (seg == 0) & np.isfinite(s)
     check("step5 free solve", m5.get("n_blank"), ok.sum())
     train_region = region_of(p, "train_")
-    step04 = (Path(args.step04) if args.step04
-              else step04_dir(W, args.run) or W / "step04")
+    step04 = pointing.step04
     main_group, _, _ = main_source_group(
         seg, np.where(valid, white, np.nan), step04, dz_max=p["main_source_dz"])
     _, sfield = build_amplitude_field(
@@ -253,7 +251,7 @@ def main():
     # The run goes into the filename: a pointing can hold several step05 runs, all
     # writing the same amplitude files, so otherwise one figure replaces the other.
     tag = "" if args.run in (None, "default") else f"_{args.run}"
-    out = pointing_dir(W) / f"sky_region{tag}.png"
+    out = pointing.figdir() / f"sky_region{tag}.png"
     fig.savefig(out, dpi=140, bbox_inches="tight")
     plt.close(fig)
 

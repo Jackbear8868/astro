@@ -7,7 +7,6 @@ The zone means are cached to an .npy next to this script: the two cubes are ~3 G
 and re-running only to nudge a font size should not read them again.
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -21,7 +20,8 @@ from matplotlib.ticker import FixedLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
-from common import EVAL, ROOT, load_field, pointing_dir, slug
+from common import EVAL, ROOT, slug
+from products import Run
 from halo_spectra import C_LINE, CHUNK, LINES, Z_HARO, zone_labels
 from utils import DZ_MAX, main_source_group
 
@@ -70,14 +70,15 @@ def zone_means(cube_path, zones, keys, nz):
 
 
 name = args.pointing
-work = ROOT / "results/skymodel" / name
+run = Run(ROOT / "results/skymodel" / name)
+work = run.work
 # The cache goes under results, not next to this file: everything a script writes
 # belongs in results/skymodel/evaluation, and one cache per pointing because the zone
 # means are tied to that field.
 CACHE = EVAL / "poster_cache" / f"halo_{name}.npz"
-wl = np.load(work / "step03/wavelength.npy")
+wl = run.wl
 
-seg, white, valid = load_field(work)
+seg, white, valid = run.seg, run.white, run.valid
 main_, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), None, DZ_MAX)
 zones, names = zone_labels(seg, white, valid, main_, LAYERS, RINGS)
 keys = [i + 1 for i, nm in enumerate(names) if nm.startswith("outside")]
@@ -88,15 +89,14 @@ if CACHE.exists():
     raw, signal = z["raw"], z["signal"]
     print(f"cached -> {CACHE}")
 else:
-    meta = json.loads((work / "step03/meta.json").read_text())
-    raw = zone_means(ROOT / meta["cube"], zones, keys, wl.size)
-    signal = zone_means(work / "step06/sky_subtracted.fits", zones, keys, wl.size)
+    raw = zone_means(run.wsky, zones, keys, wl.size)
+    signal = zone_means(run.cube, zones, keys, wl.size)
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     np.savez(CACHE, raw=raw, signal=signal)
     print(f"cached -> {CACHE}")
 
 j = keep.index(WANT)
-outdir = pointing_dir(name, "halo")
+outdir = run.figdir("halo")
 
 fig, ax = plt.subplots(figsize=tuple(args.figsize))
 for _, lam in LINES:

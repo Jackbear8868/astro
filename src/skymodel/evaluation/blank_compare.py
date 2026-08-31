@@ -135,14 +135,14 @@ def robust_range(y, pct=0.5, pad=0.35):
     return min(lo - m, 0.0), max(hi + m, 0.0)
 
 
-def check_against_step3(work, wl, ours):
+def check_against_step3(run, wl, ours):
     """Does the reconstruction land on step3's own blank mean spectrum?
 
     Not expected to be zero: step3 kept the spaxels complete in wsky, this keeps those
     complete in both cubes, and a different sample gives a different mean. Reported as a
     fraction and with the worst channel, a bright sky line making a small fraction large.
     """
-    saved = np.load(Path(work) / "step03/blank_mean_spectrum.npy")
+    saved = run.mean_sky
     d = np.abs(ours - saved)
     k = int(np.argmax(d))
     print(f"  vs step03/blank_mean_spectrum.npy (different sample, see above): "
@@ -267,7 +267,7 @@ def main():
     # The reconstruction has to land on step3's own answer, or the figure is comparing
     # ESO against something this script invented.
     if args.mode == "sky" and args.statistic == "mean":
-        check_against_step3(W, wl, ours)
+        check_against_step3(pointing, wl, ours)
 
     resid = ours - eso
     lw = max(len(lab) for _, lab in STATS)

@@ -32,7 +32,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, load_field  # noqa: E402
+from common import EVAL, ROOT  # noqa: E402
+from products import Run  # noqa: E402
 from blank_compare import data_hdu, our_cube  # noqa: E402
 from halo_spectra import EDGE_MARGIN, LINES, Z_HARO, CHUNK, panel_ylim  # noqa: E402
 from utils import DZ_MAX, main_source_group  # noqa: E402
@@ -121,11 +122,12 @@ def main():
         if run is None:
             print(f"  skip {name}: no sky_subtracted.fits under step05/step06")
             continue
-        seg, white, valid = load_field(W)
+        pointing = Run(W)
+        seg, white, valid = pointing.seg, pointing.white, pointing.valid
         main_, ids, _ = main_source_group(seg, np.where(valid, white, np.nan),
                                           W / "step04" if args.step04 else None, DZ_MAX)
         m = halo_mask(seg, white, valid, main_, args.frac, args.band)
-        wl = np.load(W / "step03/wavelength.npy")
+        wl = pointing.wl
         if int(m.sum()) == 0:
             print(f"  skip {name}: the selection contains no spaxel")
             continue

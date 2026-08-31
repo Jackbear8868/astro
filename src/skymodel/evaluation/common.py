@@ -1,14 +1,16 @@
-"""Things shared by the scripts under evaluation -- paths, file loading, display
-stretch, colour scales.
+"""Things shared by the scripts under evaluation -- display stretch, colour scales,
+and the one cube read more than one of them does.
 
 One condition for putting something here: two or more scripts do the same thing.
 Separate copies drift apart, and a stretch or colour centre that differs between two
 figures looks like a change in the data.
 
+Reading a run's products is not here: that is `products.Run`, which serves the
+standalone steps as well and so cannot live under evaluation.
+
 The file must not be named utils.py: the scripts point sys.path at the level above to
 import `src/skymodel/utils.py`, and a same-named file would shadow it.
 """
-import json
 import os
 import re
 from pathlib import Path
@@ -35,14 +37,6 @@ CLIP_SIGMA = 30
 # One colour scale for every spatial map of s. RdBu_r is diverging, so "above or
 # below the typical value" is visible at a glance; a sequential scale is not.
 S_CMAP = "RdBu_r"
-
-
-def pointing_dir(work, *sub):
-    """Where one pointing's figures go. `Run.figdir` under its old name.
-
-    Kept so that the scripts which have not moved to Run yet read as they did.
-    """
-    return Run(work).figdir(*sub)
 
 
 # Contour colour over a magma background. magma runs black -> purple -> orange ->
@@ -101,36 +95,7 @@ def diverging_range(a, centre=None, pct=2.0):
     return c, c - r, c + r
 
 
-def load_field(work):
-    """One pointing's step01 products -- (seg, white light image, valid field).
-
-    Three attributes of a Run under their old name, for the reason `pointing_dir`
-    is kept.
-    """
-    r = Run(work)
-    return r.seg, r.white, r.valid
-
-
 from utils import arcsinh_stretch  # noqa: E402, F401 — canonical def in utils
-from products import Run, fit_dirs  # noqa: E402
-
-
-def step04_dir(W, run=None):
-    """Which step4 directory this pointing's redshifts come from, or None.
-
-    A work directory can hold several step4 runs, and the redshift decides which
-    members belong to the main source, so picking by directory order would be an
-    invisible error. Step5's meta.json records the classification file it was given.
-    """
-    meta = fit_dirs(W, run)[0] / "meta.json"
-    if not meta.exists():
-        return None
-    m = json.loads(meta.read_text())
-    # "classification" is the key; older products on disk spell it "best".
-    c = m.get("classification") or m.get("best")
-    # The path is recorded against the repository root, and a step4 directory holds
-    # one run, so the file's parent directory is that run.
-    return ROOT / Path(c).parent if c else None
 
 
 def collapse(path, band, wl, seg):

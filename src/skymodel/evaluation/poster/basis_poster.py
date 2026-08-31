@@ -18,7 +18,7 @@ from matplotlib.ticker import FixedLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
-from common import ROOT, pointing_dir
+from products import Run
 from plot_basis import SPAN_PCT, basis_colour
 
 XTICKS = [5000, 6000, 7000, 8000, 9000]
@@ -36,9 +36,9 @@ ap.add_argument("--gain", type=float, default=1.0)
 ap.add_argument("--suffix", default="")
 args = ap.parse_args()
 
-W = ROOT / args.work
-wl = np.load(W / "step03/wavelength.npy")
-B = np.load(W / "step03" / f"sky_line_basis_{args.basis}_K{args.K}.npy")
+run = Run(args.work)
+wl = run.wl
+B = run.basis(args.basis, args.K)
 n = min(args.top, B.shape[0])
 
 # The offset is set from the whole basis, not from the vectors drawn, so a trace looks
@@ -65,7 +65,7 @@ ax.set_xlabel("wavelength [$\\AA$]", fontsize=args.fs, labelpad=NAME_PAD)
 # its curves components, and these are not those.
 ax.set_ylabel("sky line basis", fontsize=args.fs, labelpad=NAME_PAD)
 
-out = pointing_dir(W.name, "basis") / f"top{n}{args.suffix}.png"
+out = run.figdir("basis") / f"top{n}{args.suffix}.png"
 out.parent.mkdir(parents=True, exist_ok=True)
 fig.savefig(out, dpi=300, bbox_inches="tight")
 plt.close(fig)

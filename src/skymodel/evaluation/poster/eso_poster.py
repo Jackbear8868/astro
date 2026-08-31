@@ -8,8 +8,6 @@ The y range follows outside_compare.py's default rule so the panel keeps saying 
 that figure said; only the tick spacing is chosen here, to land on round numbers.
 """
 import argparse
-import json
-import re
 import sys
 from pathlib import Path
 
@@ -23,7 +21,8 @@ from matplotlib.ticker import FixedLocator, MultipleLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # evaluation
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # skymodel
-from common import EVAL, ROOT, load_field, pointing_dir, slug
+from common import EVAL, ROOT, slug
+from products import Run
 from halo_spectra import C_LINE, CHUNK, LINES, Z_HARO, zone_labels
 from outside_compare import C_ESO, C_OURS, despiked_range, zone_means
 from utils import DZ_MAX, main_source_group
@@ -44,13 +43,14 @@ ap.add_argument("--suffix", default="")
 args = ap.parse_args()
 
 name = args.pointing
-work = ROOT / "results/skymodel" / name
+run = Run(ROOT / "results/skymodel" / name)
+work = run.work
 # One cache per pointing: the zone means are what the two cube reads produce, and they
 # are not interchangeable between fields.
 CACHE = EVAL / "poster_cache" / f"eso_{name}.npz"
-wl = np.load(work / "step03/wavelength.npy")
+wl = run.wl
 
-seg, white, valid = load_field(work)
+seg, white, valid = run.seg, run.white, run.valid
 main_, ids, _ = main_source_group(seg, np.where(valid, white, np.nan), None, DZ_MAX)
 zones, names = zone_labels(seg, white, valid, main_, LAYERS, RINGS)
 keys = [i + 1 for i, nm in enumerate(names) if nm.startswith("outside")]
@@ -60,17 +60,14 @@ if CACHE.exists():
     z = np.load(CACHE)
     ours, eso = z["ours"], z["eso"]
 else:
-    meta = json.loads((work / "step03/meta.json").read_text())
-    n = re.fullmatch(r"DATACUBE_FINAL_(\d+)\.fits", Path(meta["cube"]).name).group(1)
-    ours = zone_means(work / "step06/sky_subtracted.fits", zones, keys, wl.size)
-    eso = zone_means(ROOT / "data/nosky" / f"DATACUBE_FINAL_ESOSKY_{n}.fits",
-                     zones, keys, wl.size)
+    ours = zone_means(run.cube, zones, keys, wl.size)
+    eso = zone_means(run.nosky, zones, keys, wl.size)
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     np.savez(CACHE, ours=ours, eso=eso)
 print(f"cached -> {CACHE}")
 
 j = keep.index(WANT)
-outdir = pointing_dir(name, "halo")
+outdir = run.figdir("halo")
 
 fig, ax = plt.subplots(figsize=tuple(args.figsize))
 for _, lam in LINES:

@@ -32,7 +32,8 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT, S_CMAP, load_field, pointing_dir  # noqa: E402
+from common import EVAL, ROOT, S_CMAP  # noqa: E402
+from products import Run  # noqa: E402
 
 FIGURES = EVAL / "sfield"
 
@@ -127,7 +128,8 @@ def main():
         if d is None:
             print(f"  skip {name}: no run with an s field under step05")
             continue
-        seg, white, valid = load_field(W)
+        pointing = Run(W)
+        seg, valid = pointing.seg, pointing.valid
         meta = json.loads((d / "meta.json").read_text())
         for k in kinds:
             f = d / S_FILE[k]
@@ -208,7 +210,10 @@ def main():
                 # The scale goes into the filename: the same pointing on two scales
                 # is two different figures, and one name would let one replace the
                 # other. It also shows which files share a ruler without opening them.
-                o = (pointing_dir(W, "sfield")
+                # Built from this panel's own name. The collecting loop above has
+                # ended, so a work directory left in one of its variables would be the
+                # last pointing's -- and every figure here would land in that one.
+                o = (Run(ROOT / args.root / name).figdir("sfield")
                      / f"s_{k}_{vmin:.3f}-{vmax:.3f}{seg_tag}.png")
                 fig.savefig(o, dpi=args.dpi, bbox_inches="tight")
                 plt.close(fig)

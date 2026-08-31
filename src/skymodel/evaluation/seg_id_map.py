@@ -21,8 +21,8 @@ from astropy.io import fits
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import EVAL, ROOT
-from products import id_map
+from common import EVAL
+from products import Run, id_map
 
 FIGURES = EVAL / "masking"
 
@@ -46,7 +46,7 @@ def main():
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    STEP01 = ROOT / args.work / "step01"
+    STEP01 = Run(args.work).work / "step01"
     white = fits.getdata(Path(args.white) if args.white
                          else STEP01 / "whitelight_nosky.fits")
     seg_path = Path(args.seg) if args.seg else STEP01 / "segmentation_input.fits"

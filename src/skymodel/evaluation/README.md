@@ -122,9 +122,9 @@ run.s_field   run.cube     run.nosky    run.step04
 run.meta(3)   run.figdir("halo")
 ```
 
-`common.py` 放共用的東西：`ROOT`、`EVAL`、`slug()`、`qualitative()`（相鄰源不會混淆的
-配色）、`asinh_bar()`、`collapse()`。`pointing_dir()` 與 `load_field()` 現在只是
-`Run.figdir()` 與 `Run.seg/white/valid` 的舊名字，留給還沒改用 `Run` 的腳本。
+`common.py` 剩下的是畫圖那一層：`ROOT`、`EVAL`、`slug()`、`qualitative()`（相鄰源不會
+混淆的配色）、`asinh_bar()`、`diverging_range()`、`collapse()`。讀產物一律走 `Run`，
+`common.py` 不再碰磁碟上的產物。
 
 已刪除：`check_pointing.py`（驗收：天空扣乾淨了嗎、源有沒有被扣掉）、
 `zone_spectra.py`（同一個環上 ESO 與我們各扣出什麼）。功能被 `box_spectra.py`

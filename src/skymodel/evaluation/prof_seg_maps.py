@@ -99,7 +99,7 @@ def main():
     for n in args.n:
         seg, img = load(n)
         rows, n_all = rows_from(seg, args.min_area)
-        # EVAL and not pointing_dir: this reads the segmentation input, not any
+        # EVAL and not Run.figdir: this reads the segmentation input, not any
         # run's products, so there is no run directory for the figure to sit beside.
         out = (EVAL / f"p{n:02d}"); out.mkdir(parents=True, exist_ok=True)
         out = out / "segmentation_map.png"

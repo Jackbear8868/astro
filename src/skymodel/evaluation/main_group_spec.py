@@ -28,7 +28,8 @@ import numpy as np
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import ROOT, load_field  # noqa: E402
+from common import ROOT  # noqa: E402
+from products import Run  # noqa: E402
 from utils import DZ_MAX, load_scan  # noqa: E402
 
 C_KMS = 299792.458
@@ -85,8 +86,9 @@ def main():
 
     rows = []
     for n in args.n:
-        W = ROOT / f"results/skymodel/p{n:02d}"
-        seg, white, valid = load_field(W)
+        pointing = Run(ROOT / f"results/skymodel/p{n:02d}")
+        W = pointing.work
+        seg, white, valid = pointing.seg, pointing.white, pointing.valid
         wn = np.where(valid, white, np.nan)
         ids, _, k = blob_members(seg, wn)
         keep_area = area_keep(seg, ids, args.min_frac)

@@ -23,16 +23,17 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import EVAL, ROOT  # noqa: E402
+from products import Run  # noqa: E402
 
 FIGURES = EVAL / "sky_basis"
 
 
 def load(work):
     """(wavelength, continuum) for one pointing, or None if step3 has not run."""
-    d = Path(work) / "step03"
-    if not (d / "sky_continuum.npy").exists():
+    if not (Path(work) / "step03/sky_continuum.npy").exists():
         return None
-    return np.load(d / "wavelength.npy"), np.load(d / "sky_continuum.npy")
+    run = Run(work)
+    return run.wl, run.continuum
 
 
 def main():
