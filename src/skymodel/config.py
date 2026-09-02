@@ -122,6 +122,17 @@ def load(path):
               f"got {b.get('method')!r}")
     if not isinstance(b.get("K"), int) or b["K"] < 1:
         _fail(f"sky_line_basis.K must be a positive integer, got {b.get('K')!r}")
+    # Step 3 reads these four straight out of the dict, so an absent one used to pass
+    # here and raise a bare KeyError a minute later, with steps 1 and 2 already written.
+    if not isinstance(b.get("seed"), int):
+        _fail(f"sky_line_basis.seed must be an integer, got {b.get('seed')!r}")
+    if not isinstance(b.get("continuum_window"), int) or b["continuum_window"] < 1:
+        _fail("sky_line_basis.continuum_window is a running-median width in channels, "
+              f"so a positive integer; got {b.get('continuum_window')!r}")
+    if not isinstance(b.get("max_iter"), int) or b["max_iter"] < 1:
+        _fail("sky_line_basis.max_iter must be a positive integer, got "
+              f"{b.get('max_iter')!r}")
+    _number(b.get("clip_sigma"), "sky_line_basis.clip_sigma", gt=0)
     b["line_thresholds"] = _pair(b.get("line_thresholds"),
                                  "sky_line_basis.line_thresholds")
     # A fraction of the channels: at 1 no mask is acceptable, at 0 every mask is.
@@ -197,6 +208,25 @@ def load(path):
         if not isinstance(it, int) or it < 1:
             _fail("source_fit.line_mask_iter: iterations are integers counting "
                   f"from 1, got {it!r}")
+    # Step 4 reads these straight out of the dict, same as step 3's four above.
+    # fix_s_at is the one that may be null, which leaves s free in the fit -- so absent
+    # and null differ here, step 4 reading s["fix_s_at"] and not s.get("fix_s_at").
+    if "fix_s_at" not in s:
+        _fail("source_fit.fix_s_at is missing; write a number, or null to leave the "
+              "sky continuum amplitude free while classifying")
+    if s["fix_s_at"] is not None:
+        _number(s["fix_s_at"], "source_fit.fix_s_at")
+    _number(s.get("z_min"), "source_fit.z_min")
+    _number(s.get("z_max"), "source_fit.z_max")
+    if s["z_min"] >= s["z_max"]:
+        _fail("source_fit.z_min must be below z_max, got "
+              f"{s['z_min']} and {s['z_max']}")
+    _number(s.get("z_step"), "source_fit.z_step", gt=0)
+    _number(s.get("star_dz"), "source_fit.star_dz", ge=0)
+    # 0 is meaningful: step 4 reads it as one third of the visible CPUs.
+    if not isinstance(s.get("num_workers"), int) or s["num_workers"] < 0:
+        _fail("source_fit.num_workers must be a non-negative integer, 0 meaning one "
+              f"third of the visible CPUs; got {s.get('num_workers')!r}")
     # Optional: a config writes it only to turn the scans off.
     s.setdefault("keep_scans", KEEP_SCANS)
     if not isinstance(s["keep_scans"], bool):
