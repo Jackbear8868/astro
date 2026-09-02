@@ -35,7 +35,8 @@ src/skymodel/              the pipeline
   evaluation/poster/       the same figures, laid out for print
   experiments/             one-off "should we do it differently" tests
 src/zap/                   a second method run on the same cubes (see its README)
-configs/                   one file per pointing
+configs/                   one file per pointing (see its README: every field,
+                           what it does, and what to change to try a variation)
 scripts/                   checking a change did what it says (see its README)
 docs/                      method notes, parameter references, what was rejected
 ```

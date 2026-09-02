@@ -16,6 +16,15 @@ learned from the blank spaxels of the sky-included cube. On a source spaxel a te
 
 ## The steps
 
+Six, in order, by what each one does:
+
+    1  whitelight          collapse the cube along wavelength into a white light image
+    2  source_spectra      sum each source's spectrum over the spaxels its seg ID covers
+    3  sky_basis           learn the sky continuum and the K sky-line basis vectors
+    4  classify_sources    fit templates to every source, giving it a class and a redshift
+    5  fit_sky_amplitude   force the sky continuum amplitude s onto a smooth spatial field
+    6  subtract_sky        apply the model to every spaxel and write the subtracted cube
+
 | | function | reads | writes |
 |---|---|---|---|
 | 1 | `whitelight` | the ESO nosky cube | `step01/whitelight_nosky.fits` + preview |
@@ -49,7 +58,7 @@ the wsky cube lifts the whole image, which makes the brightest pixel unreliable.
 Step 2 also runs on the nosky cube. Classifying a spectrum that still holds the sky
 produces output that looks entirely normal, with every template and redshift wrong.
 
-## What step04 holds
+## Fitting a template to every source -- what step 4 writes
 
 One run, in files whose names say what they are rather than how they were fitted:
 
